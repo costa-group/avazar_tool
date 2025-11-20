@@ -1,0 +1,19 @@
+[package]
+name = "zkgenver"
+version = "1.0.0"
+authors = ["Costa Group UCM"]
+edition = "2018"
+
+description = "genverr is a generic circuit verifier for R1CS constraint systems"
+keywords = ["zkproofs", "zksanrks","circuits","compiler"]
+categories = ["compilers"]
+
+[dependencies]
+circom_algebra = {path = "../circom_algebra"}
+civer = {path = "../civer"}
+utils = {path = "../utils"}
+clap = "2.33.0"
+ansi_term = "0.12.1"
+wast = "39.0.0"
+exitcode = "1.1.2"
+num-bigint-dig = "0.6.0"

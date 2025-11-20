@@ -1,0 +1,8 @@
+[workspace]
+members = [
+    "circom_algebra",
+    "constant_tracking",
+    "civer",
+    "utils",
+    "zk-genver"
+]

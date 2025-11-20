@@ -1,0 +1,1111 @@
+use core::str;
+use std::{cmp::max, collections::{HashMap, HashSet, LinkedList}, fs::File, io::Write};
+use num_bigint_dig::BigInt;
+
+use circom_algebra::{modular_arithmetic, algebra::{
+    Constraint, ExecutedInequation}};
+
+        use z3::Config;
+        use z3::Context;
+        use z3::Solver;
+        use z3::ast::Ast;
+        use z3::*;
+
+
+#[derive(PartialEq, Eq, Clone)] 
+pub enum PossibleResult{
+    VERIFIED, UNKNOWN, FAILED, NOSTUDIED, NOTHING
+} impl PossibleResult {
+    pub fn finished_verification(&self) -> bool{
+        self == &PossibleResult::VERIFIED || 
+        self == &PossibleResult::NOSTUDIED || 
+        self == &PossibleResult::NOTHING || 
+        self == &PossibleResult::UNKNOWN
+    }
+    pub fn result_to_str(&self)-> String{
+        match self{
+            &PossibleResult::FAILED => {format!("FAILED -> FOUND COUNTEREXAMPLE\n")}
+            &PossibleResult::UNKNOWN => {format!("UNKNOWN -> VERIFICATION TIMEOUT\n")}
+            &PossibleResult::NOTHING => {format!("NOTHING TO VERIFY\n")}
+            _ => {format!("VERIFIED\n")}
+        }            
+    }
+    //Implement debug
+    
+
+}
+
+fn is_positive(a: &BigInt, field: &BigInt) -> bool{
+    a <= &(field / BigInt::from(2))
+}
+
+//This function only works if 0 <= a <= field - 1
+fn to_neg(a: &BigInt, field: &BigInt) -> BigInt{
+    if a < &(field/BigInt::from(2)){
+        a.clone()
+    }
+    else {
+        a - field
+    }
+}
+
+pub type Signal2Bounds = HashMap<usize, ExecutedInequation<usize>>;
+
+pub struct TemplateVerification {
+    pub template_name: String,
+    pub signals: LinkedList<usize>,
+    pub inputs: Vec<usize>,
+    pub outputs: Vec<usize>,
+    pub constraints: Vec<Constraint<usize>>,
+    pub implications_safety: Vec<(Vec<usize>, Vec<usize>)>,
+    pub deductions: Signal2Bounds,
+    pub substitutions: HashMap<usize, usize>,
+    pub field: BigInt,
+    pub verbose: bool,
+    pub verification_timeout: u64,
+    pub added_nodes: HashSet<usize>
+
+}
+
+impl TemplateVerification{
+
+    pub fn new(
+        template_name: &String,
+        signals: LinkedList<usize>,
+        inputs: Vec<usize>,
+        outputs: Vec<usize>,
+        constraints: Vec<Constraint<usize>>,
+        implications_safety: Vec<(Vec<usize>, Vec<usize>)>,
+        field: &BigInt,
+        verification_timeout: u64, 
+    ) -> TemplateVerification {
+        let mut fixed_constraints = Vec::new();
+        for c in constraints{
+            let mut new_c = c.clone();
+            Constraint::fix_constraint(&mut new_c, field);
+            fixed_constraints.push(new_c);
+        }
+        let mut substitutions = HashMap::new();
+        for s in &signals{
+            substitutions.insert(*s, *s);
+        }
+
+        TemplateVerification {
+            template_name: template_name.clone(),
+            signals,
+            inputs,
+            outputs, 
+            implications_safety,
+            deductions: HashMap::new(),
+            substitutions,
+            constraints: fixed_constraints,
+            field: field.clone(),
+            verbose: false,      
+            verification_timeout, 
+            added_nodes: HashSet::new()
+        }
+    }
+
+    pub fn initialize_bounds_preconditions(&mut self){
+        self.deductions.insert(0, ExecutedInequation{signal: 0, min: BigInt::from(1), max: BigInt::from(1)});
+
+    }
+
+
+    pub fn deduce(&mut self)-> (PossibleResult, Vec<String>) {        //self.print_pretty_template_verification();
+        
+        self.deduce_round();
+        //self.normalize();
+
+        let mut logs = Vec::new();
+
+        let result_safety = self.try_prove_safety(&mut logs);
+
+        (result_safety, logs)
+    }
+
+    // returns the signals where it was able to find new bounds
+    pub fn deduce_round(&mut self)-> Vec<usize>{
+        let mut new_signal_bounds:Vec<usize> = Vec::new();
+        let mut new_signal_bounds_iteration = Vec::new();
+
+        self.initialize_bounds_preconditions();
+
+        let filter_const = std::mem::take(&mut self.constraints);
+
+        for c in filter_const{
+            let should_remove = deduction_rule_integrity_domain(&mut self.deductions, &c, &self.field); 
+            if !should_remove{ 
+                self.constraints.push(c);
+            }
+        } 
+
+        for c in &self.constraints{
+            new_signal_bounds_iteration.append(&mut deduction_rule_apply_bounds_constraint(&mut self.deductions, &c, &self.field, self.verbose));
+        }
+
+        while !new_signal_bounds_iteration.is_empty(){
+            new_signal_bounds.append(&mut new_signal_bounds_iteration);
+            for c in &self.constraints{
+              
+                new_signal_bounds_iteration.append(&mut deduction_rule_apply_bounds_constraint(&mut self.deductions, &c, &self.field, self.verbose));
+            }
+        }
+        new_signal_bounds
+    }
+
+
+     // normalizes the constraints choosing the smaller coefficients
+    pub fn normalize(&mut self){
+        let old_constraints = std::mem::take(&mut self.constraints);
+        for c in old_constraints{
+            let new_c = normalize_constraint(c, &self.deductions, &self.field);
+            self.constraints.push(new_c);
+        }
+    }
+
+
+    pub fn try_prove_safety(&self, logs: &mut Vec<String>) -> PossibleResult{
+        let mut cfg = Config::new();
+        cfg.set_timeout_msec(self.verification_timeout);
+        let ctx = Context::new(&cfg);
+        let solver = Solver::new(&ctx);
+        let zero = z3::ast::Int::from_i64(&ctx, 0);
+        let field = z3::ast::Int::from_str(&ctx, &self.field.to_string()).unwrap();
+        let mut aux_signals_to_smt_rep = HashMap::new();
+        let mut aux_signals_to_smt_rep_aux = HashMap::new();
+
+        for s in &self.signals{
+            
+            let is_input = self.inputs.contains(s);
+
+            let aux_signal_to_smt = z3::ast::Int::new_const(&ctx, format!("s_{}", s));
+            let copy_aux_signal_to_smt = if !is_input{
+                z3::ast::Int::new_const(&ctx, format!("saux_{}", s))
+            } else{
+                z3::ast::Int::new_const(&ctx, format!("s_{}", s))
+            };
+            aux_signals_to_smt_rep.insert(*s, aux_signal_to_smt.clone());
+            aux_signals_to_smt_rep_aux.insert(*s, copy_aux_signal_to_smt.clone());
+
+            match self.deductions.get(s){
+                None =>{
+                    solver.assert(&aux_signal_to_smt.ge(&zero));
+                    solver.assert(&aux_signal_to_smt.lt(&field));
+                    solver.assert(&copy_aux_signal_to_smt.ge(&zero));
+                    solver.assert(&copy_aux_signal_to_smt.lt(&field));
+                }
+                Some(bounds) =>{
+
+                    let condition = get_z3_condition_bounds(
+                        &ctx, 
+                        &aux_signal_to_smt, 
+                        &bounds.min, 
+                        &bounds.max, 
+                        &self.field
+                    );
+                    solver.assert(&condition);
+
+                    let condition = get_z3_condition_bounds(
+                        &ctx, 
+                        &copy_aux_signal_to_smt, 
+                        &bounds.min, 
+                        &bounds.max, 
+                        &self.field
+                    );
+                    solver.assert(&condition);
+                }
+            }
+
+        }
+        
+        let mut i = 0;
+        for constraint in &self.constraints{
+            insert_constraint_in_smt(constraint, &ctx, &solver, &aux_signals_to_smt_rep, &self.field, 
+                                        &self.deductions, i, &field, self.verbose);
+            i = i + 1;
+            insert_constraint_in_smt(constraint, &ctx, &solver, &aux_signals_to_smt_rep_aux, &self.field, 
+                &self.deductions, i, &field, self.verbose);
+            i = i + 1;
+        }
+
+        apply_deduction_rule_homologues(
+            &self.constraints, 
+            &ctx, 
+            &solver, 
+            &aux_signals_to_smt_rep,
+            &aux_signals_to_smt_rep_aux,
+            &self.deductions,
+            &self.field, 
+            &field
+        );
+    
+
+
+
+        for (inputs, outputs) in &self.implications_safety{
+            let mut implication_left = z3::ast::Bool::from_bool(&ctx, true);
+            for s in inputs{
+                let s_1 = aux_signals_to_smt_rep.get(s).unwrap();
+                let s_2 = aux_signals_to_smt_rep_aux.get(s).unwrap();
+                implication_left &= s_1._eq(s_2);
+            }
+            let mut implication_right = z3::ast::Bool::from_bool(&ctx, true);
+            for s in outputs{
+                let s_1 = aux_signals_to_smt_rep.get(s).unwrap();
+                let s_2 = aux_signals_to_smt_rep_aux.get(s).unwrap();
+                implication_right &= s_1._eq(s_2);
+            }
+
+            solver.assert(&implication_left.implies(&implication_right));
+        }
+
+
+        let mut all_outputs_equal = z3::ast::Bool::from_bool(&ctx, true);
+        for s in &self.outputs{
+            let s_1 = aux_signals_to_smt_rep.get(s).unwrap();
+            let s_2 = aux_signals_to_smt_rep_aux.get(s).unwrap();
+            all_outputs_equal &= s_1._eq(s_2);
+        } 
+
+        solver.assert(&!all_outputs_equal);
+        //write the content of the solver to a file
+        //open the file
+        //count the number of smt2 files currently in the directory
+        let mut smt2_files = 0;
+        for entry in std::fs::read_dir(".").unwrap() {
+            let entry = entry.unwrap();
+            if entry.path().extension().is_some() && entry.path().extension().unwrap() == "smt2" {
+                smt2_files += 1;
+            }
+        }
+
+        match solver.check(){
+            SatResult::Sat =>{
+                logs.push(format!("### THE TEMPLATE DOES NOT ENSURE SAFETY. FOUND COUNTEREXAMPLE USING SMT:\n"));
+
+                let model = solver.get_model().unwrap();
+                for s in &self.inputs{
+                    let v = model.eval(aux_signals_to_smt_rep.get(s).unwrap(), true).unwrap();
+                    logs.push(format!("Input signal {}: {}\n", s, v.to_string()));
+
+                }
+                for s in &self.outputs{
+                    let v = model.eval(aux_signals_to_smt_rep.get(s).unwrap(), true).unwrap();
+                    let v1 = model.eval(aux_signals_to_smt_rep_aux.get(s).unwrap(), true).unwrap();
+
+                    logs.push(format!("Output signal {}: values {} | {}\n", s, v.to_string(), v1.to_string()));
+
+                }
+
+                PossibleResult::FAILED
+                //}
+            },
+            SatResult::Unsat =>{
+                logs.push(format!("### WEAK SAFETY ENSURED BY THE TEMPLATE\n"));
+                PossibleResult::VERIFIED
+            },
+            _=> {
+                logs.push(format!("### UNKNOWN: VERIFICATION OF WEAK SAFETY USING THE SPECIFICATION TIMEOUT\n"));
+                PossibleResult::UNKNOWN
+            }
+        }
+
+
+
+    }
+}
+
+
+pub fn update_bounds_signal(deductions: &mut Signal2Bounds, signal: usize, min: BigInt, max: BigInt, field: &BigInt) -> bool{
+    let pos_bounds = deductions.get_mut(&signal);
+
+    if &min >= &BigInt::from(0) && &max <= &(field - &BigInt::from(1)){
+        match pos_bounds{
+            Option::None => {
+    
+                deductions.insert(
+                    signal,
+                    ExecutedInequation{signal, min, max}
+                );
+                true
+            }
+            
+    
+            Option::Some(bounds) => {
+                if !(&bounds.min <= &BigInt::from(0) && &max >= &(field - &BigInt::from(1))){
+                    bounds.update_bounds(min, max)
+                } else{
+                    false
+                }
+            }
+       }
+    } else{
+        false
+    }
+}
+
+pub fn solve_signal_plus_coef(a: &HashMap<usize, BigInt>, field: &BigInt) -> Option<(usize,BigInt)> {
+
+    if (a.len() == 1 && !a.contains_key(&0)) || (a.len() == 2 && a.contains_key(&0)){
+        let mut to_solve_signal = 0;
+        let mut coef_indep = &BigInt::from(0);
+        let mut coef_signal =  &BigInt::from(0);
+        for (signal, coef) in a{
+            if *signal == 0 {
+                coef_indep = coef;
+            } else{
+                to_solve_signal = *signal;
+                coef_signal = coef;
+            }
+        }
+        match modular_arithmetic::div(&modular_arithmetic::prefix_sub(coef_indep, field), coef_signal, field){
+            Ok(value) => Some((to_solve_signal, value)),
+            Err(_) => None
+        }
+    } else{
+        Option::None
+    }
+}
+
+pub fn check_same_field_round(a: &BigInt, b: &BigInt, field: &BigInt)-> bool{
+    check_correct_signs(a, b) && (a / field == b / field)
+}
+
+fn check_consecutive_field_round(min: &BigInt, max: &BigInt, field: &BigInt)-> bool{
+    // queremos que acepte cosas como [-1, 1] y lo guarde --> ahora mismo no funciona
+    let zero = &BigInt::from(0);
+    let two = &BigInt::from(2);
+    if min < zero && max >= zero{
+        min > &(- field / two) && max <= &(field / two) // o quiza solo que este entro (-field, field)
+    } else if min < max{
+        min / field == field / field - 1
+    } else{
+        false
+    }
+}
+
+pub fn check_correct_signs(a: &BigInt, b: &BigInt)-> bool{
+    // revisar esta también
+    let zero = &BigInt::from(0);
+    !(a >= zero && b < zero) && !(b >= zero && a < zero) 
+}
+
+fn compute_bounds_linear_expression(deductions: &Signal2Bounds, le: &HashMap<usize, BigInt>, field: &BigInt) -> (BigInt, BigInt){
+    let mut lower_limit = BigInt::from(0);
+    let mut upper_limit = BigInt::from(0);
+    for (signal, coef) in le{
+        let (min, max) = if deductions.contains_key(&signal){
+            let bounds = deductions.get(&signal).unwrap();
+            (bounds.min.clone(), bounds.max.clone())
+        } else{
+            (BigInt::from(0), field - &BigInt::from(1))
+        };
+        if is_positive(coef, field){
+            upper_limit = upper_limit + coef * max;
+            lower_limit = lower_limit + coef * min;
+        } else{
+            let neg_coef = field - coef;
+            upper_limit = upper_limit - &neg_coef * min;
+            lower_limit = lower_limit - &neg_coef * max;
+        }
+    }
+    (lower_limit, upper_limit)
+}
+
+fn compute_bounds_linear_expression_strict(deductions: &Signal2Bounds, le: &HashMap<usize, BigInt>, field: &BigInt) -> (BigInt, BigInt){
+    let mut lower_limit = BigInt::from(0);
+    let mut upper_limit = BigInt::from(0);
+    for (signal, coef) in le{
+        let (min, max) = if deductions.contains_key(&signal){
+            let bounds = deductions.get(&signal).unwrap();
+            if bounds.min >= BigInt::from(0){
+                (bounds.min.clone(), bounds.max.clone())
+            }
+            else {
+                (BigInt::from(0), field - &BigInt::from(1))
+            }
+        } else{
+            (BigInt::from(0), field - &BigInt::from(1))
+        };
+        if is_positive(coef, field){
+            upper_limit = upper_limit + coef * max;
+            lower_limit = lower_limit + coef * min;
+        } else{
+            let neg_coef = field - coef;
+            upper_limit = upper_limit - &neg_coef * min;
+            lower_limit = lower_limit - &neg_coef * max;
+        }
+    }
+    (lower_limit, upper_limit)
+}
+
+fn compute_bounds_product(min_1: &BigInt, max_1: &BigInt, min_2: &BigInt, max_2: &BigInt)-> (BigInt, BigInt){
+    let zero = &BigInt::from(0);
+    if min_1 >= zero{ // bounds_1 are positive
+        if min_2 >= zero{ // bounds_2 are two-positive
+            (min_1 * min_2, max_1 * max_2)
+        } else if max_2 >= zero{ // bounds_2 are neg/pos
+            (max_1 * min_2, max_1 * max_2)
+        } else{ // bounds_2 are two_negative
+            (max_1 * min_2, min_1 * max_2)
+        }
+    } else if max_1 >= zero{ // bounds_1 are neg/pos
+        if min_2 >= zero{ // bounds_2 are two-positive
+            (min_1 * max_2, max_1 * max_2)
+        } else if max_2 >= zero{ // bounds_2 are neg/pos
+            (max(min_1 * max_2, min_2 * max_1), max(min_1 * min_2, max_1 * max_2))
+        } else{ // bounds_2 are two_negative
+            (max_1 * min_2, min_1 * min_2)
+        }
+    } else{ // bounds_1 are negative
+        if min_2 >= zero{ // bounds_2 are two-positive
+            (min_1 * max_2, max_1 * min_2)
+        } else if max_2 >= zero{ // bounds_2 are neg/pos
+            (min_1 * max_2, min_1 * min_2)
+        } else{ // bounds_2 are two_negative
+            (max_1 * max_2, min_1 * min_2)
+        }
+    }
+}
+
+// fn deduction_rule_implications_with_deduced_preconditions(
+//     deductions: &mut Signal2Bounds, 
+//     implication: &ExecutedImplication, 
+//     field: &BigInt
+// ) -> Vec<usize> {
+//     let mut updated_signals = Vec::new();
+//     let mut check_preconditions = true;
+    
+//     for precondition in &implication.left {
+//         check_preconditions &= implies_bounds_signal(deductions, precondition.signal, &precondition.min, &precondition.max, field);
+//     }
+//     if check_preconditions {
+//         for postcondition in &implication.right{
+//             if update_bounds_signal(deductions, postcondition.signal, postcondition.min.clone(), postcondition.max.clone(), field){
+//                 updated_signals.push(postcondition.signal.clone());
+//             }
+//         }
+//     }
+//     updated_signals
+// }
+
+// (x - a)*(x - b) = 0 ==> a <= x <= b
+
+pub fn deduction_rule_integrity_domain(
+    deductions: &mut Signal2Bounds,
+    constraint: &Constraint<usize>, 
+    field: &BigInt
+) -> bool{
+    let mut updated_signals = Vec::new();
+    let mut completely_studied = false;
+    
+    let a = constraint.a();
+    let b = constraint.b();
+    let c = constraint.c();
+
+    if let Option::Some((a_signal, a_value)) = solve_signal_plus_coef(a, field) {
+        if let Option::Some((b_signal, b_value)) = solve_signal_plus_coef(b, field) {
+            if a_signal == b_signal && c.is_empty() {
+
+                if a_value > b_value {
+                    completely_studied = &a_value - &b_value == BigInt::from(1);
+                    if update_bounds_signal(deductions, a_signal, b_value, a_value, field){
+                        
+                        updated_signals.push(a_signal);
+                    }
+                }
+                else {
+                    completely_studied = &b_value - &a_value ==  BigInt::from(1);
+                    if update_bounds_signal(deductions, a_signal, a_value, b_value, field){
+                        
+                        updated_signals.push(a_signal);
+                    }  
+                }
+
+            }
+        }
+    }
+    completely_studied
+}
+
+pub fn deduction_rule_apply_bounds_constraint(
+    deductions: &mut Signal2Bounds,
+    constraint: &Constraint<usize>,
+    field: &BigInt, 
+    _verbose: bool,
+)-> Vec<usize> {
+    let mut updated_signals = Vec::new();
+
+    let a = constraint.a();
+    let b = constraint.b();
+    let c = constraint.c();
+
+    let (lower_limit_a, upper_limit_a) = compute_bounds_linear_expression(deductions, &a, field);
+    let (lower_limit_b, upper_limit_b) = compute_bounds_linear_expression(deductions, &b, field);
+
+    let (lower_limit_ab, upper_limit_ab) = compute_bounds_product(
+        &lower_limit_a, 
+        &upper_limit_a, 
+        &lower_limit_b, 
+        &upper_limit_b
+    );
+
+    
+    let (lower_limit_c, upper_limit_c) = compute_bounds_linear_expression(deductions, &c, field);
+
+    let lower_limit = lower_limit_c - upper_limit_ab;
+    let upper_limit = upper_limit_c - lower_limit_ab;
+
+    for (signal, coef) in c{
+        if coef == &BigInt::from(1) || *coef == field - &BigInt::from(1) {
+            let (min, max) = if deductions.contains_key(signal){
+                let bounds = deductions.get(signal).unwrap();
+                (bounds.min.clone(), bounds.max.clone())
+            } else{
+                (BigInt::from(0), field - BigInt::from(1))
+            };
+            let (pos_max, pos_min);
+            let (valid_bounds, valid_consecutive) = if coef == &BigInt::from(1){
+                let (aux_min, aux_max) = (&upper_limit - max, &lower_limit - min);
+                pos_min = (field - &aux_min) % field;
+                pos_max = (field - &aux_max) % field;
+                (
+                    check_same_field_round(&(field - &aux_min), &(field - &aux_max), field),
+                    check_consecutive_field_round(&(field - &aux_min), &(field - &aux_max), field)
+                )
+            } else{
+                let (aux_min, aux_max) = (&lower_limit + max, &upper_limit + min);
+                pos_min = &aux_min % field;
+                pos_max = &aux_max % field;
+                (
+                    check_same_field_round(&aux_min, &aux_max, field),
+                    check_consecutive_field_round(&aux_min, &aux_max, field) 
+                )          
+            };
+    
+            if valid_bounds{
+                if update_bounds_signal(deductions, *signal, pos_min, pos_max, field){
+                    updated_signals.push(signal.clone());
+                }
+            }
+            else if false && valid_consecutive{
+                if update_bounds_signal(deductions, *signal, field - pos_min, pos_max, field){
+                    updated_signals.push(signal.clone());
+                }
+            }
+        }
+        
+    }
+    updated_signals
+}
+
+
+pub fn apply_deduction_rule_homologues(
+    constraints: &Vec<Constraint<usize>>,
+    ctx: &Context,
+    solver: &Solver,
+    signals_to_smt_symbols_1: &HashMap<usize, z3::ast::Int>,
+    signals_to_smt_symbols_2: &HashMap<usize, z3::ast::Int>,
+    deductions: &Signal2Bounds,
+    field: &BigInt,
+    p : &z3::ast::Int,
+){
+    for c in constraints{
+        let mut value_a = z3::ast::Int::from_u64(ctx, 0);
+        let mut value_b = z3::ast::Int::from_u64(ctx, 0);
+        let mut value_c = z3::ast::Int::from_u64(ctx, 0);
+
+        let mut value_a1 = z3::ast::Int::from_u64(ctx, 0);
+        let mut value_b1 = z3::ast::Int::from_u64(ctx, 0);
+        let mut value_c1 = z3::ast::Int::from_u64(ctx, 0);
+
+        for (signal, value) in c.a(){
+            if *signal == 0{
+                value_a += &z3::ast::Int::from_str(&ctx, &to_neg(value, field).to_string()).unwrap();
+                value_a1 += &z3::ast::Int::from_str(&ctx, &to_neg(value, field).to_string()).unwrap();         
+            } else{
+                value_a += signals_to_smt_symbols_1.get(signal).unwrap() *
+                    &z3::ast::Int::from_str(&ctx, &to_neg(value, field).to_string()).unwrap();
+                value_a1 += signals_to_smt_symbols_2.get(signal).unwrap() *
+                    &z3::ast::Int::from_str(&ctx, &to_neg(value, field).to_string()).unwrap();
+            }
+        }
+        for (signal, value) in c.b(){
+            if *signal == 0{
+                value_b += &z3::ast::Int::from_str(&ctx, &to_neg(value, field).to_string()).unwrap();
+                value_b1 += &z3::ast::Int::from_str(&ctx, &to_neg(value, field).to_string()).unwrap();
+
+            } else{
+                value_b += signals_to_smt_symbols_1.get(signal).unwrap() *
+                    &z3::ast::Int::from_str(&ctx, &to_neg(value, field).to_string()).unwrap();
+                value_b1 += signals_to_smt_symbols_2.get(signal).unwrap() *
+                    &z3::ast::Int::from_str(&ctx, &to_neg(value, field).to_string()).unwrap();
+            }
+        }
+        for (signal, value) in c.c(){
+            if *signal == 0{
+                value_c += &z3::ast::Int::from_str(&ctx, &to_neg(value, field).to_string()).unwrap();
+                value_c1 += &z3::ast::Int::from_str(&ctx, &to_neg(value, field).to_string()).unwrap();
+
+            } else{
+                value_c += signals_to_smt_symbols_1.get(signal).unwrap() *
+                    &z3::ast::Int::from_str(&ctx, &to_neg(value, field).to_string()).unwrap();
+                value_c1 += signals_to_smt_symbols_2.get(signal).unwrap() *
+                    &z3::ast::Int::from_str(&ctx, &to_neg(value, field).to_string()).unwrap();
+            }
+        }
+
+
+        let c_a = c.a();
+        let c_b = c.b();
+        let c_c = c.c();
+        let (lower_limit_a, upper_limit_a) = compute_bounds_linear_expression_strict(deductions, &c_a, field);
+        let (lower_limit_b, upper_limit_b) = compute_bounds_linear_expression_strict(deductions, &c_b, field);
+        let (lower_limit_c, upper_limit_c) = compute_bounds_linear_expression_strict(deductions, &c_c, field);
+    
+        let lower_limit_k_aa =  (&lower_limit_a - &upper_limit_a)/field;
+        let upper_limit_k_aa = if (&upper_limit_a - &lower_limit_a)/field > BigInt::from(0) && (&upper_limit_a - &lower_limit_a)%field != BigInt::from(0) {
+            (&upper_limit_a - &lower_limit_a)/field + BigInt::from(1)
+        } else{
+            (&upper_limit_a - &lower_limit_a)/field
+        };
+
+        let lower_limit_k_bb =  (&lower_limit_b - &upper_limit_b)/field;
+        let upper_limit_k_bb = if (&upper_limit_b - &lower_limit_b)/field > BigInt::from(0) && (&upper_limit_b - &lower_limit_b)%field != BigInt::from(0) {
+            (&upper_limit_b - &lower_limit_b)/field + BigInt::from(1)
+        } else{
+            (&upper_limit_b - &lower_limit_b)/field
+        };
+
+        let lower_limit_k_cc =  (&lower_limit_c - &upper_limit_c)/field;
+        let upper_limit_k_cc = if (&upper_limit_c - &lower_limit_c)/field > BigInt::from(0) && (&upper_limit_c - &lower_limit_c)%field != BigInt::from(0) {
+            (&upper_limit_c - &lower_limit_c)/field + BigInt::from(1)
+        } else{
+            (&upper_limit_c - &lower_limit_c)/field
+        };
+
+        let zero = z3::ast::Int::from_u64(&ctx, 0);
+        
+        let condition_aa = if lower_limit_k_aa == upper_limit_k_aa{
+            let value_left = &value_a - &value_a1;
+            let value_right = z3::ast::Int::from_str(ctx, &lower_limit_k_aa.to_string()).unwrap() * p;
+            value_left._eq(&value_right)
+        } else{
+            (&value_a - &value_a1).modulo(&p)._eq(&zero)
+        };
+        let condition_bb = if lower_limit_k_bb == upper_limit_k_bb{
+            let value_left = &value_b - &value_b1;
+            let value_right = z3::ast::Int::from_str(ctx, &lower_limit_k_bb.to_string()).unwrap() * p;
+            value_left._eq(&value_right)
+        } else{
+            (&value_b - &value_b1).modulo(&p)._eq(&zero)
+        };
+        let condition_cc = if lower_limit_k_cc == upper_limit_k_cc{
+            let value_left = &value_c - &value_c1;
+            let value_right = z3::ast::Int::from_str(ctx, &lower_limit_k_cc.to_string()).unwrap() * p;
+            value_left._eq(&value_right)
+        } else{
+            (&value_c - &value_c1).modulo(&p)._eq(&zero)
+        };
+
+        let mut value_cond = z3::ast::Bool::from_bool(&ctx, false);
+        value_cond |= !&condition_aa;
+        value_cond |=  !&condition_bb;
+        value_cond |=  &condition_cc;
+        solver.assert(&value_cond);
+
+        let lower_limit_k_a =  &lower_limit_a /field;
+        let upper_limit_k_a = if &upper_limit_a /field > BigInt::from(0) && &upper_limit_a%field != BigInt::from(0) {
+            &upper_limit_a /field + BigInt::from(1)
+        } else{
+            &upper_limit_a/field
+        };
+
+        let condition_a_not_zero = if lower_limit_k_a == upper_limit_k_a{
+            let value_left = &value_a;
+            let value_right = z3::ast::Int::from_str(ctx, &lower_limit_k_a.to_string()).unwrap() * p;
+            !value_left._eq(&value_right)
+        } else{
+            !&value_a.modulo(&p)._eq(&zero)
+        };
+        
+        let mut value_cond = z3::ast::Bool::from_bool(&ctx, false);
+        value_cond |= !(&condition_aa & &condition_a_not_zero);
+        value_cond |=  !&condition_cc;
+        value_cond |=  &condition_bb;
+        solver.assert(&value_cond);
+
+        let lower_limit_k_b =  &lower_limit_b /field;
+        let upper_limit_k_b = if &upper_limit_b /field > BigInt::from(0) && &upper_limit_b%field != BigInt::from(0) {
+            &upper_limit_b /field + BigInt::from(1)
+        } else{
+            &upper_limit_b/field
+        };
+
+        let condition_b_not_zero = if lower_limit_k_b == upper_limit_k_b{
+            let value_left = &value_b;
+            let value_right = z3::ast::Int::from_str(ctx, &lower_limit_k_b.to_string()).unwrap() * p;
+            !value_left._eq(&value_right)
+        } else{
+            !&value_b.modulo(&p)._eq(&zero)
+        };  
+        let mut value_cond = z3::ast::Bool::from_bool(&ctx, false);
+        value_cond |= !(&condition_bb & condition_b_not_zero);
+        value_cond |=  !&condition_cc;
+        value_cond |=  &condition_aa;
+        solver.assert(&value_cond);
+
+    }
+
+    
+
+}
+
+
+pub fn insert_constraint_in_smt(
+    constraint: &Constraint<usize>,
+    ctx: &Context,
+    solver: &Solver,
+    signals_to_smt_symbols: &HashMap<usize, z3::ast::Int>,
+    field: &BigInt,
+    deductions: &Signal2Bounds,
+    num_k : usize,
+    p : &z3::ast::Int,
+    _verbose: bool,
+){
+    let mut value_a = z3::ast::Int::from_u64(ctx, 0);
+    let mut value_b = z3::ast::Int::from_u64(ctx, 0);
+    let mut value_c = z3::ast::Int::from_u64(ctx, 0);
+
+
+    for (signal, value) in constraint.a(){
+        if *signal == 0{
+            value_a += &z3::ast::Int::from_str(&ctx, &to_neg(value, field).to_string()).unwrap()
+        } else{
+            value_a += signals_to_smt_symbols.get(signal).unwrap() *
+                &z3::ast::Int::from_str(&ctx, &to_neg(value, field).to_string()).unwrap();
+        }
+    }
+    for (signal, value) in constraint.b(){
+        if *signal == 0{
+            value_b += &z3::ast::Int::from_str(&ctx, &to_neg(value, field).to_string()).unwrap()
+        } else{
+            value_b += signals_to_smt_symbols.get(signal).unwrap() *
+                &z3::ast::Int::from_str(&ctx, &to_neg(value, field).to_string()).unwrap();
+        }
+    }
+    for (signal, value) in constraint.c(){
+        if *signal == 0{
+            value_c += &z3::ast::Int::from_str(&ctx, &to_neg(value, field).to_string()).unwrap()
+        } else{
+            value_c += signals_to_smt_symbols.get(signal).unwrap() *
+                &z3::ast::Int::from_str(&ctx, &to_neg(value, field).to_string()).unwrap();
+        }
+    }
+
+
+    let a = constraint.a();
+    let b = constraint.b();
+    let c = constraint.c();
+    let (lower_limit_a, upper_limit_a) = compute_bounds_linear_expression_strict(deductions, &a, field);
+    let (lower_limit_b, upper_limit_b) = compute_bounds_linear_expression_strict(deductions, &b, field);
+
+    let (lower_limit_ab, upper_limit_ab) = compute_bounds_product(
+        &lower_limit_a, 
+        &upper_limit_a, 
+        &lower_limit_b, 
+        &upper_limit_b
+    );
+
+ 
+    let (lower_limit_c, upper_limit_c) = compute_bounds_linear_expression_strict(deductions, &c, field);
+    
+    let lower_limit_k =  (&lower_limit_c - &upper_limit_ab)/field;
+    let upper_limit_k = if (&upper_limit_c - &lower_limit_ab)/field > BigInt::from(0) && (&upper_limit_c - &lower_limit_ab)%field != BigInt::from(0) {
+        (&upper_limit_c - &lower_limit_ab)/field + BigInt::from(1)
+    } else{
+        (&upper_limit_c - &lower_limit_ab)/field
+    };
+
+    let lower_limit_k_a = &lower_limit_a / field;
+    let upper_limit_k_a = if &upper_limit_a / field > BigInt::from(0) && &upper_limit_a%field != BigInt::from(0) {
+        &upper_limit_a/field + BigInt::from(1)
+    } else{
+        &upper_limit_a/field
+    };
+
+    let lower_limit_k_b = &lower_limit_b / field;
+    let upper_limit_k_b = if &upper_limit_b / field > BigInt::from(0) && &upper_limit_b%field != BigInt::from(0) {
+        &upper_limit_b/field + BigInt::from(1)
+    } else{
+        &upper_limit_b/field
+    };
+
+    let lower_limit_k_c = &lower_limit_c / field;
+    let upper_limit_k_c = if &upper_limit_c / field > BigInt::from(0) && &upper_limit_c%field != BigInt::from(0) {
+        &upper_limit_c/field + BigInt::from(1)
+    } else{
+        &upper_limit_c/field
+    };
+
+
+    // Apply transformation rule A * B = 0 => (A = 0) \/ (B = 0)
+    if &upper_limit_c == &lower_limit_c && &upper_limit_c == &BigInt::from(0) {
+        let mut value_or = z3::ast::Bool::from_bool(&ctx, false);
+        
+
+
+        let value_or_a = 
+            if upper_limit_k_a == lower_limit_k_a{
+                let value_right = z3::ast::Int::from_str(ctx, &lower_limit_k_a.to_string()).unwrap() * p;
+                value_a._eq(&value_right)
+            } else{
+                let k = z3::ast::Int::new_const(&ctx, format!("k_{}_a", num_k));
+        
+                let value_right = &k*p;
+                solver.assert( 
+                    &k.ge(
+                        &z3::ast::Int::from_str(&ctx, &lower_limit_k_a.to_string()).unwrap()
+                    )
+                );
+                solver.assert(
+                    &k.le(
+                        &z3::ast::Int::from_str(&ctx, &upper_limit_k_a.to_string()).unwrap()
+                    )
+                );
+                    
+                value_a._eq(&value_right)
+            };  
+        
+
+        let value_or_b = 
+            if upper_limit_k_b == lower_limit_k_b{
+                let value_right = z3::ast::Int::from_str(ctx, &lower_limit_k_b.to_string()).unwrap() * p;
+                value_b._eq(&value_right)
+            } else {
+                let k = z3::ast::Int::new_const(&ctx, format!("k_{}_b", num_k));
+        
+                let value_right = &k*p;
+                solver.assert( 
+                    &k.ge(
+                        &z3::ast::Int::from_str(&ctx, &lower_limit_k_b.to_string()).unwrap()
+                    )
+                );
+                solver.assert(
+                    &k.le(
+                        &z3::ast::Int::from_str(&ctx, &upper_limit_k_b.to_string()).unwrap()
+                    )
+                );
+                    
+                value_b._eq(&value_right)
+            };
+        
+        value_or |= value_or_a;
+        value_or |= value_or_b;
+        solver.assert(&value_or);
+    } else{
+        // Apply deduction rule A * B = C => (C != 0) \/ (A = 0) \/ (B = 0)
+        
+        let condition_c = 
+            if upper_limit_k_c == lower_limit_k_c{
+                let value_right = z3::ast::Int::from_str(ctx, &lower_limit_k_c.to_string()).unwrap() * p;
+                value_c._eq(&value_right)
+            } else{
+                let k = z3::ast::Int::new_const(&ctx, format!("k_{}_c", num_k));
+        
+                let value_right = &k*p;
+                solver.assert( 
+                    &k.ge(
+                        &z3::ast::Int::from_str(&ctx, &lower_limit_k_c.to_string()).unwrap()
+                    )
+                );
+                solver.assert(
+                    &k.le(
+                        &z3::ast::Int::from_str(&ctx, &upper_limit_k_c.to_string()).unwrap()
+                    )
+                );
+                value_c._eq(&value_right)
+            };
+
+        let condition_a: ast::Bool =
+            if upper_limit_k_a == lower_limit_k_a{
+                let value_right = z3::ast::Int::from_str(ctx, &lower_limit_k_a.to_string()).unwrap() * p;
+                value_a._eq(&value_right)
+            } else{
+                let k = z3::ast::Int::new_const(&ctx, format!("k_{}_a", num_k));
+        
+                let value_right = &k*p;
+                solver.assert( 
+                    &k.ge(
+                        &z3::ast::Int::from_str(&ctx, &lower_limit_k_a.to_string()).unwrap()
+                    )
+                );
+                solver.assert(
+                    &k.le(
+                        &z3::ast::Int::from_str(&ctx, &upper_limit_k_a.to_string()).unwrap()
+                    )
+                );
+                    
+                value_a._eq(&value_right)
+            };
+
+
+        let condition_b = 
+            if upper_limit_k_b == lower_limit_k_b{
+                let value_right = z3::ast::Int::from_str(ctx, &lower_limit_k_b.to_string()).unwrap() * p;
+                value_b._eq(&value_right)
+            } else{
+                let k = z3::ast::Int::new_const(&ctx, format!("k_{}_b", num_k));
+    
+                let value_right = &k*p;
+                solver.assert( 
+                    &k.ge(
+                        &z3::ast::Int::from_str(&ctx, &lower_limit_k_b.to_string()).unwrap()
+                    )
+                );
+                solver.assert(
+                    &k.le(
+                        &z3::ast::Int::from_str(&ctx, &upper_limit_k_b.to_string()).unwrap()
+                    )
+                );
+                
+                value_b._eq(&value_right)
+            };
+
+        let mut value_or = z3::ast::Bool::from_bool(&ctx, false);
+        value_or |= !condition_c;
+        value_or |= condition_a;
+        value_or |= condition_b;
+        solver.assert(&value_or);
+        
+
+        // APPLY TRANSFORMATION RULE REMOVE MOD
+        if lower_limit_k == upper_limit_k{
+    
+            let value_left = value_c - (value_a * value_b);
+            let value_right = z3::ast::Int::from_str(ctx, &lower_limit_k.to_string()).unwrap() * p;
+            solver.assert(&value_left._eq(&value_right));
+        } else{
+            let k = z3::ast::Int::new_const(&ctx, format!("k_{}", num_k));
+        
+            let value_left =  value_c - (value_a * value_b);
+            let value_right = &k*p;
+            solver.assert(
+                 &k.ge(
+                    &z3::ast::Int::from_str(&ctx, &lower_limit_k.to_string()).unwrap()
+                )
+            );
+            solver.assert(
+                &k.le(
+                    &z3::ast::Int::from_str(&ctx, &upper_limit_k.to_string()).unwrap()
+                )               
+            );
+            solver.assert(&value_left._eq(&value_right));
+        }
+    }
+    
+}
+
+
+
+pub fn get_z3_condition_bounds<'a>(ctx: &'a Context,signal: &'a z3::ast::Int<'a>, min: &'a BigInt, max: &'a BigInt, field: &'a BigInt) -> z3::ast::Bool<'a>{
+    if min >= &BigInt::from(0){
+        
+        &signal.ge(
+            &z3::ast::Int::from_str(&ctx, &min.to_string()).unwrap()
+        )
+        &                                           
+        &signal.le(
+            &z3::ast::Int::from_str(&ctx, &max.to_string()).unwrap()
+        )
+        
+    } else{
+        
+                &z3::ast::Int::from_str(&ctx, &(field + min).to_string()).unwrap().le(
+                    signal)
+                & 
+                &signal.lt(
+                    &z3::ast::Int::from_str(&ctx, &field.to_string()).unwrap()
+                )
+            |
+            
+                &z3::ast::Int::from_i64(&ctx, 0).le(
+                    &signal
+                )
+                &
+                signal.le(
+                    &z3::ast::Int::from_str(&ctx, &max.to_string()).unwrap()
+            
+                )
+    }
+
+}
+
+
+
+pub fn compute_upper_lower_bounds(c: &Constraint<usize>, bounds: &HashMap<usize, ExecutedInequation<usize>>, field: &BigInt) -> (BigInt, BigInt) {
+    let a = c.a();
+    let b = c.b();
+    let c = c.c();
+    
+    
+    let (lower_limit_a, upper_limit_a) = compute_bounds_linear_expression_strict(bounds, &a, field);
+    let (lower_limit_b, upper_limit_b) = compute_bounds_linear_expression_strict(bounds, &b, field);
+
+    let (lower_limit_ab, upper_limit_ab) = compute_bounds_product(
+        &lower_limit_a, 
+        &upper_limit_a, 
+        &lower_limit_b, 
+        &upper_limit_b
+    );
+
+ 
+    let (lower_limit_c, upper_limit_c) = compute_bounds_linear_expression_strict(bounds, &c, field);
+    
+    (&lower_limit_c - &upper_limit_ab, &upper_limit_c - &lower_limit_ab) // lower and upper bounds
+
+}  
+
+
+pub fn normalize_constraint(c: Constraint<usize>, bounds: &HashMap<usize, ExecutedInequation<usize>>, field: &BigInt) -> Constraint<usize>{
+    // to consider all possible normalizations
+    use circom_algebra::algebra::ArithmeticExpression;
+    let c_elements = c.c();
+    //println!("Normalizing constraint");
+    //c.print_pretty_constraint();    
+    let (initial_lower, initial_upper) = compute_upper_lower_bounds(&c, bounds, field);
+    let mut best_difference = initial_upper - initial_lower;
+    let mut best_c = c.clone();
+    
+    // try to normalize using all elements in C
+    for (_signal, coef) in c_elements{
+        // divide by the coef to get the new constraint
+        let mut new_c_a = c.a().clone();
+        let new_c_b = c.b().clone();
+        let mut new_c_c = c.c().clone();
+
+        ArithmeticExpression::divide_coefficients_by_constant(
+                coef,
+            &mut new_c_a,
+                field,
+            );
+        ArithmeticExpression::divide_coefficients_by_constant(
+                coef,
+            &mut new_c_c,
+                field,
+            );
+        
+        let new_c = Constraint::new(new_c_a, new_c_b, new_c_c);
+        let (new_lower, new_upper) = compute_upper_lower_bounds(&new_c, bounds, field);
+        let new_dif = new_upper - new_lower;
+        if new_dif < best_difference{
+            best_difference = new_dif;
+            best_c = new_c.clone();
+        }
+    }
+    //println!("Chosen representative");
+    //best_c.print_pretty_constraint();    
+
+    best_c
+}

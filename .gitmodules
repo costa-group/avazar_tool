@@ -1,0 +1,3 @@
+[submodule "Picus"]
+	path = Picus
+	url = https://github.com/Veridise/Picus
