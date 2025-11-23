@@ -9,7 +9,7 @@ pub struct Input {
     pub original_structure: Option<PathBuf>,
     pub use_picus: bool,
     pub use_civer: bool,
-    pub flag_verbose: bool,
+    pub _flag_verbose: bool,
     pub prime: BigInt
 }
 
@@ -21,8 +21,8 @@ impl Input {
         let input_structure = input_processing::get_input_structure(&matches)?;
         let timeout =  input_processing::get_timeout(&matches)?;
         let original_structure = input_processing::get_original_structure(&matches)?;
-        let (use_picus, use_civer) = input_processing::get_solver(&matches)?;
-        let flag_verbose =  input_processing::get_flag_verbose(&matches);
+        let (use_civer, use_picus) = input_processing::get_solver(&matches)?;
+        let _flag_verbose =  input_processing::get_flag_verbose(&matches);
         let prime = input_processing::get_prime(&matches)?;
 
         Result::Ok(Input {
@@ -32,7 +32,7 @@ impl Input {
             original_structure,
             use_picus,
             use_civer,
-            flag_verbose,
+            _flag_verbose,
             prime
         })
     }

@@ -1,16 +1,15 @@
-mod tree_constraints;
+mod modular_reasoning;
 mod input_user;
 use num_bigint_dig::BigInt;
-use tree_constraints::TreeConstraints;
 use std::collections::{HashMap, HashSet, BTreeMap};
 use circom_algebra::algebra::Constraint;
 use utils::read_r1cs::read_r1cs;
 use utils::read_original_structure::read_original_structure;
 use utils::structure::*;
-use civer::tags_checking::PossibleResult;
+use solvers_interface::{PossibleResult, PossibleSolver};
 use input_user::Input;
 use std::path::PathBuf;
-
+use crate::modular_reasoning::check_tags;
 
 
 
@@ -158,6 +157,14 @@ fn start() -> Result<(), ()> {
 
     let field = user_input.prime;
 
+    let solver = if user_input.use_civer{
+        PossibleSolver::CIVER
+    } else if user_input.use_picus{
+        PossibleSolver::PICUS
+    } else{
+        unreachable!()
+    };
+
     
     let mut results = ResultInfo{
         verified_nodes: HashSet::new(),
@@ -178,7 +185,9 @@ fn start() -> Result<(), ()> {
             &nodeid2pos, 
             &field, 
             timeout, 
-            &mut results);
+            solver,
+            &mut results
+        );
     }
 
     // Just to compute extra info (constraints and original structure)
@@ -207,6 +216,7 @@ fn process_node(
     nodeid2pos: &HashMap<usize, usize>,
     field: &BigInt,
     timeout: u64,
+    solver: PossibleSolver,
     results: &mut ResultInfo,
 ) {
 
@@ -216,13 +226,14 @@ fn process_node(
     }
             
     // If the equivalence class of the node has not been studied, we process it.
-    let constraint_tree = TreeConstraints::new(node);
-    let (result, _, n_rounds, _logs) = constraint_tree.check_tags(
+    let (result, _, n_rounds, _logs) = check_tags(
+        node,
         &field,
         timeout,
         &structure.nodes,
         &nodeid2pos, 
-        &constraints 
+        &constraints ,
+        solver
     );
         
         //for log in logs{

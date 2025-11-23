@@ -6,6 +6,7 @@ edition = "2018"
 
 
 [dependencies]
+solvers_interface = {path =  "../solvers_interface"}
 circom_algebra = {path = "../circom_algebra"}
 clap = "2.33.0"
 ansi_term = "0.12.1"

@@ -1,6 +1,6 @@
-use core::str;
-use std::{cmp::max, collections::{HashMap, HashSet, LinkedList}, fs::File, io::Write};
+use std::{cmp::max, collections::{HashMap, LinkedList}};
 use num_bigint_dig::BigInt;
+use solvers_interface::{PossibleResult, SafetyVerification};
 
 use circom_algebra::{modular_arithmetic, algebra::{
     Constraint, ExecutedInequation}};
@@ -12,28 +12,7 @@ use circom_algebra::{modular_arithmetic, algebra::{
         use z3::*;
 
 
-#[derive(PartialEq, Eq, Clone)] 
-pub enum PossibleResult{
-    VERIFIED, UNKNOWN, FAILED, NOSTUDIED, NOTHING
-} impl PossibleResult {
-    pub fn finished_verification(&self) -> bool{
-        self == &PossibleResult::VERIFIED || 
-        self == &PossibleResult::NOSTUDIED || 
-        self == &PossibleResult::NOTHING || 
-        self == &PossibleResult::UNKNOWN
-    }
-    pub fn result_to_str(&self)-> String{
-        match self{
-            &PossibleResult::FAILED => {format!("FAILED -> FOUND COUNTEREXAMPLE\n")}
-            &PossibleResult::UNKNOWN => {format!("UNKNOWN -> VERIFICATION TIMEOUT\n")}
-            &PossibleResult::NOTHING => {format!("NOTHING TO VERIFY\n")}
-            _ => {format!("VERIFIED\n")}
-        }            
-    }
-    //Implement debug
-    
 
-}
 
 fn is_positive(a: &BigInt, field: &BigInt) -> bool{
     a <= &(field / BigInt::from(2))
@@ -63,46 +42,31 @@ pub struct TemplateVerification {
     pub field: BigInt,
     pub verbose: bool,
     pub verification_timeout: u64,
-    pub added_nodes: HashSet<usize>
-
 }
 
 impl TemplateVerification{
 
     pub fn new(
-        template_name: &String,
-        signals: LinkedList<usize>,
-        inputs: Vec<usize>,
-        outputs: Vec<usize>,
-        constraints: Vec<Constraint<usize>>,
-        implications_safety: Vec<(Vec<usize>, Vec<usize>)>,
-        field: &BigInt,
-        verification_timeout: u64, 
+        problem: &SafetyVerification
     ) -> TemplateVerification {
-        let mut fixed_constraints = Vec::new();
-        for c in constraints{
-            let mut new_c = c.clone();
-            Constraint::fix_constraint(&mut new_c, field);
-            fixed_constraints.push(new_c);
-        }
+
         let mut substitutions = HashMap::new();
-        for s in &signals{
+        for s in &problem.signals{
             substitutions.insert(*s, *s);
         }
 
         TemplateVerification {
-            template_name: template_name.clone(),
-            signals,
-            inputs,
-            outputs, 
-            implications_safety,
+            template_name: problem.template_name.clone(),
+            signals: problem.signals.clone(),
+            inputs: problem.inputs.clone(),
+            outputs: problem.outputs.clone(), 
+            implications_safety: problem.implications_safety.clone(),
             deductions: HashMap::new(),
             substitutions,
-            constraints: fixed_constraints,
-            field: field.clone(),
+            constraints: problem.constraints.clone(),
+            field: problem.field.clone(),
             verbose: false,      
-            verification_timeout, 
-            added_nodes: HashSet::new()
+            verification_timeout: problem.verification_timeout, 
         }
     }
 
@@ -269,16 +233,6 @@ impl TemplateVerification{
         } 
 
         solver.assert(&!all_outputs_equal);
-        //write the content of the solver to a file
-        //open the file
-        //count the number of smt2 files currently in the directory
-        let mut smt2_files = 0;
-        for entry in std::fs::read_dir(".").unwrap() {
-            let entry = entry.unwrap();
-            if entry.path().extension().is_some() && entry.path().extension().unwrap() == "smt2" {
-                smt2_files += 1;
-            }
-        }
 
         match solver.check(){
             SatResult::Sat =>{
@@ -1085,12 +1039,12 @@ pub fn normalize_constraint(c: Constraint<usize>, bounds: &HashMap<usize, Execut
         let new_c_b = c.b().clone();
         let mut new_c_c = c.c().clone();
 
-        ArithmeticExpression::divide_coefficients_by_constant(
+        let _ = ArithmeticExpression::divide_coefficients_by_constant(
                 coef,
             &mut new_c_a,
                 field,
             );
-        ArithmeticExpression::divide_coefficients_by_constant(
+        let _ = ArithmeticExpression::divide_coefficients_by_constant(
                 coef,
             &mut new_c_c,
                 field,
