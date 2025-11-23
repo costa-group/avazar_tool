@@ -1,24 +1,17 @@
 mod tree_constraints;
-use circom_algebra::num_traits::float::TotalOrder;
-use circom_algebra::num_traits::Float;
+mod input_user;
 use num_bigint_dig::BigInt;
 use tree_constraints::TreeConstraints;
-use std::ops::Bound;
 use std::collections::{HashMap, HashSet, BTreeMap};
 use circom_algebra::algebra::Constraint;
 use utils::read_r1cs::read_r1cs;
 use utils::read_original_structure::read_original_structure;
 use utils::structure::*;
-use std::env;
 use civer::tags_checking::PossibleResult;
+use input_user::Input;
+use std::path::PathBuf;
 
 
-
-use std::error::Error;
-use std::fs::File;
-use std::io::{BufReader, BufWriter};
-use std::path::Path;
-use std::io::Write;
 
 
 use ansi_term::Colour;
@@ -34,20 +27,42 @@ struct ResultInfo{
 }
 
 
-fn process_constraints(input: &str) -> Vec<Constraint<usize>>{
+fn process_constraints(input: &PathBuf) -> (
+    Vec<Constraint<usize>>,
+    Vec<usize>,
+    usize,
+    usize
+ ) {
+    let input = &format!("{}", input.display());
     let result = read_r1cs(input).unwrap();
     let constraint_list = result.constraints;
     let mut formatted_list = Vec::new();
     for (a, b, c) in constraint_list{
         formatted_list.push(Constraint::new(a,b,c));
     }
-    formatted_list
+    (
+        formatted_list,
+        result.signals,
+        result.header_data.public_outputs,
+        result.header_data.public_inputs + result.header_data.private_inputs,
+    )
 }
 
-fn process_structure(input: &str) -> 
+fn process_structure(
+    input: &Option<PathBuf>,
+    n_constraints: usize,
+    n_signals: usize,
+    n_outputs: usize,
+    n_inputs: usize,
+) -> 
 (StructureInfo, HashMap<usize, usize>, HashMap<usize, usize>, HashMap<usize, usize>){
     // Read the structure
-    let structure = read_structure(input).unwrap();
+    let structure  = if input.is_some(){
+        let input_str = &format!("{}", input.as_ref().unwrap().display());
+        read_structure(input_str).unwrap()
+    } else{
+        generate_empty_structure(n_constraints, n_signals, n_outputs, n_inputs)
+    };
     
     // Process the structure and return maps:
     // Map nodeid -> position in structure.nodes
@@ -112,28 +127,36 @@ fn main() {
 }
 
 fn start() -> Result<(), ()> {
-    let args: Vec<String> = env::args().collect();
+    let user_input = Input::new()?;
     
-    let constraints = process_constraints(&args[1]);
+    let (constraints,
+        signals,
+        n_outputs,
+        n_inputs)
+        = process_constraints(&user_input.input_r1cs);
     
     let (
         structure,
         nodeid2pos, 
         local_equivalence_classes, 
         structural_equivalence_classes
-    ) = process_structure(&args[2]);
+    ) = process_structure(&user_input.input_structure,
+        constraints.len(),
+        signals.len(),
+        n_outputs,
+        n_inputs
+    );
 
-    let timeout = &args[3];
+    let timeout: u64 = user_input.timeout;
     
-    let starting_constraints = if args.len() > 4{
-        let init_constraints = read_original_structure(&args[4]).unwrap();
+    let starting_constraints = if user_input.original_structure.is_some(){
+        let init_constraints = read_original_structure(user_input.original_structure.as_ref().unwrap()).unwrap();
         Some(init_constraints)
     } else{
         None
     };
 
-    let field_str = "21888242871839275222246405745257275088548364400416034343698204186575808495617";
-    let field = field_str.parse::<BigInt>().unwrap();
+    let field = user_input.prime;
 
     
     let mut results = ResultInfo{
@@ -183,7 +206,7 @@ fn process_node(
     //studied_eq_classes: &mut HashMap<usize, PossibleResult>,
     nodeid2pos: &HashMap<usize, usize>,
     field: &BigInt,
-    timeout: &str,
+    timeout: u64,
     results: &mut ResultInfo,
 ) {
 
@@ -194,9 +217,9 @@ fn process_node(
             
     // If the equivalence class of the node has not been studied, we process it.
     let constraint_tree = TreeConstraints::new(node);
-    let (result, duration, n_rounds, logs) = constraint_tree.check_tags(
+    let (result, _, n_rounds, _logs) = constraint_tree.check_tags(
         &field,
-        timeout.parse::<u64>().unwrap(),
+        timeout,
         &structure.nodes,
         &nodeid2pos, 
         &constraints 
@@ -263,7 +286,6 @@ fn compute_info_fails_original_template(
     original_structure: &BTreeMap<usize, String>
 ){
     let mut original_unverified_templates = HashSet::new();
-    let mut number_of_constraints_verified = 0;
     for node_id in &results.failed_nodes{
         let node_info = &structure.nodes[nodeid2pos[node_id]];
         for c in &node_info.constraints{

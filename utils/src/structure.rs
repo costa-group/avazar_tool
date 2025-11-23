@@ -1,6 +1,6 @@
-use serde::{Serialize, Deserialize};
+use serde::Deserialize;
 use std::fs::File;
-use std::io::{BufReader, BufWriter};
+use std::io::BufReader;
 use std::path::Path;
 use std::error::Error;
 
@@ -61,7 +61,7 @@ pub fn read_structure<P: AsRef<Path>>(path: P) -> Result<StructureInfo, Box<dyn 
     	}
     }
 
-    let mut structural_equivalence = Vec::new();
+    let structural_equivalence;
     if u.equivalency_structural.is_some() { 
     	structural_equivalence = u.equivalency_structural.unwrap(); 
     } else { 
@@ -75,4 +75,38 @@ pub fn read_structure<P: AsRef<Path>>(path: P) -> Result<StructureInfo, Box<dyn 
         structural_equivalency: structural_equivalence,
     };
     Ok(structure_info)
+}
+
+
+pub fn generate_empty_structure(
+    n_constraints: usize, 
+    n_signals:usize,
+    n_outputs: usize,
+    n_inputs: usize
+) -> StructureInfo{
+    
+
+    let aux_timing = TimingInfo{
+        clustering: 0.0,
+        dag_construction: 0.0,
+        equivalency: 0.0,
+        total: 0.0
+    };
+
+    let node = NodeInfo{
+        node_id: 0,
+        constraints: (0..n_constraints).collect(),
+        output_signals: (1.. n_outputs + 1).collect(),
+        input_signals: (n_outputs + 1..n_outputs + n_inputs + 1).collect(),
+        signals: (1..n_signals).collect(),
+        successors: vec![]
+    };
+    StructureInfo{
+        timing: aux_timing,
+        nodes: vec![node],
+        local_equivalency: vec![vec![0]],
+        structural_equivalency: vec![vec![0]],
+
+    }
+   
 }

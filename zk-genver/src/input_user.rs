@@ -1,0 +1,186 @@
+use std::path::PathBuf;
+use crate::BigInt;
+
+
+pub struct Input {
+    pub input_r1cs: PathBuf,
+    pub input_structure: Option<PathBuf>,
+    pub timeout: u64,
+    pub original_structure: Option<PathBuf>,
+    pub use_picus: bool,
+    pub use_civer: bool,
+    pub flag_verbose: bool,
+    pub prime: BigInt
+}
+
+
+impl Input {
+    pub fn new() -> Result<Input, ()> {
+        let matches = input_processing::view();
+        let input_r1cs = input_processing::get_input_r1cs(&matches)?;
+        let input_structure = input_processing::get_input_structure(&matches)?;
+        let timeout =  input_processing::get_timeout(&matches)?;
+        let original_structure = input_processing::get_original_structure(&matches)?;
+        let (use_picus, use_civer) = input_processing::get_solver(&matches)?;
+        let flag_verbose =  input_processing::get_flag_verbose(&matches);
+        let prime = input_processing::get_prime(&matches)?;
+
+        Result::Ok(Input {
+            input_r1cs,
+            input_structure,
+            timeout,
+            original_structure,
+            use_picus,
+            use_civer,
+            flag_verbose,
+            prime
+        })
+    }
+}
+
+
+mod input_processing {
+    use ansi_term::Colour;
+    use clap::{App, Arg, ArgMatches};
+    use std::path::{Path, PathBuf};
+    use crate::BigInt;
+
+    pub fn get_input_r1cs(matches: &ArgMatches) -> Result<PathBuf, ()> {
+        let route = Path::new(matches.value_of("input").unwrap()).to_path_buf();
+        if route.is_file() {
+            Result::Ok(route)
+        } else {
+            let route = if route.to_str().is_some() { ": ".to_owned() + route.to_str().unwrap()} else { "".to_owned() };
+            Result::Err(eprintln!("{}", Colour::Red.paint("Input file does not exist".to_owned() + &route)))
+        }
+    }
+
+    pub fn get_input_structure(matches: &ArgMatches) -> Result<Option<PathBuf>, ()> {
+        if matches.is_present("input_structure"){
+            let route = Path::new(matches.value_of("input_structure").unwrap()).to_path_buf();
+            if route.is_file() {
+                Result::Ok(Some(route))
+            } else {
+                Result::Err(eprintln!("{}", Colour::Red.paint("invalid input structure")))
+            }
+        } else{
+            Ok(None)
+        }
+    }
+
+    pub fn get_original_structure(matches: &ArgMatches) -> Result<Option<PathBuf>, ()> {
+        if matches.is_present("original_structure"){
+            let route = Path::new(matches.value_of("original_structure").unwrap()).to_path_buf();
+            if route.is_file() {
+                Result::Ok(Some(route))
+            } else {
+                Result::Err(eprintln!("{}", Colour::Red.paint("invalid original structure")))
+            }
+        } else{
+            Ok(None)
+        }
+    }
+
+    pub fn get_timeout(matches: &ArgMatches) -> Result<u64, ()> {
+        let timeout_argument = matches.value_of("timeout").unwrap();
+        let timeout = u64::from_str_radix(timeout_argument, 10);
+        if let Result::Ok(time) = timeout { 
+           Ok(time)
+        }
+        else { 
+            Result::Err(eprintln!("{}", Colour::Red.paint("invalid timeout")))
+        }
+    }
+
+    pub fn get_flag_verbose(matches: &ArgMatches) -> bool {
+        matches.is_present("flag_verbose")
+    }
+
+    pub fn get_prime(matches: &ArgMatches) -> Result<BigInt, ()>{
+        let prime_argument = matches.value_of("prime").unwrap();
+        let prime = prime_argument.parse::<BigInt>();
+        if let Result::Ok(p) = prime { 
+           Ok(p)
+        }
+        else { 
+            Result::Err(eprintln!("{}", Colour::Red.paint("invalid prime")))
+        }
+    }
+    
+    pub fn get_solver(matches: &ArgMatches) -> Result<(bool, bool),  ()> {
+        
+        match matches.is_present("solver"){
+            true => 
+               {
+                   let solver = matches.value_of("solver").unwrap();
+                   if solver == "civer"
+                      {
+                        Ok((true, false))
+                    } else if solver == "picus"{
+                        Ok((false, true))
+                    }
+                    else{
+                        Result::Err(eprintln!("{}", Colour::Red.paint("invalid solver")))
+                    }
+               }
+               
+            false => Ok((true, false)),
+        }
+    }
+
+    pub fn view() -> ArgMatches<'static> {
+        App::new("ZK-GENVER")
+            .about("General modular verifier for ZK-circuits")
+            .arg(
+                Arg::with_name("input")
+                    .multiple(false)
+                    .default_value("./circuit.circom")
+                    .help("Path to the R1CS constraint system to be verified"),
+            )
+            .arg(
+                Arg::with_name("original_structure")
+                    .long("original_structure")
+                    .hidden(false)
+                    .takes_value(true)
+                    .help("Original structure of the circuit. It can be used to return more significative errors")
+                    .display_order(520)
+            )
+            .arg(
+                Arg::with_name("input_structure")
+                    .long("input_structure")
+                    .hidden(false)
+                    .takes_value(true)
+                    .help("Structure in which the circuit is initially processed. If not given, the circuit is clusterized by ZK-GENVER")
+                    .display_order(460)
+            )
+            .arg(
+                Arg::with_name("timeout")
+                    .long("timeout")
+                    .takes_value(true)
+                    .hidden(false)
+                    .default_value("5000")
+                    .help("Timeout for the solvers")
+                    .display_order(500)
+            )
+            .arg(
+                Arg::with_name("solver")
+                    .long("solver")
+                    .takes_value(true)
+                    .hidden(false)
+                    .help("Solver to be used for the verification of the circuit. ZK-GENVER allows picus and civer")
+                    .display_order(480)
+            )
+            .arg (
+                Arg::with_name("prime")
+                    .short("prime")
+                    .long("prime")
+                    .takes_value(true)
+                    .default_value("21888242871839275222246405745257275088548364400416034343698204186575808495617")
+                    .display_order(600)
+                    .help("To choose the prime number to use to verify the circuit"),
+            )
+            
+            .get_matches()
+    }
+
+}

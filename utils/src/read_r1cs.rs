@@ -419,9 +419,9 @@ impl CustomGatesAppliedSection {
 
 //This struct contained all the sections
 pub struct R1CSData {
-    header_data: HeaderData,
+    pub header_data: HeaderData,
     pub constraints: ConstraintList,
-    signals: SignalList,
+    pub signals: SignalList,
     custom_gates: bool,
     custom_gates_used_data: Option<CustomGatesUsedData>,
     custom_gates_applied_data: Option<CustomGatesAppliedData>,
