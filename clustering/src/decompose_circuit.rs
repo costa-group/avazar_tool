@@ -3,6 +3,8 @@ use std::time::{Instant, Duration};
 use std::fmt::Debug;
 use serde::{Serialize};
 
+use circom_algebra::num_bigint::BigInt;
+use circuits_and_constraints::lightweight_circuit::LightweightCircuit;
 use circuits_and_constraints::circuit::Circuit;
 use circuits_and_constraints::constraint::Constraint;
 use circuit_graphing::directed_acyclic_graph::{NodeInfo};
@@ -19,6 +21,21 @@ pub struct StructureReader {
     nodes: Vec<NodeInfo>,
     equivalency_local: Option<Vec<Vec<usize>>>,
     equivalency_structural: Option<Vec<Vec<usize>>>
+}
+
+pub fn decompose_node<C: Constraint + Clone>(
+    prime: &BigInt, 
+    constraints: &Vec<C>, 
+    inputs: &[usize], 
+    outputs: &[usize],
+    resolution: Option<f64>,
+    target_size: Option<f64>,
+    equivalence_mode: EquivalenceMode,
+    graph_backend: GraphBackend,
+    debug: bool) -> StructureReader {
+
+    let lw_circ = LightweightCircuit::<C>::from(prime, constraints, inputs, outputs);
+    decompose_circuit(&lw_circ, resolution, target_size, equivalence_mode, graph_backend, debug)
 }
 
 pub fn decompose_circuit<C: Constraint, S: Circuit<C>>(

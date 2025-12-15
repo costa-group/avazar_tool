@@ -69,11 +69,7 @@ impl Circuit<R1CSConstraint> for R1CSData {
 
         }
 
-        let new_constraintlist = constraint_subset.into_iter().copied().map(|normi| &self.constraints[normi]).map(|con|
-            (con.0.iter().map(|(key, val)| (if key == &0 {0} else {signal_mapping[key]}, val.clone())).collect::<HashMap<usize, BigInt>>(),
-            con.1.iter().map(|(key, val)| (if key == &0 {0} else {signal_mapping[key]}, val.clone())).collect::<HashMap<usize, BigInt>>(),
-            con.2.iter().map(|(key, val)| (if key == &0 {0} else {signal_mapping[key]}, val.clone())).collect::<HashMap<usize, BigInt>>())
-        ).collect::<Vec<R1CSConstraint>>();
+        let new_constraintlist = constraint_subset.into_iter().copied().map(|normi| self.constraints[normi].substitute_signals(signal_mapping)).collect::<Vec<R1CSConstraint>>();
 
         R1CSData::from(
             self.prime().clone(), 0, signal_mapping.len() + 1,
