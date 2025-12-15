@@ -71,7 +71,7 @@ pub fn iterated_refinement<'a, C: Constraint, S: Circuit<C>, H: Hash + Eq>(
         let (mut break_on_next_norm, mut break_on_next_signal): (bool, bool) = (false, false);
 
         let mut normi_raw_fingerprints: Vec<Vec<Option<C::Fingerprint<'a, (usize, usize)>>>> = from_fn(n, |idx| (0..norms_being_fingerprinted[idx].len()).into_iter().map(|_| None).collect());
-        let mut sig_raw_fingerprints: Vec<Vec<Option<S::SignalFingerprint<'a, (usize, usize)>>>> = from_fn(n, |idx| (0..circuits[idx].n_wires()).into_iter().map(|_| None).collect());
+        let mut sig_raw_fingerprints: Vec<Vec<Option<C::Fingerprint<'a, (usize, usize)>>>> = from_fn(n, |idx| (0..circuits[idx].n_wires()).into_iter().map(|_| None).collect());
 
         let mut fingerprints_to_normi: Vec<HashMap<(usize, usize), Vec<usize>>> = from_fn(n, |_| HashMap::new());
         let mut fingerprints_to_signals: Vec<HashMap<(usize, usize), Vec<usize>>> = from_fn(n, |_| HashMap::new());
@@ -94,7 +94,7 @@ pub fn iterated_refinement<'a, C: Constraint, S: Circuit<C>, H: Hash + Eq>(
             circuits: &[&'a S], norms_being_fingerprinted: &'a [&'a Vec<C>], round_num: usize, strict_unique: bool,
             indices_to_update: Vec<HashSet<usize>>, signal_to_normi: &[&HashMap<usize, Vec<usize>>],
             per_iteration_postprocessing: Option<fn(&mut [HashMap<usize, (usize, usize)>], &mut [HashMap<(usize, usize), Vec<usize>>], &mut [HashMap<usize, (usize, usize)>], &mut [HashMap<(usize, usize), Vec<usize>>], &mut [HashMap<(usize, usize), usize>] ) -> ()>,
-            get_fingerprint: impl Fn(usize, &S, &mut Option<H>, &'a Vec<C>, &HashMap<usize, (usize, usize)>, &HashMap<usize, (usize, usize)>, &HashMap<usize, Vec<usize>>),
+            get_fingerprint: impl Fn(usize, &mut Option<H>, &'a Vec<C>, &HashMap<usize, (usize, usize)>, &HashMap<usize, (usize, usize)>, &HashMap<usize, Vec<usize>>),
             last_loop: bool, get_to_update: impl Fn(usize, usize) -> Vec<usize>,
             index_to_label: &mut [HashMap<usize, (usize, usize)>], label_to_indices: &mut Vec<HashMap<(usize, usize), Vec<usize>>>, 
             raw_fingerprints: &mut [Vec<Option<H>>], other_index_to_label: &mut [HashMap<usize, (usize, usize)>],
@@ -125,7 +125,7 @@ pub fn iterated_refinement<'a, C: Constraint, S: Circuit<C>, H: Hash + Eq>(
                     let raw_fingerprint: &mut Option<H> = &mut head[index - offset];
                     offset = index + 1;
 
-                    get_fingerprint(index, circuits[idx], raw_fingerprint , norms_being_fingerprinted[idx], &other_index_to_label[idx], &prev_index_to_label[idx], signal_to_normi[idx]);
+                    get_fingerprint(index, raw_fingerprint , norms_being_fingerprinted[idx], &other_index_to_label[idx], &prev_index_to_label[idx], signal_to_normi[idx]);
 
                     let new_hash: usize = assignment.get_assignment([raw_fingerprint.as_ref().unwrap()]);
                     index_to_label[idx].insert(index, (round_num, new_hash));
@@ -164,11 +164,11 @@ pub fn iterated_refinement<'a, C: Constraint, S: Circuit<C>, H: Hash + Eq>(
         }
 
         // Functions that calculate the fingerprint for each item type
-        let get_norm_fingerprint = |index: usize, _: &S, raw_fingerprint: &mut Option<C::Fingerprint<'a, (usize, usize)>>, norms_being_fingerprinted: &'a Vec<C>, other_index_to_label: &HashMap<usize, (usize, usize)>, _: &HashMap<usize, (usize, usize)>, _: &HashMap<usize, Vec<usize>>|
+        let get_norm_fingerprint = |index: usize, raw_fingerprint: &mut Option<C::Fingerprint<'a, (usize, usize)>>, norms_being_fingerprinted: &'a Vec<C>, other_index_to_label: &HashMap<usize, (usize, usize)>, _: &HashMap<usize, (usize, usize)>, _: &HashMap<usize, Vec<usize>>|
             norms_being_fingerprinted[index].fingerprint(raw_fingerprint, other_index_to_label);
 
-        let get_sig_fingerprint = |index: usize, circ: &S, raw_fingerprint: &mut Option<S::SignalFingerprint<'a, (usize, usize)>>, norms_being_fingerprinted: &'a Vec<C>, other_index_to_label: &HashMap<usize, (usize, usize)>, prev_index_to_label: &HashMap<usize, (usize, usize)>, signal_to_normi: &HashMap<usize, Vec<usize>>|
-            circ.fingerprint_signal(&index, raw_fingerprint, norms_being_fingerprinted, other_index_to_label, prev_index_to_label, signal_to_normi);
+        let get_sig_fingerprint = |index: usize, raw_fingerprint: &mut Option<C::Fingerprint<'a, (usize, usize)>>, norms_being_fingerprinted: &'a Vec<C>, other_index_to_label: &HashMap<usize, (usize, usize)>, prev_index_to_label: &HashMap<usize, (usize, usize)>, signal_to_normi: &HashMap<usize, Vec<usize>>|
+            C::fingerprint_signal(&index, raw_fingerprint, norms_being_fingerprinted, other_index_to_label, prev_index_to_label, signal_to_normi);
 
         // handle starting with signals
         if !start_with_constraints {

@@ -12,6 +12,15 @@ pub trait Constraint {
     fn normalise(&self, prime: &BigInt) -> Vec<Self> where Self: Sized;
     fn signals(&self) -> HashSet<usize>;
     fn fingerprint<'a, T: Hash + Eq + Default + Copy + Ord + Debug>(&'a self, fingerprint: &mut Option<Self::Fingerprint<'a, T>>, signal_to_fingerprint: &HashMap<usize, T>) -> ();
+    fn fingerprint_signal<'a, T: Hash + Eq + Default + Copy + Ord + Debug>(
+        signal: &usize, 
+        fingerprint: &mut Option<Self::Fingerprint<'a, T>>,
+        normalised_constraints: &'a Vec<Self>, 
+        normalised_constraint_to_fingerprints: &HashMap<usize, T>, 
+        prev_signal_to_fingerprint: &HashMap<usize, T>, 
+        signal_to_normi: &HashMap<usize, Vec<usize>>
+    ) -> () where Self: 'a + Sized;
+    
     fn is_nonlinear(&self) -> bool;
     fn get_coefficients(&self) -> impl Hash + Eq;
     fn add_random_constant_factor(&mut self, rng: &mut impl Rng, field: &BigInt) -> ();

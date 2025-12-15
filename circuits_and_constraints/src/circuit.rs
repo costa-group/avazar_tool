@@ -3,16 +3,13 @@ use rustsat::instances::ObjectVarManager;
 use rustsat::types::Clause;
 
 use std::collections::{HashMap, HashSet};
-use std::hash::{Hash};
-use std::cmp::{Eq};
 use rand::Rng;
-use std::fmt::Debug;
 
 use crate::constraint::{Constraint};
 
 pub trait Circuit<C: Constraint> {
 
-    type SignalFingerprint<'a, T: Hash + Eq + Default + Copy + Ord + Debug>: Hash + Eq + Clone + Debug where C: 'a;
+    // type SignalFingerprint<'a, T: Hash + Eq + Default + Copy + Ord + Debug>: Hash + Eq + Clone + Debug where C: 'a;
 
     fn new() -> Self;
 
@@ -37,15 +34,15 @@ pub trait Circuit<C: Constraint> {
     fn get_output_signals(&self) -> impl Iterator<Item = usize>;
     fn parse_file(&mut self, file: &str) -> ();
     
-    fn fingerprint_signal<'a, T: Hash + Eq + Default + Copy + Ord + Debug>(
-        &self, 
-        signal: &usize, 
-        fingerprint: &mut Option<Self::SignalFingerprint<'a, T>>,
-        normalised_constraints: &'a Vec<C>, 
-        normalised_constraint_to_fingerprints: &HashMap<usize, T>, 
-        prev_signal_to_fingerprint: &HashMap<usize, T>, 
-        signal_to_normi: &HashMap<usize, Vec<usize>>
-    ) -> () where C: 'a;
+    // fn fingerprint_signal<'a, T: Hash + Eq + Default + Copy + Ord + Debug>(
+    //     &self, 
+    //     signal: &usize, 
+    //     fingerprint: &mut Option<Self::SignalFingerprint<'a, T>>,
+    //     normalised_constraints: &'a Vec<C>, 
+    //     normalised_constraint_to_fingerprints: &HashMap<usize, T>, 
+    //     prev_signal_to_fingerprint: &HashMap<usize, T>, 
+    //     signal_to_normi: &HashMap<usize, Vec<usize>>
+    // ) -> () where C: 'a;
     
     fn take_subcircuit(
         &self, 
@@ -66,22 +63,6 @@ pub trait Circuit<C: Constraint> {
         signal_to_fingerprint: &[HashMap<usize, usize>; 2],
         is_singular_class: bool
     ) -> Vec<Clause>;
-
-    // fn normalise_constraints(&self) -> None:
-
-    //     if len(&self.normalised_constraints) != 0: 
-    //         warnings.warn("Attempting to normalised already normalised constraints")
-    //     else:
-
-    //         fn _normalised_constraint_building_step(coni: int, cons: Constraint):
-    //             norms = cons.normalise()
-    //             &self.normalised_constraints.extend(norms)
-    //             &self.normi_to_coni.extend(coni for _ in range(len(norms)))
-
-    //         deque(
-    //             maxlen=0,
-    //             iterable = itertools.starmap(_normalised_constraint_building_step, enumerate(&self.constraints))
-    //         )
 
     fn shuffle_signals(self, rng: &mut impl Rng) -> Self;
 }
