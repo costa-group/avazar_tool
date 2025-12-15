@@ -73,8 +73,8 @@ pub fn iterated_refinement<'a, C: Constraint, S: Circuit<C>, H: Hash + Eq>(
         let mut normi_raw_fingerprints: Vec<Vec<Option<C::Fingerprint<'a, (usize, usize)>>>> = from_fn(n, |idx| (0..norms_being_fingerprinted[idx].len()).into_iter().map(|_| None).collect());
         let mut sig_raw_fingerprints: Vec<Vec<Option<C::Fingerprint<'a, (usize, usize)>>>> = from_fn(n, |idx| (0..circuits[idx].n_wires()).into_iter().map(|_| None).collect());
 
-        let normi_to_raw_idx: Vec<HashMap<usize, usize>> = from_fn(n, |idx| (0..norms_being_fingerprinted[idx].len()).into_iter().enumerate().collect());
-        let sig_to_raw_idx: Vec<HashMap<usize, usize>> = from_fn(n, |idx| circuits[idx].get_signals().enumerate().collect());
+        let normi_to_raw_idx: Vec<HashMap<usize, usize>> = from_fn(n, |idx| (0..norms_being_fingerprinted[idx].len()).into_iter().enumerate().map(|(a, b)| (b, a)).collect());
+        let sig_to_raw_idx: Vec<HashMap<usize, usize>> = from_fn(n, |idx| circuits[idx].get_signals().enumerate().map(|(a, b)| (b, a)).collect());
 
         let mut fingerprints_to_normi: Vec<HashMap<(usize, usize), Vec<usize>>> = from_fn(n, |_| HashMap::new());
         let mut fingerprints_to_signals: Vec<HashMap<(usize, usize), Vec<usize>>> = from_fn(n, |_| HashMap::new());
