@@ -4,5 +4,9 @@ members = [
     "constant_tracking",
     "civer",
     "utils",
-    "zk-genver"
+    "zk-genver",
+    "circuits_and_constraints",
+    "circuit_graphing",
+    "clustering",
+    "equivalence"
 ]
