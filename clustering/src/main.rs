@@ -54,8 +54,7 @@ fn start(args: Args) -> Result<(), Box<dyn Error>> {
     // Pass circuit
     let circuit_parsing_timer = Instant::now();
     
-    let mut r1cs: R1CSData = R1CSData::new();
-    r1cs.parse_file(&args.filepath);
+    let r1cs = R1CSData::parse_file(&args.filepath);
     println!("Took {:?} to parse", circuit_parsing_timer.elapsed());
     
     let result = decompose_circuit(&r1cs, args.resolution, args.target_size, args.equivalence_mode, args.graph_backend, args.debug);

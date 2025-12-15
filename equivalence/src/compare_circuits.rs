@@ -130,7 +130,7 @@ pub fn compare_circuits_with_inits<C: Constraint, S: Circuit<C>>(
     // ########### ENCODING #############
     let encoding_timer = Instant::now();
 
-    let _formula = encode_comparison::<_, S>(normalised_constraints, &fingerprints_to_normi, &fingerprints_to_sig, &sig_fingerprints);
+    let _formula = encode_comparison(normalised_constraints, &fingerprints_to_normi, &fingerprints_to_sig, &sig_fingerprints);
 
     if let Err(reason) = _formula {return get_with_error(NonequivalentReason::Enc(reason), timing);}
 

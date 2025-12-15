@@ -27,9 +27,7 @@ fn main() {
     } else {
         println!("{} {:?}", args.file1path, args.file2path);
 
-        let (mut r1cs1, mut r1cs2) = (R1CSData::new(), R1CSData::new());
-        r1cs1.parse_file(&args.file1path); 
-        r1cs2.parse_file(&args.file2path.unwrap());
+        let  (r1cs1, r1cs2) = (R1CSData::parse_file(&args.file1path), R1CSData::parse_file(&args.file2path.unwrap()));
 
         println!("{:?}", compare_circuits(&[&r1cs1, &r1cs2], args.debug))
     }

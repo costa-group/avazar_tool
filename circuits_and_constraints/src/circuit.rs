@@ -1,7 +1,4 @@
 use circom_algebra::num_bigint::BigInt;
-use rustsat::instances::ObjectVarManager;
-use rustsat::types::Clause;
-
 use std::collections::{HashMap, HashSet};
 use rand::Rng;
 
@@ -9,16 +6,11 @@ use crate::constraint::{Constraint};
 
 pub trait Circuit<C: Constraint> {
 
-    // type SignalFingerprint<'a, T: Hash + Eq + Default + Copy + Ord + Debug>: Hash + Eq + Clone + Debug where C: 'a;
-
-    fn new() -> Self;
-
     fn prime(&self) -> &BigInt;
     fn n_constraints(&self) -> usize;
     fn n_wires(&self) -> usize;
     
     fn get_constraints(&self) -> &Vec<C>;
-    fn get_mut_constraints(&mut self) -> &mut Vec<C>;
 
     fn normalise_constraints(&self) -> Vec<C> {
         self.get_constraints().into_iter().flat_map(|cons| cons.normalise(self.prime()).into_iter()).collect()
@@ -32,17 +24,7 @@ pub trait Circuit<C: Constraint> {
     fn get_signals(&self) -> impl Iterator<Item = usize>;
     fn get_input_signals(&self) -> impl Iterator<Item = usize>;
     fn get_output_signals(&self) -> impl Iterator<Item = usize>;
-    fn parse_file(&mut self, file: &str) -> ();
-    
-    // fn fingerprint_signal<'a, T: Hash + Eq + Default + Copy + Ord + Debug>(
-    //     &self, 
-    //     signal: &usize, 
-    //     fingerprint: &mut Option<Self::SignalFingerprint<'a, T>>,
-    //     normalised_constraints: &'a Vec<C>, 
-    //     normalised_constraint_to_fingerprints: &HashMap<usize, T>, 
-    //     prev_signal_to_fingerprint: &HashMap<usize, T>, 
-    //     signal_to_normi: &HashMap<usize, Vec<usize>>
-    // ) -> () where C: 'a;
+    fn parse_file(file: &str) -> Self;
     
     fn take_subcircuit(
         &self, 
@@ -52,17 +34,10 @@ pub trait Circuit<C: Constraint> {
         signal_map: Option<&HashMap<usize,usize>>, 
         return_signal_mapping: Option<bool>
     ) -> Self;
-    
-    fn singular_class_requires_additional_constraints() -> bool;
+}
 
-    fn encode_single_norm_pair(
-        norms: &[&C; 2],
-        is_ordered: bool,
-        signal_pair_encoder: &mut ObjectVarManager,
-        fingerprint_to_signals: &[HashMap<usize, Vec<usize>>; 2],
-        signal_to_fingerprint: &[HashMap<usize, usize>; 2],
-        is_singular_class: bool
-    ) -> Vec<Clause>;
+pub trait ShuffleCircuit<C> {
 
+    fn get_mut_constraints(&mut self) -> &mut Vec<C>;
     fn shuffle_signals(self, rng: &mut impl Rng) -> Self;
 }

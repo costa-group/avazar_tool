@@ -4,6 +4,8 @@ use std::hash::{Hash};
 use std::cmp::{Eq};
 use rand::Rng;
 use std::fmt::Debug;
+use rustsat::instances::ObjectVarManager;
+use rustsat::types::Clause;
 
 pub trait Constraint {
 
@@ -26,4 +28,14 @@ pub trait Constraint {
     fn add_random_constant_factor(&mut self, rng: &mut impl Rng, field: &BigInt) -> ();
     fn shuffle_constraint_internals(&mut self, rng: &mut impl Rng) -> ();
     fn is_ordered(&self) -> bool;
+    fn singular_class_requires_additional_constraints() -> bool;
+
+    fn encode_single_norm_pair(
+        norms: &[&Self; 2],
+        is_ordered: bool,
+        signal_pair_encoder: &mut ObjectVarManager,
+        fingerprint_to_signals: &[HashMap<usize, Vec<usize>>; 2],
+        signal_to_fingerprint: &[HashMap<usize, usize>; 2],
+        is_singular_class: bool
+    ) -> Vec<Clause>;
 }

@@ -5,7 +5,7 @@ use std::cmp::{Eq, PartialEq, Ord, PartialOrd, Ordering};
 use std::hash::{Hash, Hasher};
 
 use crate::constraint::Constraint;
-use crate::circuit::Circuit;
+use crate::circuit::{ShuffleCircuit, Circuit};
 
 pub fn signals_to_constraints_with_them(
     cons: &Vec<impl Constraint>,
@@ -28,7 +28,7 @@ use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 use rand::seq::SliceRandom;
 
-pub fn circuit_shuffle<C: Constraint, S: Circuit<C>>(
+pub fn circuit_shuffle<C: Constraint, S: Circuit<C> + ShuffleCircuit<C>>(
     inputfile: &String, seed: u64, 
     add_constant_factor: bool,
     shuffle_constraint_order: bool,
@@ -36,11 +36,8 @@ pub fn circuit_shuffle<C: Constraint, S: Circuit<C>>(
     shuffle_constraint_internals: bool
 ) -> (S, S) {
 
-    let mut circ: S = S::new();
-    circ.parse_file(inputfile);
-
-    let mut circ_shuffled: S = S::new();
-    circ_shuffled.parse_file(&inputfile);
+    let circ = S::parse_file(inputfile);
+    let mut circ_shuffled = S::parse_file(&inputfile);
 
     let mut rng = ChaCha20Rng::seed_from_u64(seed);
     let mut add_constant_factor_rng = ChaCha20Rng::seed_from_u64(rng.random::<u64>());

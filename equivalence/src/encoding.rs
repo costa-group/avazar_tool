@@ -6,7 +6,6 @@ use std::array::from_fn;
 use thiserror::Error;
 
 use circuits_and_constraints::constraint::Constraint;
-use circuits_and_constraints::circuit::Circuit;
 
 #[derive(Debug, Error)]
 pub enum EncodingError {
@@ -16,7 +15,7 @@ pub enum EncodingError {
     NormHasNoValidPair(usize)
 }
 
-pub fn encode_comparison<C: Constraint, S: Circuit<C>>(
+pub fn encode_comparison<C: Constraint>(
     normalised_constraints: &[&Vec<C>; 2],
     fingerprint_to_normi: &[HashMap<usize, Vec<usize>>; 2],
     fingerprint_to_signals: &[HashMap<usize, Vec<usize>>; 2],
@@ -40,9 +39,9 @@ pub fn encode_comparison<C: Constraint, S: Circuit<C>>(
     for key in normi_keys_in_both.into_iter() {
 
         // if singular encode by singular, other encode generically
-        if S::singular_class_requires_additional_constraints() && fingerprint_to_normi[0][key].len() == 1 {
+        if C::singular_class_requires_additional_constraints() && fingerprint_to_normi[0][key].len() == 1 {
             let is_ordered = normalised_constraints[0][fingerprint_to_normi[0][key][0]].is_ordered();
-            let viable_pairs = S::encode_single_norm_pair(
+            let viable_pairs = C::encode_single_norm_pair(
                 &from_fn::<_, 2, _>(|idx| &normalised_constraints[idx][fingerprint_to_normi[idx][key][0]]),
                 is_ordered,
                 formula.var_manager_mut(),
@@ -54,7 +53,7 @@ pub fn encode_comparison<C: Constraint, S: Circuit<C>>(
             if viable_pairs.len() == 0 {return Err(EncodingError::NormHasNoValidPair(fingerprint_to_normi[0][key][0]));}
             viable_pairs.into_iter().for_each(|clause| formula.add_clause(clause));
         } else {
-            if let Err(error) = encode_single_norm_class::<C, S>(
+            if let Err(error) = encode_single_norm_class::<C>(
                 from_fn::<_, 2, _>(|idx| &fingerprint_to_normi[idx][key]),
                 normalised_constraints,
                 fingerprint_to_signals,
@@ -90,7 +89,7 @@ pub fn encode_comparison<C: Constraint, S: Circuit<C>>(
     Ok(formula)
 }
 
-fn encode_single_norm_class<C: Constraint, S: Circuit<C>>(
+fn encode_single_norm_class<C: Constraint,>(
     class: [&Vec<usize>; 2],
     normalised_constraints: &[&Vec<C>; 2],
     fingerprint_to_signals: &[HashMap<usize, Vec<usize>>; 2],
@@ -107,7 +106,7 @@ fn encode_single_norm_class<C: Constraint, S: Circuit<C>>(
         for normj in class[1].into_iter().copied() {
 
             // Get clauses implied by single-norm-pair
-            let mut ij_clauses = S::encode_single_norm_pair(
+            let mut ij_clauses = C::encode_single_norm_pair(
                 &[&normalised_constraints[0][normi], &normalised_constraints[1][normj]],
                 is_ordered,
                 formula.var_manager_mut(),
