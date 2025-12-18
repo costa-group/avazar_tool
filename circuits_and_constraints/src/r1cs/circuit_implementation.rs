@@ -1,5 +1,6 @@
 use circom_algebra::num_bigint::BigInt;
 use std::collections::{HashMap, HashSet};
+use std::borrow::Borrow;
 use rand::seq::SliceRandom;
 use rand::Rng;
 
@@ -15,18 +16,19 @@ impl Circuit<R1CSConstraint> for R1CSData {
     fn n_wires(&self) -> usize {self.header_data.total_wires}
     
     
-    fn get_constraints(&self) -> &Vec<R1CSConstraint> {&self.constraints}
+    fn get_constraints(&self) -> &Vec< impl Borrow<R1CSConstraint>> {&self.constraints}
 
     fn normi_to_coni(&self) -> &Vec<usize> {unimplemented!("This function is not implemented yet")}
     fn n_inputs(&self) -> usize {self.header_data.public_inputs + self.header_data.private_inputs}
     fn n_outputs(&self) -> usize {self.header_data.public_outputs}
-    fn signal_is_input(&self, signal: usize) -> bool {self.header_data.public_outputs < signal && signal <= self.header_data.public_inputs + self.header_data.private_inputs + self.header_data.public_outputs} 
-    fn signal_is_output(&self, signal: usize) -> bool {0 < signal && signal <= self.header_data.public_outputs}
+    fn signal_is_input(&self, signal: &usize) -> bool {let sig = *signal; self.header_data.public_outputs < sig && sig <= self.header_data.public_inputs + self.header_data.private_inputs + self.header_data.public_outputs} 
+    fn signal_is_output(&self, signal: &usize) -> bool {let sig = *signal; 0 < sig && sig <= self.header_data.public_outputs}
     fn get_signals(&self) -> impl Iterator<Item = usize> {1..self.header_data.total_wires}
     fn get_input_signals(&self) -> impl Iterator<Item = usize> {self.header_data.public_outputs+1..=self.header_data.public_inputs + self.header_data.private_inputs + self.header_data.public_outputs}
     fn get_output_signals(&self) -> impl Iterator<Item = usize> {1..=self.header_data.public_outputs}
     fn parse_file(file: &str) -> Self {read_r1cs(file).unwrap()}
     
+    type SubCircuit = R1CSData;
     fn take_subcircuit(
         &self, 
         constraint_subset: &Vec<usize>, 

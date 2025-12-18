@@ -97,7 +97,7 @@ pub fn compare_circuits_with_inits<C: Constraint, S: Circuit<C>>(
         if input_fingerprint_to_signal.is_none() {
             [(1, circuits[idx].get_output_signals().into_iter().collect()),
             (2, circuits[idx].get_input_signals().into_iter().collect()),
-            (3, circuits[idx].get_signals().filter(|&sig| !circuits[idx].signal_is_input(sig) && !circuits[idx].signal_is_output(sig)).collect())
+            (3, circuits[idx].get_signals().filter(|sig| !circuits[idx].signal_is_input(sig) && !circuits[idx].signal_is_output(sig)).collect())
             ].into_iter().collect()
         } else {
             HashMap::new()

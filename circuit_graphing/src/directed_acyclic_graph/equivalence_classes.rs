@@ -22,7 +22,7 @@ fn naive_equivalency_analysis<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
 
     for node_id in nodes.keys() {
 
-        let subcircuit = nodes[node_id].get_subcircuit();
+        let subcircuit: &S::SubCircuit = nodes[node_id].get_subcircuit();
 
         let mut equivalent = false;
         for (_class_ind, class) in classes.iter_mut().enumerate() {
@@ -92,7 +92,7 @@ fn fingerprint_subcircuits<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
 
     let indices: Vec<usize> = nodes.keys().copied().sorted().collect();
 
-    let circuits: Vec<&S> = indices.iter().map(|id| nodes[id].get_subcircuit()).collect();
+    let circuits: Vec<&S::SubCircuit> = indices.iter().map(|id| nodes[id].get_subcircuit()).collect();
     let norms_being_fingerprinted: Vec<&Vec<C>> = indices.iter().map(|id| &normalised_constraints_by_id[id]).collect();
     let sig_to_normi: Vec<&HashMap<usize, Vec<usize>>> = indices.iter().map(|id| &sig_to_normi_by_id[id]).collect();
     
@@ -100,7 +100,7 @@ fn fingerprint_subcircuits<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
     let init_fingerprints_to_signals: Vec<HashMap<usize, Vec<usize>>> = (0..n).into_iter().map(|idx|
         [(1, circuits[idx].get_output_signals().into_iter().collect()),
         (2, circuits[idx].get_input_signals().into_iter().collect()),
-        (3, circuits[idx].get_signals().filter(|&sig| !circuits[idx].signal_is_input(sig) && !circuits[idx].signal_is_output(sig)).collect())
+        (3, circuits[idx].get_signals().filter(|sig| !circuits[idx].signal_is_input(sig) && !circuits[idx].signal_is_output(sig)).collect())
         ].into_iter().filter(|val : &(usize, Vec<usize>)| val.1.len() > 0).collect() //filter so the num_distinct is accurate in iterated_refinement
     ).collect();
 

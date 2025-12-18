@@ -1,4 +1,5 @@
 use std::marker::PhantomData;
+use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet};
 use serde::{Serialize};
 
@@ -18,7 +19,7 @@ pub struct DAGNode<'a, C: Constraint + 'a, S: Circuit<C> + 'a> {
     output_signals : HashSet<usize>,
     successors : Vec<usize>,
     predecessors : Vec<usize>,
-    subcircuit : Option<S>,
+    subcircuit : Option<S::SubCircuit>,
 
     _phantom: PhantomData<C>
 }
@@ -72,14 +73,14 @@ impl<'a, C: Constraint + 'a, S: Circuit<C> + 'a> DAGNode<'a, C, S> {
         self.output_signals.extend(to_add)
     }
 
-    pub fn get_or_make_subcircuit(&mut self) -> &S {
+    pub fn get_or_make_subcircuit(&mut self) -> &S::SubCircuit {
         if self.subcircuit.is_none() {
             self.subcircuit = Some(self.circ.take_subcircuit(&self.constraints, Some(&self.input_signals), Some(&self.output_signals), None, None))
         }
         self.subcircuit.as_ref().unwrap()
     }
 
-    pub fn get_subcircuit(&self) -> &S {
+    pub fn get_subcircuit(&self) -> &S::SubCircuit {
         if self.subcircuit.is_none() {panic!("Tried to get subcircuit without instancing it first");}
         self.subcircuit.as_ref().unwrap()
     }
@@ -87,7 +88,7 @@ impl<'a, C: Constraint + 'a, S: Circuit<C> + 'a> DAGNode<'a, C, S> {
     pub fn to_json(self, inverse_signal_mapping: Option<&HashMap<usize, usize>>, inverse_constraint_mapping: Option<&HashMap<usize, usize>>) -> NodeInfo {
         let signal_mapping = |sig| if inverse_signal_mapping.is_none() {sig} else {*inverse_signal_mapping.unwrap().get(&sig).unwrap()};
         let constraint_mapping = |coni| if inverse_constraint_mapping.is_none() {coni} else {*inverse_constraint_mapping.unwrap().get(&coni).unwrap()};
-        let signals: Vec<usize> = self.constraints.iter().flat_map(|x| self.circ.get_constraints()[*x].signals()).collect::<HashSet<usize>>().into_iter().map(signal_mapping).collect();
+        let signals: Vec<usize> = self.constraints.iter().flat_map(|x| self.circ.get_constraints()[*x].borrow().signals()).collect::<HashSet<usize>>().into_iter().map(signal_mapping).collect();
 
         NodeInfo {
             node_id: self.id, 
@@ -120,11 +121,11 @@ impl<'a, C: Constraint + 'a, S: Circuit<C> + 'a> DAGNode<'a, C, S> {
 
         let circ: &'a S = nodes.get(&root).unwrap().circ;
 
-        let new_input_signals: HashSet<usize> = to_merge.iter().flat_map(|nkey| nodes.get(nkey).unwrap().input_signals.iter()).copied().filter(|&sig|
-            circ.signal_is_input(sig) || sig_to_coni.get(&sig).unwrap().iter().copied().any(|coni| new_predecessors.contains(&coni_to_node[coni]))
+        let new_input_signals: HashSet<usize> = to_merge.iter().flat_map(|nkey| nodes.get(nkey).unwrap().input_signals.iter()).copied().filter(|sig|
+            circ.signal_is_input(sig) || sig_to_coni.get(sig).unwrap().iter().copied().any(|coni| new_predecessors.contains(&coni_to_node[coni]))
         ).collect();
-        let new_output_signals: HashSet<usize> = to_merge.iter().flat_map(|nkey| nodes.get(nkey).unwrap().output_signals.iter()).copied().filter(|&sig|
-            circ.signal_is_output(sig) || sig_to_coni.get(&sig).unwrap().iter().copied().any(|coni| new_successors.contains(&coni_to_node[coni]))
+        let new_output_signals: HashSet<usize> = to_merge.iter().flat_map(|nkey| nodes.get(nkey).unwrap().output_signals.iter()).copied().filter(|sig|
+            circ.signal_is_output(sig) || sig_to_coni.get(sig).unwrap().iter().copied().any(|coni| new_successors.contains(&coni_to_node[coni]))
         ).collect();
 
         // fix coni_to_node
