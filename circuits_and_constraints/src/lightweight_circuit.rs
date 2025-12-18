@@ -13,18 +13,18 @@ pub struct LightweightCircuit<'a, C: Constraint> {
     signals: HashSet<usize>,
 }
 
-impl<'a, C: Constraint + Clone> LightweightCircuit<'a, C> {
+impl<'a, C: Constraint> LightweightCircuit<'a, C> {
 
-    pub fn from<'b>(prime: &'a BigInt, constraints: &'a [impl Borrow<C>], inputs: impl IntoIterator<Item = &'b usize>, outputs: impl IntoIterator<Item = &'b usize>) -> Self {
+    pub fn from<'b>(prime: &'a BigInt, constraints: impl IntoIterator<Item = &'a C>, inputs: impl IntoIterator<Item = &'b usize>, outputs: impl IntoIterator<Item = &'b usize>) -> Self {
 
-        let cloned_constraints: Vec<&'a C> = constraints.into_iter().map(|con| con.borrow()).collect();
+        let cloned_constraints: Vec<&'a C> = constraints.into_iter().collect();
         let signals: HashSet<usize> = cloned_constraints.iter().flat_map(|con| con.signals()).collect();
 
         Self {prime: prime, constraints: cloned_constraints, inputs: inputs.into_iter().copied().collect(), outputs: outputs.into_iter().copied().collect(), signals: signals}
     }
 }
 
-impl<'a, C: Constraint + Clone> Circuit<C> for LightweightCircuit<'a, C> {
+impl<'a, C: Constraint> Circuit<C> for LightweightCircuit<'a, C> {
 
     fn prime(&self) -> &BigInt {
         self.prime
@@ -75,13 +75,11 @@ impl<'a, C: Constraint + Clone> Circuit<C> for LightweightCircuit<'a, C> {
             (input_signals_unwrapped, output_signals_unwrapped) = (&inputs, &outputs);
         }
 
-        LightweightCircuit {
-            prime: self.prime,
-            constraints: constraint_subset.into_iter().copied().map(|coni| self.constraints[coni]).collect(),
-            inputs: input_signals_unwrapped.clone(),
-            outputs: output_signals_unwrapped.clone(),
-            signals: constraint_subset.into_iter().copied().flat_map(|coni| self.constraints[coni].signals()).collect()
-        }
-
+        LightweightCircuit::from(
+            self.prime,
+            constraint_subset.into_iter().copied().map(|coni| self.constraints[coni]),
+            input_signals_unwrapped,
+            output_signals_unwrapped
+        )
     }
 }

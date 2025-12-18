@@ -23,7 +23,7 @@ pub struct StructureReader {
     equivalency_structural: Option<Vec<Vec<usize>>>
 }
 
-pub fn decompose_node<C: Constraint + Clone>(
+pub fn decompose_node<C: Constraint>(
     prime: &BigInt, 
     constraints: &Vec<C>, 
     inputs: &[usize], 
