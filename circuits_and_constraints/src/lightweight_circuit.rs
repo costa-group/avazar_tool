@@ -17,10 +17,10 @@ impl<'a, C: Constraint> LightweightCircuit<'a, C> {
 
     pub fn from<'b>(prime: &'a BigInt, constraints: impl IntoIterator<Item = &'a C>, inputs: impl IntoIterator<Item = &'b usize>, outputs: impl IntoIterator<Item = &'b usize>) -> Self {
 
-        let cloned_constraints: Vec<&'a C> = constraints.into_iter().collect();
-        let signals: HashSet<usize> = cloned_constraints.iter().flat_map(|con| con.signals()).collect();
+        let constraints: Vec<&'a C> = constraints.into_iter().collect();
+        let signals: HashSet<usize> = constraints.iter().flat_map(|con| con.signals()).collect();
 
-        Self {prime: prime, constraints: cloned_constraints, inputs: inputs.into_iter().copied().collect(), outputs: outputs.into_iter().copied().collect(), signals: signals}
+        Self {prime: prime, constraints: constraints, inputs: inputs.into_iter().copied().collect(), outputs: outputs.into_iter().copied().collect(), signals: signals}
     }
 }
 

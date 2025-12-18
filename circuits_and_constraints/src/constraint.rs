@@ -30,8 +30,6 @@ pub trait Constraint {
     fn is_ordered(&self) -> bool;
     fn singular_class_requires_additional_constraints() -> bool;
 
-    fn substitute_signals(&self, signal_mapping: &HashMap<usize, usize>) -> Self;
-
     fn encode_single_norm_pair(
         norms: &[&Self; 2],
         is_ordered: bool,

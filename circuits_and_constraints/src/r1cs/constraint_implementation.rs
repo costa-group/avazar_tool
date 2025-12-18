@@ -256,12 +256,6 @@ impl Constraint for R1CSConstraint {
 
         clauses
     }
-
-    fn substitute_signals(&self, signal_mapping: &HashMap<usize, usize>) -> Self {
-        (self.0.iter().map(|(key, val)| (if key == &0 {0} else {signal_mapping[key]}, val.clone())).collect::<HashMap<usize, BigInt>>(),
-        self.1.iter().map(|(key, val)| (if key == &0 {0} else {signal_mapping[key]}, val.clone())).collect::<HashMap<usize, BigInt>>(),
-        self.2.iter().map(|(key, val)| (if key == &0 {0} else {signal_mapping[key]}, val.clone())).collect::<HashMap<usize, BigInt>>())
-    }
 }
 
 #[derive(Hash, PartialEq, Eq, Debug, Ord, PartialOrd)]
