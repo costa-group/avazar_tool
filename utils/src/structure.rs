@@ -1,11 +1,11 @@
-use serde::Deserialize;
+use serde::{Serialize,Deserialize};
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
 use std::error::Error;
 
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize,Serialize, Debug)]
 pub struct TimingInfo{
     pub clustering: f32,
     pub dag_construction: f32,
@@ -13,7 +13,7 @@ pub struct TimingInfo{
     pub total: f32,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize,Serialize, Debug, Clone)]
 pub struct NodeInfo{
     pub node_id: usize,
     pub constraints: Vec<usize>, //ids of the constraints
@@ -24,7 +24,7 @@ pub struct NodeInfo{
 
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Serialize, Debug)]
 pub struct StructureInfo {
     pub timing: TimingInfo,
     pub nodes: Vec<NodeInfo>, //all the nodes of the circuit, position of the node is not the position.
@@ -32,12 +32,12 @@ pub struct StructureInfo {
     pub structural_equivalency: Vec<Vec<usize>>, //equivalence classes, each inner vector is a class
 }
 
-#[derive(Deserialize, Debug)]
-struct StructureReader {
-    timing: TimingInfo,
-    nodes: Vec<NodeInfo>, //all the nodes of the circuit, position of the node is not the position.
-    equivalency_local: Option<Vec<Vec<usize>>>, //equivalence classes, each inner vector is a class
-    equivalency_structural: Option<Vec<Vec<usize>>>, //equivalence classes, each inner vector is a class
+#[derive(Deserialize, Serialize, Debug)]
+pub struct StructureReader {
+    pub timing: TimingInfo,
+    pub nodes: Vec<NodeInfo>, //all the nodes of the circuit, position of the node is not the position.
+    pub equivalency_local: Option<Vec<Vec<usize>>>, //equivalence classes, each inner vector is a class
+    pub equivalency_structural: Option<Vec<Vec<usize>>>, //equivalence classes, each inner vector is a class
 
  }
 
@@ -51,6 +51,12 @@ pub fn read_structure<P: AsRef<Path>>(path: P) -> Result<StructureInfo, Box<dyn 
     // Read the JSON contents of the file as an instance of `StructureInfo`.
     let u: StructureReader = serde_json::from_reader(reader)?;
 
+    Ok(transform_structure_reader(u))
+}
+
+pub fn transform_structure_reader(
+    u: StructureReader
+) -> StructureInfo{
     let mut local_equivalence = Vec::new();
     if u.equivalency_local.is_some() { 
     	local_equivalence = u.equivalency_local.unwrap(); 
@@ -68,13 +74,13 @@ pub fn read_structure<P: AsRef<Path>>(path: P) -> Result<StructureInfo, Box<dyn 
     	structural_equivalence = local_equivalence.clone();
     }
 
-    let structure_info = StructureInfo {
+    StructureInfo {
         timing: u.timing,
         nodes: u.nodes,
         local_equivalency: local_equivalence,
         structural_equivalency: structural_equivalence,
-    };
-    Ok(structure_info)
+    }
+
 }
 
 
