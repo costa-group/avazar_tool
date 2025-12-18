@@ -112,7 +112,7 @@ pub fn compare_circuits_with_inits<C: Constraint, S: Circuit<C>>(
     let fingerprinting_timer = Instant::now();
     
     let (fingerprints_to_normi, fingerprints_to_sig, _, sig_fingerprints) = iterated_refinement(
-        circuits, normalised_constraints, signals_to_normi, init_fingerprints_to_normi, init_fingerprints_to_signals, true, None, false, debug
+        normalised_constraints, signals_to_normi, init_fingerprints_to_normi, init_fingerprints_to_signals, true, None, false, debug
     );
 
     // fixing for compile-time checking

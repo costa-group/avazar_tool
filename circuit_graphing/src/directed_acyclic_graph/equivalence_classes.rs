@@ -105,7 +105,6 @@ fn fingerprint_subcircuits<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
     ).collect();
 
     let (fingerprints_to_normi, fingerprints_to_signals, _, _) = iterated_refinement(
-        &circuits,
         &norms_being_fingerprinted,
         &sig_to_normi,
         &init_fingerprints_to_normi.iter().collect::<Vec<&_>>(),

@@ -4,15 +4,13 @@ use std::cmp::Eq;
 use std::fmt::Debug;
 use itertools::Itertools;
 
-use circuits_and_constraints::circuit::Circuit;
 use circuits_and_constraints::constraint::Constraint;
 use utils::assignment::Assignment;
 
 // started with arrays, now need 1 runtime length...
 fn from_fn<T>(n: usize, f: impl FnMut(usize) -> T) -> Vec<T> {(0..n).into_iter().map(f).collect()}
 
-pub fn iterated_refinement<'a, C: Constraint, S: Circuit<C>, H: Hash + Eq>(
-        circuits: &[&'a S],
+pub fn iterated_refinement<'a, C: Constraint, H: Hash + Eq>(
         norms_being_fingerprinted: &'a [&'a Vec<C>],
         signal_to_normi: &[&HashMap<usize, Vec<usize>>],
         init_fingerprints_to_normi: &[&HashMap<H, Vec<usize>>],
@@ -23,18 +21,16 @@ pub fn iterated_refinement<'a, C: Constraint, S: Circuit<C>, H: Hash + Eq>(
         debug: bool
     ) -> (Vec<HashMap<usize, Vec<usize>>>, Vec<HashMap<usize, Vec<usize>>>, Vec<HashMap<usize, usize>>, Vec<HashMap<usize, usize>>) {
 
-    let n: usize = circuits.len();
-    if norms_being_fingerprinted.len() != n || signal_to_normi.len() != n || init_fingerprints_to_normi.len() != n || init_fingerprints_to_signals.len() != n {panic!("passed inputs of different_sizes to fingerprinting");};
+    let n: usize = norms_being_fingerprinted.len();
+    if signal_to_normi.len() != n || init_fingerprints_to_normi.len() != n || init_fingerprints_to_signals.len() != n {panic!("passed inputs of different_sizes to fingerprinting");};
 
-    let signal_sets: Vec<HashSet<usize>> = from_fn(n, |idx| circuits[idx].get_signals().collect());
+    let signal_sets: Vec<HashSet<usize>> = from_fn(n, |idx| norms_being_fingerprinted[idx].into_iter().flat_map(|norm| norm.signals()).collect());
 
     let mut norm_fingerprints: Vec<HashMap<usize, (usize, usize)>> = from_fn(n, |_| HashMap::new());
     let mut sig_fingerprints: Vec<HashMap<usize, (usize, usize)>> = from_fn(n, |_| HashMap::new());
 
-    let mut signals_to_update: Vec<HashSet<usize>>;
-
     let (init_num_singular_norm_fingerprints, mut norms_to_update) = iterated_refinement_preprocessing(init_fingerprints_to_normi, &mut norm_fingerprints, !start_with_constraints as usize + 1, strict_unique);
-    let (init_num_singular_sig_fingerprints, init_signals_to_update) = iterated_refinement_preprocessing(init_fingerprints_to_signals, &mut sig_fingerprints, start_with_constraints as usize + 1, strict_unique);
+    let (init_num_singular_sig_fingerprints, mut signals_to_update) = iterated_refinement_preprocessing(init_fingerprints_to_signals, &mut sig_fingerprints, start_with_constraints as usize + 1, strict_unique);
 
     fn exit_postprocessing(index_to_label_and_roundnum: &[HashMap<usize, (usize, usize)>]) -> (Vec<HashMap<usize, Vec<usize>>>, Vec<HashMap<usize, usize>>) {
             let n = index_to_label_and_roundnum.len();
@@ -55,7 +51,7 @@ pub fn iterated_refinement<'a, C: Constraint, S: Circuit<C>, H: Hash + Eq>(
             (label_to_indices, index_to_label)
         }
 
-    let (mut any_norms_to_update, mut any_sigs_to_update): (bool, bool) = (norms_to_update.iter().any(|arr| arr.len() > 0), init_signals_to_update.iter().any(|arr| arr.len() > 0));
+    let (mut any_norms_to_update, mut any_sigs_to_update): (bool, bool) = (norms_to_update.iter().any(|arr| arr.len() > 0), signals_to_update.iter().any(|arr| arr.len() > 0));
 
     if !any_norms_to_update && !any_sigs_to_update {
         // TODO: these might not line up at first !!
@@ -71,10 +67,10 @@ pub fn iterated_refinement<'a, C: Constraint, S: Circuit<C>, H: Hash + Eq>(
         let (mut break_on_next_norm, mut break_on_next_signal): (bool, bool) = (false, false);
 
         let mut normi_raw_fingerprints: Vec<Vec<Option<C::Fingerprint<'a, (usize, usize)>>>> = from_fn(n, |idx| (0..norms_being_fingerprinted[idx].len()).into_iter().map(|_| None).collect());
-        let mut sig_raw_fingerprints: Vec<Vec<Option<C::Fingerprint<'a, (usize, usize)>>>> = from_fn(n, |idx| (0..circuits[idx].n_wires()).into_iter().map(|_| None).collect());
+        let mut sig_raw_fingerprints: Vec<Vec<Option<C::Fingerprint<'a, (usize, usize)>>>> = from_fn(n, |idx| (0..signal_sets[idx].len()).into_iter().map(|_| None).collect());
 
         let normi_to_raw_idx: Vec<HashMap<usize, usize>> = from_fn(n, |idx| (0..norms_being_fingerprinted[idx].len()).into_iter().enumerate().map(|(a, b)| (b, a)).collect());
-        let sig_to_raw_idx: Vec<HashMap<usize, usize>> = from_fn(n, |idx| circuits[idx].get_signals().enumerate().map(|(a, b)| (b, a)).collect());
+        let sig_to_raw_idx: Vec<HashMap<usize, usize>> = from_fn(n, |idx| signal_sets[idx].iter().copied().enumerate().map(|(a, b)| (b, a)).collect());
 
         let mut fingerprints_to_normi: Vec<HashMap<(usize, usize), Vec<usize>>> = from_fn(n, |_| HashMap::new());
         let mut fingerprints_to_signals: Vec<HashMap<(usize, usize), Vec<usize>>> = from_fn(n, |_| HashMap::new());
@@ -93,8 +89,8 @@ pub fn iterated_refinement<'a, C: Constraint, S: Circuit<C>, H: Hash + Eq>(
         // this lets 0 be some unique check round_num value.
         let mut round_num = 3;
 
-        fn loop_iteration<'a, C: Constraint, S: Circuit<C>, H: 'a + Hash + Eq + Clone + Debug>(
-            circuits: &[&'a S], norms_being_fingerprinted: &'a [&'a Vec<C>], round_num: usize, strict_unique: bool,
+        fn loop_iteration<'a, C: Constraint, H: 'a + Hash + Eq + Clone + Debug>(
+            norms_being_fingerprinted: &'a [&'a Vec<C>], round_num: usize, strict_unique: bool,
             indices_to_update: Vec<HashSet<usize>>, signal_to_normi: &[&HashMap<usize, Vec<usize>>],
             per_iteration_postprocessing: Option<fn(&mut [HashMap<usize, (usize, usize)>], &mut [HashMap<(usize, usize), Vec<usize>>], &mut [HashMap<usize, (usize, usize)>], &mut [HashMap<(usize, usize), Vec<usize>>], &mut [HashMap<(usize, usize), usize>] ) -> ()>,
             get_fingerprint: impl Fn(usize, &mut Option<H>, &'a Vec<C>, &HashMap<usize, (usize, usize)>, &HashMap<usize, (usize, usize)>, &HashMap<usize, Vec<usize>>),
@@ -106,7 +102,7 @@ pub fn iterated_refinement<'a, C: Constraint, S: Circuit<C>, H: Hash + Eq>(
             prev_distinct_labels: &mut Vec<usize>, num_singular_labels: &mut HashMap<usize, usize>, other_num_singular: &HashMap<usize, usize>, debug: bool
         ) -> (bool, Vec<HashSet<usize>>) {
 
-            let n = circuits.len();
+            let n = norms_being_fingerprinted.len();
 
             if debug {
                 println!("----------------------- {:?} ----------------------", round_num);
@@ -173,24 +169,24 @@ pub fn iterated_refinement<'a, C: Constraint, S: Circuit<C>, H: Hash + Eq>(
         let get_sig_fingerprint = |index: usize, raw_fingerprint: &mut Option<C::Fingerprint<'a, (usize, usize)>>, norms_being_fingerprinted: &'a Vec<C>, other_index_to_label: &HashMap<usize, (usize, usize)>, prev_index_to_label: &HashMap<usize, (usize, usize)>, signal_to_normi: &HashMap<usize, Vec<usize>>|
             C::fingerprint_signal(&index, raw_fingerprint, norms_being_fingerprinted, other_index_to_label, prev_index_to_label, signal_to_normi);
 
-        // handle starting with signals
+        // The first iteration is different than the rest - with how to_update is selected - the 3 extra loop_iteration calls copied here avoid 1 clone -- i.e. the behaviour is otherwise the same but this avoids 1 clone
+        //      The compiler is not sufficiently clever to statically prove that we never don't initialise a moved value so this is here...
         if !start_with_constraints {
-            (break_on_next_signal, _) = loop_iteration(circuits, norms_being_fingerprinted, round_num, strict_unique,
-                init_signals_to_update.clone(), signal_to_normi, per_iteration_postprocessing, get_sig_fingerprint, 
+            let new_norms_to_update;
+            (break_on_next_signal, new_norms_to_update) = loop_iteration(norms_being_fingerprinted, round_num, strict_unique,
+                signals_to_update, signal_to_normi, per_iteration_postprocessing, get_sig_fingerprint, 
                 !break_on_next_norm && !break_on_next_signal, get_to_update_signal,
                 &mut sig_fingerprints, &mut fingerprints_to_signals, &sig_to_raw_idx, &mut sig_raw_fingerprints, &mut norm_fingerprints,
                 &mut prev_sig_to_fingerprints, &mut prev_fingerprints_to_sig, &mut prev_fingerprints_to_sig_count,
                 &mut prev_normi_to_fingerprints, &mut previous_distinct_sig_fingerprints, 
                 &mut num_singular_sig_fingerprints, &num_singular_norm_fingerprints, debug
             );
+            norms_to_update = from_fn(n, |idx| &new_norms_to_update[idx] | &norms_to_update[idx]);
             any_norms_to_update = norms_to_update.iter().any(|arr| arr.len() > 0);
             round_num += 1;
-        }
-
-        while any_norms_to_update {
-            // Run loop for norms
-            if break_on_next_norm {break;}
-            (break_on_next_norm, signals_to_update) = loop_iteration(circuits, norms_being_fingerprinted, round_num, strict_unique,
+        } else {
+            let new_signals_to_update;
+            (break_on_next_norm, new_signals_to_update) = loop_iteration(norms_being_fingerprinted, round_num, strict_unique,
                 norms_to_update, signal_to_normi, per_iteration_postprocessing, get_norm_fingerprint, 
                 break_on_next_norm || break_on_next_signal, get_to_update_normi,
                 &mut norm_fingerprints, &mut fingerprints_to_normi, &normi_to_raw_idx, &mut normi_raw_fingerprints, &mut sig_fingerprints,
@@ -198,13 +194,10 @@ pub fn iterated_refinement<'a, C: Constraint, S: Circuit<C>, H: Hash + Eq>(
                 &mut prev_sig_to_fingerprints, &mut previous_distinct_norm_fingerprints, 
                 &mut num_singular_norm_fingerprints, &num_singular_sig_fingerprints, debug
             );
-            if round_num == 3 {signals_to_update = init_signals_to_update.clone();} // ensure we encode structural at least once
-            any_sigs_to_update = signals_to_update.iter().any(|arr| arr.len() > 0);
             round_num += 1;
 
-            // Run loop for signals
-            if !any_sigs_to_update || break_on_next_signal {break;}
-            (break_on_next_signal, norms_to_update) = loop_iteration(circuits, norms_being_fingerprinted, round_num, strict_unique,
+            signals_to_update = from_fn(n, |idx| &new_signals_to_update[idx] | &signals_to_update[idx]);
+            (break_on_next_signal, norms_to_update) = loop_iteration(norms_being_fingerprinted, round_num, strict_unique,
                 signals_to_update, signal_to_normi, per_iteration_postprocessing, get_sig_fingerprint, 
                 break_on_next_norm || break_on_next_signal, get_to_update_signal,
                 &mut sig_fingerprints, &mut fingerprints_to_signals, &sig_to_raw_idx, &mut sig_raw_fingerprints, &mut norm_fingerprints,
@@ -214,8 +207,33 @@ pub fn iterated_refinement<'a, C: Constraint, S: Circuit<C>, H: Hash + Eq>(
             );
             any_norms_to_update = norms_to_update.iter().any(|arr| arr.len() > 0);
             round_num += 1;
+        }
+        while any_norms_to_update && !break_on_next_norm {
+            // Run loop for norms
+            //  Function call split here to avoid another clone
+            (break_on_next_norm, signals_to_update) = loop_iteration(norms_being_fingerprinted, round_num, strict_unique,
+                norms_to_update, signal_to_normi, per_iteration_postprocessing, get_norm_fingerprint, 
+                break_on_next_norm || break_on_next_signal, get_to_update_normi,
+                &mut norm_fingerprints, &mut fingerprints_to_normi, &normi_to_raw_idx, &mut normi_raw_fingerprints, &mut sig_fingerprints,
+                &mut prev_normi_to_fingerprints, &mut prev_fingerprints_to_normi, &mut prev_fingerprints_to_normi_count,
+                &mut prev_sig_to_fingerprints, &mut previous_distinct_norm_fingerprints, 
+                &mut num_singular_norm_fingerprints, &num_singular_sig_fingerprints, debug
+            );
+            any_sigs_to_update = signals_to_update.iter().any(|arr| arr.len() > 0);
+            round_num += 1;
 
-            
+            // Run loop for signals
+            if !any_sigs_to_update || break_on_next_signal {break;}
+            (break_on_next_signal, norms_to_update) = loop_iteration(norms_being_fingerprinted, round_num, strict_unique,
+                signals_to_update, signal_to_normi, per_iteration_postprocessing, get_sig_fingerprint, 
+                break_on_next_norm || break_on_next_signal, get_to_update_signal,
+                &mut sig_fingerprints, &mut fingerprints_to_signals, &sig_to_raw_idx, &mut sig_raw_fingerprints, &mut norm_fingerprints,
+                &mut prev_sig_to_fingerprints, &mut prev_fingerprints_to_sig, &mut prev_fingerprints_to_sig_count,
+                &mut prev_normi_to_fingerprints, &mut previous_distinct_sig_fingerprints, 
+                &mut num_singular_sig_fingerprints, &num_singular_norm_fingerprints, debug
+            );
+            any_norms_to_update = norms_to_update.iter().any(|arr| arr.len() > 0);
+            round_num += 1;            
         };
 
         let (return_fingerprints_to_normi, return_norm_fingerprints) = exit_postprocessing(&norm_fingerprints);
