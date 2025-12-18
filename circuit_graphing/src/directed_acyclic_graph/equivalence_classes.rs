@@ -22,7 +22,7 @@ fn naive_equivalency_analysis<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
 
     for node_id in nodes.keys() {
 
-        let subcircuit: &S::SubCircuit = nodes[node_id].get_subcircuit();
+        let subcircuit: &S::SubCircuit<'a> = nodes[node_id].get_subcircuit();
 
         let mut equivalent = false;
         for (_class_ind, class) in classes.iter_mut().enumerate() {
@@ -92,7 +92,7 @@ fn fingerprint_subcircuits<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
 
     let indices: Vec<usize> = nodes.keys().copied().sorted().collect();
 
-    let circuits: Vec<&S::SubCircuit> = indices.iter().map(|id| nodes[id].get_subcircuit()).collect();
+    let circuits: Vec<&S::SubCircuit<'a>> = indices.iter().map(|id| nodes[id].get_subcircuit()).collect();
     let norms_being_fingerprinted: Vec<&Vec<C>> = indices.iter().map(|id| &normalised_constraints_by_id[id]).collect();
     let sig_to_normi: Vec<&HashMap<usize, Vec<usize>>> = indices.iter().map(|id| &sig_to_normi_by_id[id]).collect();
     

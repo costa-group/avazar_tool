@@ -27,15 +27,15 @@ pub trait Circuit<C: Constraint> {
     fn get_output_signals(&self) -> impl Iterator<Item = usize>;
     fn parse_file(file: &str) -> Self;
     
-    type SubCircuit: Circuit<C>;
-    fn take_subcircuit(
-        &self, 
+    type SubCircuit<'a>: Circuit<C> where Self: 'a;
+    fn take_subcircuit<'a>(
+        &'a self, 
         constraint_subset: &Vec<usize>, 
         input_signals: Option<&HashSet<usize>>, 
         output_signals: Option<&HashSet<usize>>, 
         signal_map: Option<&HashMap<usize,usize>>, 
         return_signal_mapping: Option<bool>
-    ) -> Self::SubCircuit;
+    ) -> Self::SubCircuit<'a> where Self: 'a;
 }
 
 pub trait ShuffleCircuit<C> {

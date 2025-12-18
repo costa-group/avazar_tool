@@ -48,15 +48,15 @@ impl<'a, C: Constraint> Circuit<C> for LightweightCircuit<'a, C> {
     fn get_output_signals(&self) -> impl Iterator<Item = usize> {self.outputs.iter().copied()}
     fn parse_file(_file: &str) -> Self {unimplemented!("LightweightCircuit does not support file parsing")}
     
-    type SubCircuit = LightweightCircuit<'a, C>;
-    fn take_subcircuit(
-        &self, 
+    type SubCircuit<'b> = LightweightCircuit<'b, C> where Self: 'b;
+    fn take_subcircuit<'b>(
+        &'b self, 
         constraint_subset: &Vec<usize>, 
         input_signals: Option<&HashSet<usize>>, 
         output_signals: Option<&HashSet<usize>>, 
         signal_map: Option<&HashMap<usize,usize>>, 
         _return_signal_mapping: Option<bool>
-    ) -> Self::SubCircuit {
+    ) -> Self::SubCircuit<'b> where Self: 'b{
 
         
         let input_signals_unwrapped: &HashSet<usize>;

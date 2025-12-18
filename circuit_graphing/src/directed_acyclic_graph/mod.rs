@@ -19,7 +19,7 @@ pub struct DAGNode<'a, C: Constraint + 'a, S: Circuit<C> + 'a> {
     output_signals : HashSet<usize>,
     successors : Vec<usize>,
     predecessors : Vec<usize>,
-    subcircuit : Option<S::SubCircuit>,
+    subcircuit : Option<S::SubCircuit<'a>>,
 
     _phantom: PhantomData<C>
 }
@@ -73,14 +73,14 @@ impl<'a, C: Constraint + 'a, S: Circuit<C> + 'a> DAGNode<'a, C, S> {
         self.output_signals.extend(to_add)
     }
 
-    pub fn get_or_make_subcircuit(&mut self) -> &S::SubCircuit {
+    pub fn get_or_make_subcircuit(&mut self) -> &S::SubCircuit<'a> {
         if self.subcircuit.is_none() {
             self.subcircuit = Some(self.circ.take_subcircuit(&self.constraints, Some(&self.input_signals), Some(&self.output_signals), None, None))
         }
         self.subcircuit.as_ref().unwrap()
     }
 
-    pub fn get_subcircuit(&self) -> &S::SubCircuit {
+    pub fn get_subcircuit(&self) -> &S::SubCircuit<'a> {
         if self.subcircuit.is_none() {panic!("Tried to get subcircuit without instancing it first");}
         self.subcircuit.as_ref().unwrap()
     }

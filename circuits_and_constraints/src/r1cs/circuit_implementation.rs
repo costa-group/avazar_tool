@@ -5,9 +5,9 @@ use rand::seq::SliceRandom;
 use rand::Rng;
 
 use utils::read_r1cs::read_r1cs;
-use super::{R1CSConstraint, R1CSData, SignalList, HeaderData};
+use super::{R1CSConstraint, R1CSData, HeaderData};
 use crate::circuit::{ShuffleCircuit, Circuit};
-use crate::constraint::Constraint;
+use crate::lightweight_circuit::LightweightCircuit;
 
 impl Circuit<R1CSConstraint> for R1CSData {
 
@@ -28,59 +28,40 @@ impl Circuit<R1CSConstraint> for R1CSData {
     fn get_output_signals(&self) -> impl Iterator<Item = usize> {1..=self.header_data.public_outputs}
     fn parse_file(file: &str) -> Self {read_r1cs(file).unwrap()}
     
-    type SubCircuit = R1CSData;
-    fn take_subcircuit(
-        &self, 
+    type SubCircuit<'a> = LightweightCircuit<'a, R1CSConstraint> where Self: 'a;
+    fn take_subcircuit<'a>(
+        &'a self, 
         constraint_subset: &Vec<usize>, 
         input_signals: Option<&HashSet<usize>>, 
         output_signals: Option<&HashSet<usize>>, 
         signal_map: Option<&HashMap<usize,usize>>, 
         _return_signal_mapping: Option<bool> // TODO: implement in the mapping overhoal
-    ) -> R1CSData {
+    ) -> LightweightCircuit<'a, R1CSConstraint> where Self: 'a {
         // Assumes correct inputs
 
-        // more annoying type-checking stuff
-        let signal_mapping_: HashMap<usize, usize>;
-        let signal_mapping: &HashMap<usize, usize>;
-
-        let n_inputs: usize;
-        let n_outputs: usize;
+        let input_signals_unwrapped: &HashSet<usize>;
+        let output_signals_unwrapped: &HashSet<usize>;
+        let inputs: HashSet<usize>;
+        let outputs: HashSet<usize>;
 
         // Construct the mapping
         if signal_map.is_none() {
             // construct from input/output_signals
-
-            let (inputs, outputs) = (input_signals.unwrap(), output_signals.unwrap());
-
-            if inputs.intersection(outputs).count() > 0 {panic!("Gave overlapping input/output to take_subcircuit");}
-
-            signal_mapping_ = outputs.iter().copied().chain(inputs.iter().copied()).chain(
-                constraint_subset.into_iter().flat_map(|cons| self.constraints[*cons].signals().into_iter()).collect::<HashSet<_>>().difference(&outputs.iter().chain(inputs.iter()).copied().collect::<HashSet<_>>()).copied()
-            ).enumerate().map(|(idx, val)| (val, idx+1)).collect();
-
-            n_inputs = inputs.len();
-            n_outputs = outputs.len();
-
-            signal_mapping = &signal_mapping_;
+            (input_signals_unwrapped, output_signals_unwrapped) = (input_signals.unwrap(), output_signals.unwrap());
         } else {
-
-            signal_mapping = signal_map.unwrap();
-
-            n_inputs = self.get_input_signals().filter(|sig| signal_mapping.get(sig).is_some()).count();
-            n_outputs = self.get_output_signals().filter(|sig| signal_mapping.get(sig).is_some()).count();
-
+            let signal_mapping = signal_map.unwrap();
+            inputs = signal_mapping.keys().copied().filter(|sig| self.signal_is_input(sig)).collect();
+            outputs = signal_mapping.keys().copied().filter(|sig| self.signal_is_output(sig)).collect();
+            (input_signals_unwrapped, output_signals_unwrapped) = (&inputs, &outputs);
         }
+        let self_constraints = self.get_constraints();
 
-        let new_constraintlist = constraint_subset.into_iter().copied().map(|normi| self.constraints[normi].substitute_signals(signal_mapping)).collect::<Vec<R1CSConstraint>>();
-
-        R1CSData::from(
-            self.prime().clone(), 0, signal_mapping.len() + 1,
-            n_outputs, n_inputs, 0, 0,
-            new_constraintlist.len(),
-            new_constraintlist,
-            SignalList::new(),
-            false, None, None
-        ) 
+        LightweightCircuit::from(
+            self.prime(),
+            constraint_subset.into_iter().copied().map(|coni| self_constraints[coni].borrow()),
+            input_signals_unwrapped,
+            output_signals_unwrapped
+        )
     }
 }
 
