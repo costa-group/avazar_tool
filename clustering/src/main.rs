@@ -20,7 +20,8 @@ mod argument_parsing;
 pub mod decompose_circuit;
 
 
-use crate::decompose_circuit::{StructureReader, decompose_circuit};
+use utils::structure::StructureReader;
+use crate::decompose_circuit::decompose_circuit;
 use crate::argument_parsing::{Args};
 use utils::read_r1cs::R1CSData;
 use circuits_and_constraints::circuit::Circuit;

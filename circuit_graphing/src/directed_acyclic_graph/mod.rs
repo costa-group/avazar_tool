@@ -3,6 +3,7 @@ use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet};
 use serde::{Serialize};
 
+use utils::structure::NodeInfo;
 use circuits_and_constraints::constraint::Constraint;
 use circuits_and_constraints::circuit::Circuit;
 
@@ -22,16 +23,6 @@ pub struct DAGNode<'a, C: Constraint + 'a, S: Circuit<C> + 'a> {
     subcircuit : Option<S::SubCircuit<'a>>,
 
     _phantom: PhantomData<C>
-}
-
-#[derive(Debug, Serialize)]
-pub struct NodeInfo{
-    node_id: usize,
-    constraints: Vec<usize>, //ids of the constraints
-    input_signals: Vec<usize>,
-    output_signals: Vec<usize>,
-    signals: Vec<usize>, 
-    successors: Vec<usize> //ids of the successors 
 }
 
 impl<'a, C: Constraint + 'a, S: Circuit<C> + 'a> DAGNode<'a, C, S> {

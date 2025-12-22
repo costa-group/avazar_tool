@@ -10,7 +10,8 @@ use solvers_interface::{PossibleResult, PossibleSolver};
 use input_user::Input;
 use std::path::PathBuf;
 use crate::modular_reasoning::check_tags;
-
+use clustering::decompose_circuit::decompose_node;
+use clustering::argument_parsing::{GraphBackend, EquivalenceMode};
 
 
 use ansi_term::Colour;
@@ -47,36 +48,25 @@ fn process_constraints(input: &PathBuf) -> (
     )
 }
 
-fn process_structure(
-    input: &Option<PathBuf>,
-    n_constraints: usize,
-    n_signals: usize,
-    n_outputs: usize,
-    n_inputs: usize,
-) -> 
-(StructureInfo, HashMap<usize, usize>, HashMap<usize, usize>, HashMap<usize, usize>){
-    // Read the structure
-    let structure  = if input.is_some(){
-        let input_str = &format!("{}", input.as_ref().unwrap().display());
-        read_structure(input_str).unwrap()
-    } else{
-        generate_empty_structure(n_constraints, n_signals, n_outputs, n_inputs)
-    };
+fn process_structure(structure: &StructureInfo) -> (HashMap<usize, usize>, HashMap<usize, usize>, HashMap<usize, usize>, usize){
     
     // Process the structure and return maps:
     // Map nodeid -> position in structure.nodes
     // Map node_id -> id_local_equiv_class (position in the array of local equiv classes)
     // Map node_id -> id_structural_equiv_class (position in the array of structural equiv classes)
+    // Usize fresh node_id
 
     let mut local_equivalence_classes = HashMap::new();
     let mut structural_equivalence_classes = HashMap::new();
     let mut id_equiv_class = 0;
+    let mut max_node_id = 0;
 
     let mut nodeid2pos = HashMap::new(); // node id to position in vector
     let mut pos = 0;
     for node in &structure.nodes {
         nodeid2pos.insert(node.node_id, pos);
         pos += 1;
+        max_node_id = std::cmp::max(max_node_id, node.node_id);
     }
 
 
@@ -95,7 +85,7 @@ fn process_structure(
         id_equiv_class += 1;
     }
 
-    (structure, nodeid2pos, local_equivalence_classes, structural_equivalence_classes)
+    (nodeid2pos, local_equivalence_classes, structural_equivalence_classes, max_node_id + 1)
 }
 
 
@@ -134,17 +124,20 @@ fn start() -> Result<(), ()> {
         n_inputs)
         = process_constraints(&user_input.input_r1cs);
     
+    // Read the structure
+    let mut structure  = if user_input.input_structure.is_some(){
+        let input_str = &format!("{}", user_input.input_structure.as_ref().unwrap().display());
+        read_structure(input_str).unwrap()
+    } else{
+        generate_empty_structure(constraints.len(), signals.len(), n_outputs, n_inputs)
+    };
+
     let (
-        structure,
-        nodeid2pos, 
+        mut nodeid2pos, 
         local_equivalence_classes, 
-        structural_equivalence_classes
-    ) = process_structure(&user_input.input_structure,
-        constraints.len(),
-        signals.len(),
-        n_outputs,
-        n_inputs
-    );
+        structural_equivalence_classes,
+        mut max_node_id
+    ) = process_structure(&structure);
 
     let timeout: u64 = user_input.timeout;
     
@@ -190,6 +183,22 @@ fn start() -> Result<(), ()> {
         );
     }
 
+    let to_study_again = reconsider_big_nodes(&structure, &nodeid2pos, &mut results);
+    for node_id in to_study_again{
+        decompose_and_study(
+            node_id,
+            &mut structure,
+            &constraints,
+            &mut nodeid2pos,
+            &mut max_node_id,
+            &field, 
+            timeout, 
+            solver,
+            &mut results,
+        );
+    }
+
+
     // Just to compute extra info (constraints and original structure)
     compute_info_constraints(&mut results, &structure, &nodeid2pos);
 
@@ -219,6 +228,8 @@ fn process_node(
     solver: PossibleSolver,
     results: &mut ResultInfo,
 ) {
+    println!("LOG: Considering node {} with {} constraints", node.node_id, node.constraints.len());
+
 
     if results.studied_nodes.contains_key(&node.node_id) {
         // If the node has already been studied, we skip it.
@@ -251,7 +262,147 @@ fn process_node(
          let structural_eq_class = &structure.structural_equivalency[*id_class];
         update_result_for_class(&result, structural_eq_class, results);
     }
+
 }
+
+
+fn decompose_and_study(
+    node_id: usize,
+    structure: &mut StructureInfo,
+    constraints: &Vec<Constraint<usize>>,
+    nodeid2pos: &mut HashMap<usize, usize>,
+    max_node_id: &mut usize,
+    field: &BigInt,
+    timeout: u64,
+    solver: PossibleSolver,
+    results: &mut ResultInfo,
+) {
+    println!("LOG: Reconsidering again node {}", node_id);
+    let node_info = structure.nodes.get(*nodeid2pos.get(&node_id).unwrap()).unwrap();
+
+    let mut constraints_copy = Vec::new();
+    for c_id in &node_info.constraints{
+        let c = &constraints[*c_id];
+        let interface_aux_constraint = (
+            c.a().clone(),
+            c.b().clone(),
+            c.c().clone()
+        );
+        constraints_copy.push(
+            interface_aux_constraint
+        );
+    }
+    
+
+    let structure_reader = decompose_node(
+        field, 
+        &constraints_copy, 
+        &node_info.input_signals, 
+        &node_info.output_signals,
+        None,
+        None,
+        EquivalenceMode::Total,
+        GraphBackend::GraphRS,
+        false
+    );  
+
+
+    let mut new_structure = transform_structure_reader(structure_reader);
+    let (new_nodeid2pos, 
+        local_equivalence_classes, 
+        structural_equivalence_classes,
+        new_max_node_id
+    ) = process_structure(&new_structure);
+
+    println!("LOG: node decomposed in {} new nodes", new_nodeid2pos.len());
+
+
+    let mut new_results = ResultInfo{
+        verified_nodes: HashSet::new(),
+        failed_nodes: HashSet::new(),
+        unknown_nodes: HashSet::new(),
+        studied_nodes: HashMap::new(),
+        total_constraints: 0,
+        verified_constraints: 0,
+        fails_original_templates: None,
+    };
+
+    for node in &new_structure.nodes{
+        process_node(node, 
+            &new_structure, 
+            &constraints, 
+            &local_equivalence_classes,
+            &structural_equivalence_classes,
+            &new_nodeid2pos, 
+            &field, 
+            timeout, 
+            solver,
+            &mut new_results
+        );
+    }
+
+    println!("LOG: studied the new nodes -> verified {}", new_results.verified_nodes.len());
+
+    let mut index = 0;
+    for (node_id, result) in new_results.studied_nodes{
+        // add the new nodes to the initial structure
+        let pos_id = *new_nodeid2pos.get(&node_id).unwrap();
+
+        let node_info = new_structure.nodes.get_mut(pos_id).unwrap();
+        let new_node_id = node_info.node_id + *max_node_id;  // to get a unique node id
+        node_info.node_id = new_node_id;
+        nodeid2pos.insert(new_node_id, structure.nodes.len() + index);
+        index += 1;
+
+        // add the new results to the previous ones
+        results.studied_nodes.insert(new_node_id, result.clone());
+		match result{
+			PossibleResult::VERIFIED =>{
+				results.verified_nodes.insert(new_node_id);
+			},
+			PossibleResult::FAILED =>{
+				results.failed_nodes.insert(new_node_id);
+			},
+			PossibleResult::UNKNOWN =>{
+				results.unknown_nodes.insert(new_node_id);
+			},
+			_ => unreachable!(),
+		}	
+    }   
+    structure.nodes.append(&mut new_structure.nodes);
+
+
+    *max_node_id += new_max_node_id;
+
+    println!("Added the info to the results");
+
+}
+// To get the nodes that were too big and need to be studied again
+fn reconsider_big_nodes(
+    structure: &StructureInfo,
+    nodeid2pos: &HashMap<usize, usize>,
+    results: &mut ResultInfo
+) -> Vec<usize>{
+
+    // TODO: only insert one for the equivalent ones
+    let mut to_study_again = Vec::new();
+    for node_id in &results.unknown_nodes{
+        let node_info = &structure.nodes[nodeid2pos[node_id]];
+        let number_constraints = node_info.constraints.len();
+        if number_constraints > 100 {
+            to_study_again.push(*node_id);
+        }
+    }
+
+    // Remove from the studied nodes as we will consider again
+    for node_id in &to_study_again{
+        results.studied_nodes.remove(node_id);
+        results.unknown_nodes.remove(node_id);
+    }
+
+    to_study_again
+}
+
 
 fn update_result_for_class(node_result: &PossibleResult, equiv_class: &Vec<usize>, results: &mut ResultInfo){
 	for node in equiv_class{
