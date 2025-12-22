@@ -26,7 +26,7 @@ pub struct NodeInfo{
 
 #[derive(Deserialize, Debug)]
 pub struct StructureInfo {
-    pub timing: TimingInfo,
+    // pub timing: TimingInfo,
     pub nodes: Vec<NodeInfo>, //all the nodes of the circuit, position of the node is not the position.
     pub local_equivalency: Vec<Vec<usize>>, //equivalence classes, each inner vector is a class
     pub structural_equivalency: Vec<Vec<usize>>, //equivalence classes, each inner vector is a class
@@ -34,7 +34,7 @@ pub struct StructureInfo {
 
 #[derive(Deserialize, Debug)]
 struct StructureReader {
-    timing: TimingInfo,
+    // timing: TimingInfo,
     nodes: Vec<NodeInfo>, //all the nodes of the circuit, position of the node is not the position.
     equivalency_local: Option<Vec<Vec<usize>>>, //equivalence classes, each inner vector is a class
     equivalency_structural: Option<Vec<Vec<usize>>>, //equivalence classes, each inner vector is a class
@@ -69,7 +69,7 @@ pub fn read_structure<P: AsRef<Path>>(path: P) -> Result<StructureInfo, Box<dyn 
     }
 
     let structure_info = StructureInfo {
-        timing: u.timing,
+        // timing: u.timing,
         nodes: u.nodes,
         local_equivalency: local_equivalence,
         structural_equivalency: structural_equivalence,
@@ -86,12 +86,12 @@ pub fn generate_empty_structure(
 ) -> StructureInfo{
     
 
-    let aux_timing = TimingInfo{
-        clustering: 0.0,
-        dag_construction: 0.0,
-        equivalency: 0.0,
-        total: 0.0
-    };
+    // let aux_timing = TimingInfo{
+    //     clustering: 0.0,
+    //     dag_construction: 0.0,
+    //     equivalency: 0.0,
+    //     total: 0.0
+    // };
 
     let node = NodeInfo{
         node_id: 0,
@@ -102,7 +102,7 @@ pub fn generate_empty_structure(
         successors: vec![]
     };
     StructureInfo{
-        timing: aux_timing,
+        // timing: aux_timing,
         nodes: vec![node],
         local_equivalency: vec![vec![0]],
         structural_equivalency: vec![vec![0]],
