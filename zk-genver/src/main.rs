@@ -158,6 +158,8 @@ fn start() -> Result<(), ()> {
         unreachable!()
     };
 
+    let clustering_size = user_input.clustering_size;
+
     
     let mut results = ResultInfo{
         verified_nodes: HashSet::new(),
@@ -182,20 +184,21 @@ fn start() -> Result<(), ()> {
             &mut results
         );
     }
-
-    let to_study_again = reconsider_big_nodes(&structure, &nodeid2pos, &mut results);
-    for node_id in to_study_again{
-        decompose_and_study(
-            node_id,
-            &mut structure,
-            &constraints,
-            &mut nodeid2pos,
-            &mut max_node_id,
-            &field, 
-            timeout, 
-            solver,
-            &mut results,
-        );
+    if clustering_size != 0{
+        let to_study_again = reconsider_big_nodes(&structure, &nodeid2pos, &mut results, clustering_size);
+        for node_id in to_study_again{
+            decompose_and_study(
+                node_id,
+                &mut structure,
+                &constraints,
+                &mut nodeid2pos,
+                &mut max_node_id,
+                &field, 
+                timeout, 
+                solver,
+                &mut results,
+            );
+        }
     }
 
 
@@ -381,7 +384,8 @@ fn decompose_and_study(
 fn reconsider_big_nodes(
     structure: &StructureInfo,
     nodeid2pos: &HashMap<usize, usize>,
-    results: &mut ResultInfo
+    results: &mut ResultInfo,
+    clustering_size: usize
 ) -> Vec<usize>{
 
     // TODO: only insert one for the equivalent ones
@@ -389,7 +393,7 @@ fn reconsider_big_nodes(
     for node_id in &results.unknown_nodes{
         let node_info = &structure.nodes[nodeid2pos[node_id]];
         let number_constraints = node_info.constraints.len();
-        if number_constraints > 100 {
+        if number_constraints > clustering_size {
             to_study_again.push(*node_id);
         }
     }

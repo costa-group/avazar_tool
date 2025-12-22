@@ -10,7 +10,8 @@ pub struct Input {
     pub use_picus: bool,
     pub use_civer: bool,
     pub _flag_verbose: bool,
-    pub prime: BigInt
+    pub prime: BigInt,
+    pub clustering_size: usize,
 }
 
 
@@ -24,6 +25,7 @@ impl Input {
         let (use_civer, use_picus) = input_processing::get_solver(&matches)?;
         let _flag_verbose =  input_processing::get_flag_verbose(&matches);
         let prime = input_processing::get_prime(&matches)?;
+        let clustering_size = input_processing::get_clustering_size(&matches)?;
 
         Result::Ok(Input {
             input_r1cs,
@@ -33,7 +35,8 @@ impl Input {
             use_picus,
             use_civer,
             _flag_verbose,
-            prime
+            prime,
+            clustering_size
         })
     }
 }
@@ -104,6 +107,17 @@ mod input_processing {
         }
         else { 
             Result::Err(eprintln!("{}", Colour::Red.paint("invalid prime")))
+        }
+    }
+
+    pub fn get_clustering_size(matches: &ArgMatches) -> Result<usize, ()> {
+        let timeout_argument = matches.value_of("clustering_size").unwrap();
+        let timeout = usize::from_str_radix(timeout_argument, 10);
+        if let Result::Ok(time) = timeout { 
+           Ok(time)
+        }
+        else { 
+            Result::Err(eprintln!("{}", Colour::Red.paint("invalid clustering size")))
         }
     }
     
@@ -178,6 +192,15 @@ mod input_processing {
                     .default_value("21888242871839275222246405745257275088548364400416034343698204186575808495617")
                     .display_order(600)
                     .help("To choose the prime number to use to verify the circuit"),
+            )
+            .arg (
+                Arg::with_name("clustering_size")
+                    .short("clustering_size")
+                    .long("clustering_size")
+                    .takes_value(true)
+                    .default_value("200")
+                    .display_order(600)
+                    .help("To choose the size of the nodes that are considered for clustering. The default value es 200. In order to not apply clustering, use clustering_size 0"),
             )
             
             .get_matches()
