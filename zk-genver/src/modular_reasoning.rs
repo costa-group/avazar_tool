@@ -79,8 +79,6 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
                         }
                     }
                     verification.added_nodes.insert(*node_id);
-                } else{
-                    unreachable!();
                 }
             }
  
