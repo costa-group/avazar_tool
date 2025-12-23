@@ -42,6 +42,7 @@ pub struct TemplateVerification {
     pub field: BigInt,
     pub verbose: bool,
     pub verification_timeout: u64,
+    pub apply_deduction_assigned: bool
 }
 
 impl TemplateVerification{
@@ -67,6 +68,7 @@ impl TemplateVerification{
             field: problem.field.clone(),
             verbose: false,      
             verification_timeout: problem.verification_timeout, 
+            apply_deduction_assigned: problem.apply_deduction_assigned
         }
     }
 
@@ -193,28 +195,26 @@ impl TemplateVerification{
             i = i + 1;
         }
 
-        apply_deduction_assigned(
-            &self.constraints, 
-            &ctx, 
-            &solver, 
-            &aux_signals_to_smt_rep, 
-            &aux_signals_to_smt_rep_aux
-        );
-
-        /*
-        apply_deduction_rule_homologues(
-            &self.constraints, 
-            &ctx, 
-            &solver, 
-            &aux_signals_to_smt_rep,
-            &aux_signals_to_smt_rep_aux,
-            &self.deductions,
-            &self.field, 
-            &field
-        );
-        */
-    
-
+        if self.apply_deduction_assigned{
+            apply_deduction_assigned(
+                &self.constraints, 
+                &ctx, 
+                &solver, 
+                &aux_signals_to_smt_rep, 
+                &aux_signals_to_smt_rep_aux
+            );
+        } else{
+            apply_deduction_rule_homologues(
+                &self.constraints, 
+                &ctx, 
+                &solver, 
+                &aux_signals_to_smt_rep,
+                &aux_signals_to_smt_rep_aux,
+                &self.deductions,
+                &self.field, 
+                &field
+            );
+        }
 
 
         for (inputs, outputs) in &self.implications_safety{
@@ -604,7 +604,7 @@ pub fn apply_deduction_assigned(
     }
 }
 
-pub fn _apply_deduction_rule_homologues(
+pub fn apply_deduction_rule_homologues(
     constraints: &Vec<Constraint<usize>>,
     ctx: &Context,
     solver: &Solver,

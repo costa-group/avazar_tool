@@ -17,7 +17,8 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
         node_list: &Vec<NodeInfo>,
         nodeid2pos: &HashMap<usize, usize>,
         constraint_list: &Vec<Constraint>,
-        solver: PossibleSolver
+        solver: PossibleSolver,
+        apply_deduction_assigned: bool
     ) 
     -> (PossibleResult, f64, usize, Vec<String>){
         
@@ -52,6 +53,7 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
             implications_safety.clone(),
             field,
             verification_timeout,
+            apply_deduction_assigned
         );
         logs.push(format!("Checking template {}\n", node_info.node_id));
         logs.push(format!("Number of signals (i,int,o): {}\n", node_info.signals.len()));      
