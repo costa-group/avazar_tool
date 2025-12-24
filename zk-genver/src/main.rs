@@ -140,7 +140,9 @@ fn start() -> Result<(), ()> {
     ) = process_structure(&structure);
 
     let timeout: u64 = user_input.timeout;
-    
+    let apply_deduction_assigned: bool = user_input.apply_deduction_assigned;
+
+
     let starting_constraints = if user_input.original_structure.is_some(){
         let init_constraints = read_original_structure(user_input.original_structure.as_ref().unwrap()).unwrap();
         Some(init_constraints)
@@ -181,11 +183,18 @@ fn start() -> Result<(), ()> {
             &field, 
             timeout, 
             solver,
+            apply_deduction_assigned,
             &mut results
         );
     }
-    if clustering_size != 0{
-        let to_study_again = reconsider_big_nodes(&structure, &nodeid2pos, &mut results, clustering_size);
+
+    let mut to_study_again = if clustering_size != 0{
+        reconsider_big_nodes(&structure, &nodeid2pos, &mut results, clustering_size)
+    } else{
+        Vec::new()
+    };
+
+    while !to_study_again.is_empty(){
         for node_id in to_study_again{
             decompose_and_study(
                 node_id,
@@ -196,10 +205,13 @@ fn start() -> Result<(), ()> {
                 &field, 
                 timeout, 
                 solver,
+                apply_deduction_assigned,
                 &mut results,
             );
         }
+        to_study_again = reconsider_big_nodes(&structure, &nodeid2pos, &mut results, clustering_size);
     }
+    
 
 
     // Just to compute extra info (constraints and original structure)
@@ -229,6 +241,7 @@ fn process_node(
     field: &BigInt,
     timeout: u64,
     solver: PossibleSolver,
+    apply_deduction_assigned: bool,
     results: &mut ResultInfo,
 ) {
     println!("LOG: Considering node {} with {} constraints", node.node_id, node.constraints.len());
@@ -247,7 +260,8 @@ fn process_node(
         &structure.nodes,
         &nodeid2pos, 
         &constraints ,
-        solver
+        solver,
+        apply_deduction_assigned
     );
         
         //for log in logs{
@@ -278,6 +292,7 @@ fn decompose_and_study(
     field: &BigInt,
     timeout: u64,
     solver: PossibleSolver,
+    apply_deduction_assigned: bool,
     results: &mut ResultInfo,
 ) {
     println!("LOG: Reconsidering again node {}", node_id);
@@ -318,7 +333,7 @@ fn decompose_and_study(
     ) = process_structure(&new_structure);
 
     println!("LOG: node decomposed in {} new nodes", new_nodeid2pos.len());
-
+    
 
     let mut new_results = ResultInfo{
         verified_nodes: HashSet::new(),
@@ -340,6 +355,7 @@ fn decompose_and_study(
             &field, 
             timeout, 
             solver,
+            apply_deduction_assigned,
             &mut new_results
         );
     }

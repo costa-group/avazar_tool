@@ -41,6 +41,7 @@ pub struct SafetyVerification {
     pub field: BigInt,
     pub verification_timeout: u64,
     pub added_nodes: HashSet<usize>,
+    pub apply_deduction_assigned: bool
 
 }
 
@@ -55,6 +56,7 @@ impl SafetyVerification{
         implications_safety: Vec<(Vec<usize>, Vec<usize>)>,
         field: &BigInt,
         verification_timeout: u64, 
+        apply_deduction_assigned: bool
     ) -> SafetyVerification {
         let mut fixed_constraints = Vec::new();
         for mut c in constraints{
@@ -71,7 +73,8 @@ impl SafetyVerification{
             constraints: fixed_constraints,
             field: field.clone(),
             verification_timeout, 
-            added_nodes: HashSet::new()
+            added_nodes: HashSet::new(),
+            apply_deduction_assigned
         }
     }
     
