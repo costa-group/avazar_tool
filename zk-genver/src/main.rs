@@ -298,6 +298,8 @@ fn decompose_and_study(
     println!("LOG: Reconsidering again node {}", node_id);
     let node_info = structure.nodes.get(*nodeid2pos.get(&node_id).unwrap()).unwrap();
 
+    print_node_info(node_info, constraints);
+
     let mut constraints_copy = Vec::new();
     for c_id in &node_info.constraints{
         let c = &constraints[*c_id];
@@ -346,6 +348,8 @@ fn decompose_and_study(
     };
 
     for node in &new_structure.nodes{
+        print_node_info(node, constraints);
+
         process_node(node, 
             &new_structure, 
             &constraints, 
@@ -405,10 +409,12 @@ fn reconsider_big_nodes(
 ) -> Vec<usize>{
 
     // TODO: only insert one for the equivalent ones
+    println!("Reconsidering again searching big nodes");
     let mut to_study_again = Vec::new();
     for node_id in &results.unknown_nodes{
         let node_info = &structure.nodes[nodeid2pos[node_id]];
         let number_constraints = node_info.constraints.len();
+        println!("Studying node {} of {} constraints", node_id, number_constraints);
         if number_constraints > clustering_size {
             to_study_again.push(*node_id);
         }

@@ -3,6 +3,8 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
 use std::error::Error;
+use circom_algebra::algebra::Constraint;
+
 
 
 #[derive(Deserialize,Serialize, Debug)]
@@ -41,7 +43,17 @@ pub struct StructureReader {
 
  }
 
+pub fn print_node_info(node: &NodeInfo, constraints: &Vec<Constraint<usize>>){
+    println!("Input signals: {:?}", node.input_signals);
+    println!("Output signals: {:?}", node.output_signals);
+    println!("Signals: {:?}", node.signals);
+    println!("Successors: {:?}", node.successors);
 
+    for c in &node.constraints{
+        let c = &constraints[*c];
+        c.print_pretty_constraint();
+    }
+}
 
 pub fn read_structure<P: AsRef<Path>>(path: P) -> Result<StructureInfo, Box<dyn Error>> {
     // Open the file in read-only mode with buffer.
