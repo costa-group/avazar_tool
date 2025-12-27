@@ -299,7 +299,7 @@ fn decompose_and_study(
     let node_info = structure.nodes.get(*nodeid2pos.get(&node_id).unwrap()).unwrap();
 
     print_node_info(node_info, constraints);
-
+    let mut constraints_original_index = Vec::new();
     let mut constraints_copy = Vec::new();
     for c_id in &node_info.constraints{
         let c = &constraints[*c_id];
@@ -308,6 +308,7 @@ fn decompose_and_study(
             c.b().clone(),
             c.c().clone()
         );
+        constraints_original_index.push(*c_id);
         constraints_copy.push(
             interface_aux_constraint
         );
@@ -323,6 +324,8 @@ fn decompose_and_study(
         None,
         EquivalenceMode::Total,
         GraphBackend::GraphRS,
+        Some(&constraints_original_index),
+        None,
         false
     );  
 

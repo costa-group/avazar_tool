@@ -1,7 +1,4 @@
-use std::collections::HashMap;
-use std::time::{Instant, Duration};
-use std::fmt::Debug;
-use serde::{Serialize};
+use std::time::{Instant};
 
 use circom_algebra::num_bigint::BigInt;
 use circuits_and_constraints::lightweight_circuit::LightweightCircuit;
@@ -25,10 +22,12 @@ pub fn decompose_node<C: Constraint>(
     target_size: Option<f64>,
     equivalence_mode: EquivalenceMode,
     graph_backend: GraphBackend,
+    inverse_coni_mapping: Option<&[usize]>,
+    inverse_sig_mapping: Option<&[usize]>,
     debug: bool) -> StructureReader {
 
     let lw_circ = LightweightCircuit::<C>::from(prime, constraints, inputs, outputs);
-    decompose_circuit(&lw_circ, resolution, target_size, equivalence_mode, graph_backend, debug)
+    decompose_circuit(&lw_circ, resolution, target_size, equivalence_mode, graph_backend, inverse_coni_mapping, inverse_sig_mapping, debug)
 }
 
 pub fn decompose_circuit<C: Constraint, S: Circuit<C>>(
@@ -37,11 +36,14 @@ pub fn decompose_circuit<C: Constraint, S: Circuit<C>>(
     target_size: Option<f64>,
     equivalence_mode: EquivalenceMode,
     graph_backend: GraphBackend,
-    debug: bool
+    inverse_coni_mapping: Option<&[usize]>,
+    inverse_sig_mapping: Option<&[usize]>,
+    _debug: bool
 ) -> StructureReader {
 
     let mut timing_info: TimingInfo = TimingInfo{
     	clustering: 0.0,
+        graph_construction: 0.0,
     	dag_construction: 0.0,
     	equivalency: 0.0,
     	total: 0.0,
@@ -68,6 +70,7 @@ pub fn decompose_circuit<C: Constraint, S: Circuit<C>>(
         };
     
     //insert_and_print_timing(debug, &mut timing, "graph_construction", graph_construction_timer.elapsed());
+    timing_info.graph_construction = graph_construction_timer.elapsed().as_secs_f32();
 
     // Partition Graph
     let partition_timer = Instant::now();
@@ -109,6 +112,6 @@ pub fn decompose_circuit<C: Constraint, S: Circuit<C>>(
     //insert_and_print_timing(debug, &mut timing, "total", total_time);
 
 
-    let dagnode_info: Vec<NodeInfo> = dagnodes.into_values().map(|node| node.to_json(None, None)).collect();
+    let dagnode_info: Vec<NodeInfo> = dagnodes.into_values().map(|node| node.to_json(inverse_coni_mapping, inverse_sig_mapping)).collect();
     StructureReader {timing: timing_info, nodes: dagnode_info, equivalency_local: equivalency_local, equivalency_structural: equivalency_structural}
 }

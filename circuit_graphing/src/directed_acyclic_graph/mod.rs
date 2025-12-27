@@ -1,7 +1,6 @@
 use std::marker::PhantomData;
 use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet};
-use serde::{Serialize};
 
 use utils::structure::NodeInfo;
 use circuits_and_constraints::constraint::Constraint;
@@ -76,9 +75,9 @@ impl<'a, C: Constraint + 'a, S: Circuit<C> + 'a> DAGNode<'a, C, S> {
         self.subcircuit.as_ref().unwrap()
     }
 
-    pub fn to_json(self, inverse_signal_mapping: Option<&HashMap<usize, usize>>, inverse_constraint_mapping: Option<&HashMap<usize, usize>>) -> NodeInfo {
-        let signal_mapping = |sig| if inverse_signal_mapping.is_none() {sig} else {*inverse_signal_mapping.unwrap().get(&sig).unwrap()};
-        let constraint_mapping = |coni| if inverse_constraint_mapping.is_none() {coni} else {*inverse_constraint_mapping.unwrap().get(&coni).unwrap()};
+    pub fn to_json(self, inverse_constraint_mapping: Option<&[usize]>, inverse_signal_mapping: Option<&[usize]>) -> NodeInfo {
+        let signal_mapping = |sig: usize| if inverse_signal_mapping.is_none() {sig} else {inverse_signal_mapping.unwrap()[sig]};
+        let constraint_mapping = |coni: usize| if inverse_constraint_mapping.is_none() {coni} else {inverse_constraint_mapping.unwrap()[coni]};
         let signals: Vec<usize> = self.constraints.iter().flat_map(|x| self.circ.get_constraints()[*x].borrow().signals()).collect::<HashSet<usize>>().into_iter().map(signal_mapping).collect();
 
         NodeInfo {
