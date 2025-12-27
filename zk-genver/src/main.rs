@@ -298,7 +298,7 @@ fn decompose_and_study(
     println!("LOG: Reconsidering again node {}", node_id);
     let node_info = structure.nodes.get(*nodeid2pos.get(&node_id).unwrap()).unwrap();
 
-    print_node_info(node_info, constraints);
+    //print_node_info(node_info, constraints);
     let mut constraints_original_index = Vec::new();
     let mut constraints_copy = Vec::new();
     for c_id in &node_info.constraints{
@@ -351,7 +351,7 @@ fn decompose_and_study(
     };
 
     for node in &new_structure.nodes{
-        print_node_info(node, constraints);
+        //print_node_info(node, constraints);
 
         process_node(node, 
             &new_structure, 
