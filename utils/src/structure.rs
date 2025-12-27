@@ -7,6 +7,7 @@ use std::error::Error;
 
 #[derive(Deserialize,Serialize, Debug)]
 pub struct TimingInfo{
+    pub graph_construction: f32,
     pub clustering: f32,
     pub dag_construction: f32,
     pub equivalency: f32,
@@ -26,22 +27,19 @@ pub struct NodeInfo{
 
 #[derive(Deserialize, Serialize, Debug)]
 pub struct StructureInfo {
-    // pub timing: TimingInfo,
+    pub timing: TimingInfo,
     pub nodes: Vec<NodeInfo>, //all the nodes of the circuit, position of the node is not the position.
     pub local_equivalency: Vec<Vec<usize>>, //equivalence classes, each inner vector is a class
     pub structural_equivalency: Vec<Vec<usize>>, //equivalence classes, each inner vector is a class
 }
 
-#[derive(Deserialize, Debug)]
-struct StructureReader {
-    // timing: TimingInfo,
-    nodes: Vec<NodeInfo>, //all the nodes of the circuit, position of the node is not the position.
-    equivalency_local: Option<Vec<Vec<usize>>>, //equivalence classes, each inner vector is a class
-    equivalency_structural: Option<Vec<Vec<usize>>>, //equivalence classes, each inner vector is a class
-
- }
-
-
+#[derive(Serialize, Deserialize, Debug)]
+pub struct StructureReader {
+    pub timing: TimingInfo,
+    pub nodes: Vec<NodeInfo>, //all the nodes of the circuit, position of the node is not the position.
+    pub equivalency_local: Option<Vec<Vec<usize>>>, //equivalence classes, each inner vector is a class
+    pub equivalency_structural: Option<Vec<Vec<usize>>>, //equivalence classes, each inner vector is a class
+}
 
 pub fn read_structure<P: AsRef<Path>>(path: P) -> Result<StructureInfo, Box<dyn Error>> {
     // Open the file in read-only mode with buffer.
@@ -74,8 +72,8 @@ pub fn transform_structure_reader(
     	structural_equivalence = local_equivalence.clone();
     }
 
-    let structure_info = StructureInfo {
-        // timing: u.timing,
+    StructureInfo {
+        timing: u.timing,
         nodes: u.nodes,
         local_equivalency: local_equivalence,
         structural_equivalency: structural_equivalence,
@@ -92,12 +90,13 @@ pub fn generate_empty_structure(
 ) -> StructureInfo{
     
 
-    // let aux_timing = TimingInfo{
-    //     clustering: 0.0,
-    //     dag_construction: 0.0,
-    //     equivalency: 0.0,
-    //     total: 0.0
-    // };
+    let aux_timing = TimingInfo{
+        clustering: 0.0,
+        graph_construction: 0.0,
+        dag_construction: 0.0,
+        equivalency: 0.0,
+        total: 0.0
+    };
 
     let node = NodeInfo{
         node_id: 0,
@@ -108,7 +107,7 @@ pub fn generate_empty_structure(
         successors: vec![]
     };
     StructureInfo{
-        // timing: aux_timing,
+        timing: aux_timing,
         nodes: vec![node],
         local_equivalency: vec![vec![0]],
         structural_equivalency: vec![vec![0]],
