@@ -160,6 +160,14 @@ fn start() -> Result<(), ()> {
         unreachable!()
     };
 
+    let equivalence_mode = match user_input.equivalence_mode{
+        0 => EquivalenceMode::None,
+        1 => EquivalenceMode::Local,
+        2 => EquivalenceMode::Total,
+        _ => unreachable!()
+    };
+    
+
     let clustering_size = user_input.clustering_size;
 
     
@@ -205,6 +213,7 @@ fn start() -> Result<(), ()> {
                 &field, 
                 timeout, 
                 solver,
+                equivalence_mode,
                 apply_deduction_assigned,
                 &mut results,
             );
@@ -292,6 +301,7 @@ fn decompose_and_study(
     field: &BigInt,
     timeout: u64,
     solver: PossibleSolver,
+    equivalence_mode: EquivalenceMode,
     apply_deduction_assigned: bool,
     results: &mut ResultInfo,
 ) {
@@ -322,7 +332,7 @@ fn decompose_and_study(
         &node_info.output_signals,
         None,
         None,
-        EquivalenceMode::Total,
+        equivalence_mode,
         GraphBackend::GraphRS,
         Some(&constraints_original_index),
         None,

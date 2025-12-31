@@ -13,6 +13,7 @@ pub struct Input {
     pub apply_deduction_assigned: bool,
     pub prime: BigInt,
     pub clustering_size: usize,
+    pub equivalence_mode: usize,
 }
 
 
@@ -28,7 +29,8 @@ impl Input {
         let prime = input_processing::get_prime(&matches)?;
         let clustering_size = input_processing::get_clustering_size(&matches)?;
         let apply_deduction_assigned = input_processing::get_apply_deduction_assigned(&matches);
-        
+        let equivalence_mode = input_processing::get_equivalence_mode(&matches)?;
+
         Result::Ok(Input {
             input_r1cs,
             input_structure,
@@ -39,7 +41,8 @@ impl Input {
             _flag_verbose,
             prime,
             clustering_size,
-            apply_deduction_assigned
+            apply_deduction_assigned,
+            equivalence_mode
         })
     }
 }
@@ -149,6 +152,27 @@ mod input_processing {
         }
     }
 
+    pub fn get_equivalence_mode(matches: &ArgMatches) -> Result<usize,  ()> {
+        
+        match matches.is_present("equivalence"){
+            true => 
+               {
+                   let solver = matches.value_of("equivalence").unwrap();
+                   if solver == "none"{
+                        Ok(0)
+                    } else if solver == "local"{
+                        Ok(1)
+                    } else if solver == "structural"{
+                        Ok(2)
+                    } else{
+                        Result::Err(eprintln!("{}", Colour::Red.paint("invalid equivalence mode")))
+                    }
+               }
+               
+            false => Ok(2),
+        }
+    }
+
     pub fn view() -> ArgMatches<'static> {
         App::new("ZK-GENVER")
             .about("General modular verifier for ZK-circuits")
@@ -196,8 +220,16 @@ mod input_processing {
                     .long("solver")
                     .takes_value(true)
                     .hidden(false)
-                    .help("Solver to be used for the verification of the circuit. ZK-GENVER allows picus and civer")
+                    .help("Solver to be used for the verification of the circuit. ZK-GENVER allows picus and civer (default)")
                     .display_order(480)
+            )
+            .arg(
+                Arg::with_name("equivalence")
+                    .long("equivalence")
+                    .takes_value(true)
+                    .hidden(false)
+                    .help("Select the equivalence between nodes that is going to be used by ZK-GENVER: none, local or structural. ZK-GENVER uses structural by default")
+                    .display_order(620)
             )
             .arg (
                 Arg::with_name("prime")
