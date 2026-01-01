@@ -1,7 +1,6 @@
 use combinatorial::Combinations;
 use std::collections::HashMap;
 
-use single_clustering::network::CSRNetwork;
 use graphrs::{Graph as RSGraph, GraphSpecs};
 
 use circuits_and_constraints::circuit::Circuit;
@@ -19,11 +18,11 @@ fn get_weighted_arcs<C: Constraint>(circ: &impl Circuit<C>) -> HashMap<(usize, u
     weights
 }
 
-pub fn shared_signal_graph_single_clustering<C: Constraint>(circ: &impl Circuit<C>) -> CSRNetwork<f64, f64> {
+// pub fn shared_signal_graph_single_clustering<C: Constraint>(circ: &impl Circuit<C>) -> CSRNetwork<f64, f64> {
 
-    let weights = get_weighted_arcs(circ);
-    CSRNetwork::from_edges(weights.iter().map(|(pair, val)| (pair.0, pair.1, *val as f64)).collect::<Vec<_>>().as_ref(), vec![1 as f64; circ.n_constraints()])
-}
+//     let weights = get_weighted_arcs(circ);
+//     CSRNetwork::from_edges(weights.iter().map(|(pair, val)| (pair.0, pair.1, *val as f64)).collect::<Vec<_>>().as_ref(), vec![1 as f64; circ.n_constraints()])
+// }
 
 pub fn shared_signal_graph_graphrs<C: Constraint>(circ: &impl Circuit<C>) -> RSGraph<usize,usize> {
 
