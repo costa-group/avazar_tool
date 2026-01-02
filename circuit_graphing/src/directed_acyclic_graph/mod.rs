@@ -19,7 +19,6 @@ pub struct DAGNode<'a, C: Constraint + 'a, S: Circuit<C> + 'a> {
     output_signals : HashSet<usize>,
     successors : Vec<usize>,
     predecessors : Vec<usize>,
-    subcircuit : Option<S::SubCircuit<'a>>,
 
     _phantom: PhantomData<C>
 }
@@ -28,7 +27,11 @@ impl<'a, C: Constraint + 'a, S: Circuit<C> + 'a> DAGNode<'a, C, S> {
 
     pub fn new(circ: &'a S, node_id: usize, constraints: Vec<usize>, input_signals: HashSet<usize>, output_signals: HashSet<usize>) -> DAGNode<'a, C, S> {
         
-        Self { circ: circ, id: node_id, constraints: constraints, input_signals: input_signals, output_signals: output_signals, successors: Vec::new(), predecessors: Vec::new(), subcircuit: None, _phantom: PhantomData }
+        Self { circ: circ, id: node_id, constraints: constraints, input_signals: input_signals, output_signals: output_signals, successors: Vec::new(), predecessors: Vec::new(), _phantom: PhantomData }
+    }
+
+    pub fn get_circ(&self) -> &'a S {
+        self.circ
     }
 
     pub fn add_successors(&mut self, to_add: impl Iterator<Item = usize>) -> () {
@@ -63,16 +66,12 @@ impl<'a, C: Constraint + 'a, S: Circuit<C> + 'a> DAGNode<'a, C, S> {
         self.output_signals.extend(to_add)
     }
 
-    pub fn get_or_make_subcircuit(&mut self) -> &S::SubCircuit<'a> {
-        if self.subcircuit.is_none() {
-            self.subcircuit = Some(self.circ.take_subcircuit(&self.constraints, Some(&self.input_signals), Some(&self.output_signals), None, None))
-        }
-        self.subcircuit.as_ref().unwrap()
+    pub fn get_constraint_indices(&self) -> impl Iterator<Item = usize> {
+        self.constraints.iter().copied()
     }
 
-    pub fn get_subcircuit(&self) -> &S::SubCircuit<'a> {
-        if self.subcircuit.is_none() {panic!("Tried to get subcircuit without instancing it first");}
-        self.subcircuit.as_ref().unwrap()
+    pub fn get_subcircuit(&self) -> S::SubCircuit<'a> {
+        self.circ.take_subcircuit(&self.constraints, Some(&self.input_signals), Some(&self.output_signals), None, None)
     }
 
     pub fn to_json(self, inverse_constraint_mapping: Option<&[usize]>, inverse_signal_mapping: Option<&[usize]>) -> NodeInfo {
@@ -126,7 +125,7 @@ impl<'a, C: Constraint + 'a, S: Circuit<C> + 'a> DAGNode<'a, C, S> {
             constraints: new_constraints, 
             input_signals: new_input_signals, output_signals: new_output_signals, 
             successors: new_successors, predecessors: new_predecessors, 
-            subcircuit: None, _phantom: PhantomData 
+            _phantom: PhantomData 
         };
 
         nodes.insert(root, newnode);
