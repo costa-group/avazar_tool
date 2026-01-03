@@ -169,7 +169,7 @@ fn dagnode_equivalency_body<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
     for class in subcircuit_groups.into_values().sorted_by_key(|class| class.len()) {
 
         // if class is too small then add as individuals and continue
-        if stop_comparing || Some(class.len()) < minimum_equivalence_size {
+        if stop_comparing || Some(nodes[class.iter().next().unwrap()].len()) < minimum_equivalence_size {
             equivalent.extend(class.into_iter().map(|nodeid| vec![nodeid]));continue;
         }
 

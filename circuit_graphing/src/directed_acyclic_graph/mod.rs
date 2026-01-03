@@ -30,6 +30,10 @@ impl<'a, C: Constraint + 'a, S: Circuit<C> + 'a> DAGNode<'a, C, S> {
         Self { circ: circ, id: node_id, constraints: constraints, input_signals: input_signals, output_signals: output_signals, successors: Vec::new(), predecessors: Vec::new(), _phantom: PhantomData }
     }
 
+    pub fn len(&self) -> usize {
+        self.constraints.len()
+    }
+
     pub fn get_circ(&self) -> &'a S {
         self.circ
     }
