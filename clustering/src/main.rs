@@ -58,12 +58,13 @@ fn start(args: Args) -> Result<(), Box<dyn Error>> {
     let r1cs = R1CSData::parse_file(&args.filepath);
     println!("Took {:?} to parse", circuit_parsing_timer.elapsed());
     
-    let result = decompose_circuit(&r1cs, args.resolution, args.target_size, args.equivalence_mode, args.graph_backend, None, None, args.debug);
+    let result = decompose_circuit(&r1cs, args.resolution, args.target_size, args.equivalence_mode, 
+        args.graph_backend, None, None, args.minimum_equivalence_size, args.equivalence_comparison_budget, args.debug);
 
     let filepath_rev: String = args.filepath.chars().rev().collect();
     let circname: String = filepath_rev[filepath_rev.find('.').expect("filepath didn't have filetype period")+1..filepath_rev.find('/').unwrap_or(filepath_rev.len())].chars().rev().collect();
     
-    let outfile: String = format!("{}/{}_{}_{}_{:?}.json", args.out_directory, circname, args.graph_backend, args.equivalence_mode, args.target_size.unwrap() as usize);
+    let outfile: String = format!("{}/{}_{}_{}_{:?}.json", args.out_directory, circname, args.graph_backend, args.equivalence_mode, if args.target_size.is_some() {args.target_size.unwrap() as usize} else {0});
 
     write_output_into_file(outfile, &result)
 }
