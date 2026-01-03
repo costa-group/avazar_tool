@@ -163,8 +163,28 @@ fn dagnode_equivalency_body<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
     minimum_equivalence_size: Option<usize>, equivalence_comparison_budget: Option<usize>) -> Vec<Vec<usize>> {
 
     let mut equivalent: Vec<Vec<usize>> = Vec::new();
+    let mut total_comparisons: Option<usize> = equivalence_comparison_budget.map(|_| 0);
+    let mut stop_comparing = false;
 
-    for class in subcircuit_groups.into_values() {
+    for class in subcircuit_groups.into_values().sorted_by_key(|class| class.len()) {
+
+        // if class is too small then add as individuals and continue
+        if stop_comparing || Some(class.len()) < minimum_equivalence_size {
+            equivalent.extend(class.into_iter().map(|nodeid| vec![nodeid]));continue;
+        }
+
+        // if making comparisons, check in number of worst-case comparisons exceeds budget and continue
+        let l: usize; let r: usize;
+        if class.len() & 1 == 0 {l = class.len(); r = class.len() - 1;}
+        else {l = class.len(); r = (class.len() - 1) >> 1;}
+        let number_comparisons = l.checked_mul(r);
+ 
+        total_comparisons = total_comparisons.map(|x| x + number_comparisons.unwrap_or(0));
+        if number_comparisons.is_none() || !(total_comparisons <= equivalence_comparison_budget) {
+            stop_comparing = true;
+            equivalent.extend(class.into_iter().map(|nodeid| vec![nodeid]));continue;
+        }
+
         equivalent.extend(
             naive_equivalency_analysis(&class.iter().map(|node_id| (*node_id, nodes.get(node_id).unwrap())).collect(), normalised_constraints_by_id, sig_to_normi_by_id, fingerprints_to_normi_by_id, fingerprints_to_sig_by_id)
         );
