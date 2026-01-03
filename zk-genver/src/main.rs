@@ -361,7 +361,10 @@ fn decompose_and_study(
     };
 
     for node in &new_structure.nodes{
-        //print_node_info(node, constraints);
+        if node.constraints.len() == 0{
+            println!("LOG: printing info node with 0 constraints");
+            print_node_info(node, constraints);
+        }
 
         process_node(node, 
             &new_structure, 
