@@ -336,6 +336,8 @@ fn decompose_and_study(
         GraphBackend::GraphRS,
         Some(&constraints_original_index),
         None,
+        None, // minimum_equivalence_size: Option<usize> -- flag for minimum size to try equivalence
+        None, // equivalence_comparison_budget: Option<usize> -- flag for maximum number of comparisons made -- use only one
         false
     );  
 

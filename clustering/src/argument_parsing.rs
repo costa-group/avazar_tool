@@ -44,6 +44,12 @@ pub struct Args {
     #[arg(short, long="equivalence", value_enum, default_value_t=EquivalenceMode::Structural)]
     pub equivalence_mode: EquivalenceMode,
 
+    #[arg(long="min_equiv_size", conflicts_with="equivalence_comparison_budget")]
+    pub minimum_equivalence_size: Option<usize>,
+
+    #[arg(long="equiv_comp_budget", conflicts_with="minimum_equivalence_size")]
+    pub equivalence_comparison_budget: Option<usize>,
+
     #[arg(long)]
     pub debug: bool
 }

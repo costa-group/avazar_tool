@@ -24,10 +24,16 @@ pub fn decompose_node<C: Constraint>(
     graph_backend: GraphBackend,
     inverse_coni_mapping: Option<&[usize]>,
     inverse_sig_mapping: Option<&[usize]>,
+    minimum_equivalence_size: Option<usize>,
+    equivalence_comparison_budget: Option<usize>,
     debug: bool) -> StructureReader {
 
     let lw_circ = LightweightCircuit::<C>::from(prime, constraints, inputs, outputs);
-    decompose_circuit(&lw_circ, resolution, target_size, equivalence_mode, graph_backend, inverse_coni_mapping, inverse_sig_mapping, debug)
+    decompose_circuit(
+        &lw_circ, 
+        resolution, target_size, equivalence_mode, graph_backend,
+        inverse_coni_mapping, inverse_sig_mapping, minimum_equivalence_size, equivalence_comparison_budget,
+        debug)
 }
 
 pub fn decompose_circuit<C: Constraint, S: Circuit<C>>(
@@ -38,6 +44,8 @@ pub fn decompose_circuit<C: Constraint, S: Circuit<C>>(
     graph_backend: GraphBackend,
     inverse_coni_mapping: Option<&[usize]>,
     inverse_sig_mapping: Option<&[usize]>,
+    minimum_equivalence_size: Option<usize>,
+    equivalence_comparison_budget: Option<usize>,
     _debug: bool
 ) -> StructureReader {
 
@@ -97,10 +105,15 @@ pub fn decompose_circuit<C: Constraint, S: Circuit<C>>(
     let (mut equivalency_local, mut equivalency_structural): (Option<Vec<Vec<usize>>>, Option<Vec<Vec<usize>>>) = (None, None);
     match equivalence_mode {
         EquivalenceMode::None => (),
-        EquivalenceMode::Local => {equivalency_local = Some(subcircuit_fingerprinting_equivalency(&mut dagnodes));},
-        EquivalenceMode::Structural => {equivalency_structural = Some(subcircuit_fingerprint_with_structural_augmentation_equivalency(&mut dagnodes));}
+        EquivalenceMode::Local => {
+            equivalency_local = Some(subcircuit_fingerprinting_equivalency(
+                &mut dagnodes, minimum_equivalence_size, equivalence_comparison_budget));},
+        EquivalenceMode::Structural => {
+            equivalency_structural = Some(subcircuit_fingerprint_with_structural_augmentation_equivalency(
+                &mut dagnodes, minimum_equivalence_size, equivalence_comparison_budget));}
         EquivalenceMode::Total => {
-            let (equivalency_local_, equivalency_structural_) = subcircuit_fingerprinting_equivalency_and_structural_augmentation_equivalency(&mut dagnodes);
+            let (equivalency_local_, equivalency_structural_) = subcircuit_fingerprinting_equivalency_and_structural_augmentation_equivalency(
+                &mut dagnodes, minimum_equivalence_size, equivalence_comparison_budget);
             (equivalency_local, equivalency_structural) = (Some(equivalency_local_), Some(equivalency_structural_))
         }
     };
