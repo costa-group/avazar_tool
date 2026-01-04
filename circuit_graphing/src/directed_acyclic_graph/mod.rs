@@ -89,6 +89,7 @@ impl<'a, C: Constraint + 'a, S: Circuit<C> + 'a> DAGNode<'a, C, S> {
             input_signals: self.input_signals.into_iter().map(signal_mapping).collect(), 
             output_signals: self.output_signals.into_iter().map(signal_mapping).collect(), 
             signals: signals, 
+            is_custom: false,
             successors: self.successors
         }
     }

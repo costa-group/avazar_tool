@@ -23,6 +23,7 @@ pub struct NodeInfo{
     pub input_signals: Vec<usize>,
     pub output_signals: Vec<usize>,
     pub signals: Vec<usize>, 
+    pub is_custom: bool,
     pub successors: Vec<usize> //ids of the successors 
 
 }
@@ -49,6 +50,7 @@ pub fn print_node_info(node: &NodeInfo, constraints: &Vec<Constraint<usize>>){
     println!("Output signals: {:?}", node.output_signals);
     println!("Signals: {:?}", node.signals);
     println!("Successors: {:?}", node.successors);
+    println!("Is custom: {}", node.is_custom);
 
     for c in &node.constraints{
         let c = &constraints[*c];
@@ -119,6 +121,7 @@ pub fn generate_empty_structure(
         output_signals: (1.. n_outputs + 1).collect(),
         input_signals: (n_outputs + 1..n_outputs + n_inputs + 1).collect(),
         signals: (1..n_signals).collect(),
+        is_custom: false,
         successors: vec![]
     };
     StructureInfo{

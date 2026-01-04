@@ -253,6 +253,13 @@ fn process_node(
     apply_deduction_assigned: bool,
     results: &mut ResultInfo,
 ) {
+
+    // To not study the custom templates
+    if node.is_custom{
+        results.studied_nodes.insert(node.node_id, PossibleResult::NOTHING);
+        return;
+    }
+
     println!("LOG: Considering node {} with {} constraints", node.node_id, node.constraints.len());
 
 
