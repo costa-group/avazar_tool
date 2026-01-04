@@ -24,6 +24,9 @@ struct ResultInfo{
     total_constraints: usize,
     verified_constraints: usize,
     fails_original_templates: Option<HashSet<String>>,// include which constraints fail in each component or not?
+    number_unverified_orig_constraints: Option<usize>, // the number of constraints included in the unverified templates
+    number_unverified_orig_constraints_noreps: Option<usize> // the number of constraints included in the unverified templates
+
 }
 
 
@@ -89,18 +92,18 @@ fn process_structure(structure: &StructureInfo) -> (HashMap<usize, usize>, HashM
 }
 
 
-fn get_constraint_info_component(info: &BTreeMap<usize, String>, c: usize) -> (usize, String){
+fn get_constraint_info_component(info: &BTreeMap<usize, String>, c: usize) -> (usize, String,usize){
     let mut previous_c = 0;
     let mut previous_comp = "";
     for (init, comp) in info{
         if *init > c{
-            return (previous_c, previous_comp.to_string());
+            return (previous_c, previous_comp.to_string(), *init);
         } else{
             previous_c = *init;
             previous_comp = comp;
         }
     }
-    (previous_c, previous_comp.to_string())
+    (previous_c, previous_comp.to_string(), 0)
 
 }
 
@@ -179,6 +182,9 @@ fn start() -> Result<(), ()> {
         total_constraints: 0,
         verified_constraints: 0,
         fails_original_templates: None,
+        number_unverified_orig_constraints: None,
+        number_unverified_orig_constraints_noreps: None,
+
     };
 
     for node in &structure.nodes{
@@ -260,13 +266,13 @@ fn process_node(
         return;
     }
 
-    println!("LOG: Considering node {} with {} constraints", node.node_id, node.constraints.len());
-
-
     if results.studied_nodes.contains_key(&node.node_id) {
         // If the node has already been studied, we skip it.
         return;
     }
+
+        println!("LOG: Considering node {} with {} constraints", node.node_id, node.constraints.len());
+
             
     // If the equivalence class of the node has not been studied, we process it.
     let (result, _, n_rounds, _logs) = check_tags(
@@ -357,7 +363,6 @@ fn decompose_and_study(
     ) = process_structure(&new_structure);
 
     println!("LOG: node decomposed in {} new nodes", new_nodeid2pos.len());
-    
 
     let mut new_results = ResultInfo{
         verified_nodes: HashSet::new(),
@@ -367,7 +372,16 @@ fn decompose_and_study(
         total_constraints: 0,
         verified_constraints: 0,
         fails_original_templates: None,
+        number_unverified_orig_constraints: None,
+        number_unverified_orig_constraints_noreps: None,
+
     };
+
+    if new_structure.nodes.len() == 1{
+        // in this case the clustering is not performing any changes -> add as unknown
+		results.studied_nodes.insert(new_structure.nodes[0].node_id, PossibleResult::UNKNOWN);
+		results.unknown_nodes.insert(new_structure.nodes[0].node_id);
+    }
 
     for node in &new_structure.nodes{
         if node.constraints.len() == 0{
@@ -439,7 +453,7 @@ fn reconsider_big_nodes(
     for node_id in &results.unknown_nodes{
         let node_info = &structure.nodes[nodeid2pos[node_id]];
         let number_constraints = node_info.constraints.len();
-        println!("Studying node {} of {} constraints", node_id, number_constraints);
+        //println!("Studying node {} of {} constraints", node_id, number_constraints);
         if number_constraints > clustering_size {
             to_study_again.push(*node_id);
         }
@@ -499,23 +513,42 @@ fn compute_info_fails_original_template(
     original_structure: &BTreeMap<usize, String>
 ){
     let mut original_unverified_templates = HashSet::new();
+    let mut number_unverified_orig_constraints = 0;
+    let mut number_unverified_orig_constraints_noreps = 0;
+
     for node_id in &results.failed_nodes{
         let node_info = &structure.nodes[nodeid2pos[node_id]];
         for c in &node_info.constraints{
-            let (_, component) = 
+            let (prev_c, component, mut last_c) = 
                 get_constraint_info_component(original_structure, *c);
+            if last_c == 0{
+                last_c = results.total_constraints;
+            }
+            //number_unverified_orig_constraints += last_c - prev_c;
+            if !original_unverified_templates.contains(&component){
+                number_unverified_orig_constraints_noreps += last_c - prev_c;
+            }
             original_unverified_templates.insert(component.clone());
         }       
     }
     for node_id in &results.unknown_nodes{
         let node_info = &structure.nodes[nodeid2pos[node_id]];
         for c in &node_info.constraints{
-            let (_, component) = 
+            let (prev_c, component, mut last_c) = 
                 get_constraint_info_component(original_structure, *c);
+            if last_c == 0{
+                last_c = results.total_constraints;
+            }
+            //number_unverified_orig_constraints += last_c - prev_c;
+            if !original_unverified_templates.contains(&component){
+                number_unverified_orig_constraints_noreps += last_c - prev_c;
+            }
             original_unverified_templates.insert(component.clone());
         }       
     }
 
+    //results.number_unverified_orig_constraints = Some(number_unverified_orig_constraints);
+    results.number_unverified_orig_constraints_noreps = Some(number_unverified_orig_constraints_noreps);    
     results.fails_original_templates = Some(original_unverified_templates);
 }
 
@@ -553,11 +586,16 @@ fn print_pretty_results(results: &ResultInfo){
     println!("\n\n\n");
     if results.fails_original_templates.is_some(){
         let original_fails = results.fails_original_templates.as_ref().unwrap();
+        //let number_unverified_orig_constraints = results.number_unverified_orig_constraints.unwrap();
+        let number_unverified_orig_constraints_noreps = results.number_unverified_orig_constraints_noreps.unwrap();
+  
         if !original_fails.is_empty(){
             println!("The constraints that are not verified are in the following original components of the circuit: ");
             for c in original_fails{
                 println!("    - {}, ", c);
             }
+            //println!("The total number of constraints in these templates is: {} ({}%)", number_unverified_orig_constraints, (number_unverified_orig_constraints as f64 / results.total_constraints as f64) * 100.0);
+            println!("The number of constraints in these templates is: {}", number_unverified_orig_constraints_noreps);
             println!("\n\n\n");
 
         }
