@@ -14,6 +14,7 @@ pub struct Input {
     pub prime: BigInt,
     pub clustering_size: usize,
     pub equivalence_mode: usize,
+    pub target_size: usize,
 }
 
 
@@ -30,6 +31,8 @@ impl Input {
         let clustering_size = input_processing::get_clustering_size(&matches)?;
         let apply_deduction_assigned = input_processing::get_apply_deduction_assigned(&matches);
         let equivalence_mode = input_processing::get_equivalence_mode(&matches)?;
+        let target_size = input_processing::get_target_size(&matches)?;
+
 
         Result::Ok(Input {
             input_r1cs,
@@ -42,7 +45,8 @@ impl Input {
             prime,
             clustering_size,
             apply_deduction_assigned,
-            equivalence_mode
+            equivalence_mode,
+            target_size
         })
     }
 }
@@ -173,6 +177,17 @@ mod input_processing {
         }
     }
 
+    pub fn get_target_size(matches: &ArgMatches) -> Result<usize, ()> {
+        let target_argument = matches.value_of("target_size").unwrap();
+        let size = usize::from_str_radix(target_argument, 10);
+        if let Result::Ok(size) = size { 
+           Ok(size)
+        }
+        else { 
+            Result::Err(eprintln!("{}", Colour::Red.paint("invalid target size")))
+        }
+    }
+
     pub fn view() -> ArgMatches<'static> {
         App::new("ZK-GENVER")
             .about("General modular verifier for ZK-circuits")
@@ -247,7 +262,16 @@ mod input_processing {
                     .takes_value(true)
                     .default_value("200")
                     .display_order(600)
-                    .help("To choose the size of the nodes that are considered for clustering. The default value es 200. In order to not apply clustering, use clustering_size 0"),
+                    .help("To choose the size of the nodes that are considered for clustering. The default value is 200. In order to not apply clustering, use clustering_size 0"),
+            )
+            .arg (
+                Arg::with_name("target_size")
+                    .short("target_size")
+                    .long("target_size")
+                    .takes_value(true)
+                    .default_value("0")
+                    .display_order(600)
+                    .help("To choose the target size of the nodes that is used in the clustering. In order to not apply target size, use target_size 0. The default value is 0."),
             )
             
             .get_matches()

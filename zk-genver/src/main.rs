@@ -20,6 +20,7 @@ struct ResultInfo{
     verified_nodes: HashSet<usize>,
     failed_nodes: HashSet<usize>,
     unknown_nodes: HashSet<usize>,
+    unknown_undivisible_nodes: HashSet<usize>,
     studied_nodes: HashMap<usize, PossibleResult>,
     total_constraints: usize,
     verified_constraints: usize,
@@ -172,12 +173,14 @@ fn start() -> Result<(), ()> {
     
 
     let clustering_size = user_input.clustering_size;
+    let target_size = user_input.target_size;
 
     
     let mut results = ResultInfo{
         verified_nodes: HashSet::new(),
         failed_nodes: HashSet::new(),
         unknown_nodes: HashSet::new(),
+        unknown_undivisible_nodes: HashSet::new(),
         studied_nodes: HashMap::new(),
         total_constraints: 0,
         verified_constraints: 0,
@@ -220,6 +223,7 @@ fn start() -> Result<(), ()> {
                 timeout, 
                 solver,
                 equivalence_mode,
+                target_size,
                 apply_deduction_assigned,
                 &mut results,
             );
@@ -315,6 +319,7 @@ fn decompose_and_study(
     timeout: u64,
     solver: PossibleSolver,
     equivalence_mode: EquivalenceMode,
+    target_size: usize,
     apply_deduction_assigned: bool,
     results: &mut ResultInfo,
 ) {
@@ -344,7 +349,7 @@ fn decompose_and_study(
         &node_info.input_signals, 
         &node_info.output_signals,
         None,
-        None,
+        Some(target_size as f64),
         equivalence_mode,
         GraphBackend::GraphRS,
         Some(&constraints_original_index),
@@ -368,6 +373,7 @@ fn decompose_and_study(
         verified_nodes: HashSet::new(),
         failed_nodes: HashSet::new(),
         unknown_nodes: HashSet::new(),
+        unknown_undivisible_nodes: HashSet::new(),
         studied_nodes: HashMap::new(),
         total_constraints: 0,
         verified_constraints: 0,
@@ -378,9 +384,11 @@ fn decompose_and_study(
     };
 
     if new_structure.nodes.len() == 1{
-        // in this case the clustering is not performing any changes -> add as unknown
-		results.studied_nodes.insert(new_structure.nodes[0].node_id, PossibleResult::UNKNOWN);
-		results.unknown_nodes.insert(new_structure.nodes[0].node_id);
+        // in this case the clustering is not performing any changes -> add as unknown and do not divide
+		println!("LOG: case node not divided, no studying again");
+        results.studied_nodes.insert(node_id, PossibleResult::UNKNOWN);
+		results.unknown_undivisible_nodes.insert(node_id);
+        return;
     }
 
     for node in &new_structure.nodes{
@@ -547,6 +555,22 @@ fn compute_info_fails_original_template(
         }       
     }
 
+    for node_id in &results.unknown_undivisible_nodes{
+        let node_info = &structure.nodes[nodeid2pos[node_id]];
+        for c in &node_info.constraints{
+            let (prev_c, component, mut last_c) = 
+                get_constraint_info_component(original_structure, *c);
+            if last_c == 0{
+                last_c = results.total_constraints;
+            }
+            //number_unverified_orig_constraints += last_c - prev_c;
+            if !original_unverified_templates.contains(&component){
+                number_unverified_orig_constraints_noreps += last_c - prev_c;
+            }
+            original_unverified_templates.insert(component.clone());
+        }       
+    }
+
     //results.number_unverified_orig_constraints = Some(number_unverified_orig_constraints);
     results.number_unverified_orig_constraints_noreps = Some(number_unverified_orig_constraints_noreps);    
     results.fails_original_templates = Some(original_unverified_templates);
@@ -572,16 +596,19 @@ fn print_pretty_results(results: &ResultInfo){
     			println!("    - Node {}, ", c);
     		}
         }
-    	if !results.unknown_nodes.is_empty(){
+    	if !results.unknown_nodes.is_empty() || !results.unknown_undivisible_nodes.is_empty(){
         	println!("Nodes that timeout when checking weak-safety: ");
         	for c in &results.unknown_nodes{
+    			println!("    - Node {}, ", c);
+    		}
+            for c in &results.unknown_undivisible_nodes{
     			println!("    - Node {}, ", c);
     		}
         }
     }
     println!("  * Number of verified nodes (weak-safety): {}",  results.verified_nodes.len());
     println!("  * Number of failed nodes (weak-safety): {}",  results.failed_nodes.len());        
-    println!("  * Number of timeout nodes (weak-safety): {}",  results.unknown_nodes.len());
+    println!("  * Number of timeout nodes (weak-safety): {}",  results.unknown_nodes.len()+results.unknown_undivisible_nodes.len());
     println!("  * Percentage of constraints that are in verified nodes : {}%", (results.verified_constraints as f64 / results.total_constraints as f64) * 100.0);
     println!("\n\n\n");
     if results.fails_original_templates.is_some(){
