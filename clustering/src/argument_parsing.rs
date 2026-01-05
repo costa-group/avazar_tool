@@ -51,5 +51,8 @@ pub struct Args {
     pub equivalence_comparison_budget: Option<usize>,
 
     #[arg(long)]
+    pub maximum_cluster_size: Option<usize>,
+
+    #[arg(long)]
     pub debug: bool
 }

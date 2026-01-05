@@ -1,5 +1,6 @@
 use serde::{Serialize,Deserialize};
 use std::fs::File;
+use std::ops::AddAssign;
 use std::io::BufReader;
 use std::path::Path;
 use std::error::Error;
@@ -15,6 +16,17 @@ pub struct TimingInfo{
     pub equivalency: f32,
     pub total: f32,
 }
+
+impl AddAssign for TimingInfo {
+    
+    fn add_assign(&mut self, other: Self) -> () {
+        self.graph_construction += other.graph_construction;
+        self.clustering += other.clustering;
+        self.dag_construction += other.dag_construction;
+        self.equivalency += other.equivalency;
+        self.total += other.total;
+    }
+} 
 
 #[derive(Deserialize,Serialize, Debug, Clone)]
 pub struct NodeInfo{

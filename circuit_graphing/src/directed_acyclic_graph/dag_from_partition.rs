@@ -8,9 +8,10 @@ use circuits_and_constraints::utils::signals_to_constraints_with_them;
 use utils::small_utilities::{distance_to_source_set};
 use utils::union_find::{UnionFind};
 
-pub fn dag_from_partition<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(circ: &'a S, partition: Vec<Vec<usize>>) -> HashMap<usize, DAGNode<'a, C, S>> {
+pub fn dag_from_partition<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
+    circ: &'a S, partition: Vec<Vec<usize>>, node_id_generator: &mut dyn Iterator<Item = usize>) -> HashMap<usize, DAGNode<'a, C, S>> {
 
-    let mut partition: HashMap<usize, Vec<usize>> = partition.into_iter().enumerate().collect();
+    let mut partition: HashMap<usize, Vec<usize>> = node_id_generator.zip(partition.into_iter()).collect();
     
     let part_to_signals_arr: HashMap<usize, HashSet<usize>> = partition.keys().copied().map(|key| (key, partition.get(&key).unwrap().iter().copied().flat_map(|idx| circ.get_constraints()[idx].borrow().signals()).collect::<HashSet<usize>>())).collect();
 
@@ -72,7 +73,10 @@ pub fn dag_from_partition<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(circ: &'a 
             idx, 
             part, 
             part_to_signals_arr.get(&idx).unwrap().into_iter().copied().filter(|sig| circ.signal_is_input(sig)).collect(), // can get around
-            part_to_signals_arr.get(&idx).unwrap().into_iter().copied().filter(|sig| circ.signal_is_output(sig)).collect()))
+            part_to_signals_arr.get(&idx).unwrap().into_iter().copied().filter(|sig| circ.signal_is_output(sig)).collect(),
+            None,
+            None
+        ))
     }).collect();
 
     let arcs : Vec<(usize, usize)> = nodes.keys().flat_map(|idx| adjacencies.get(idx).unwrap().iter().map(|idy| (*idx, *idy))).filter(|(idx, idy)| {

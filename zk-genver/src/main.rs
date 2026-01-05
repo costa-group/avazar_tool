@@ -334,8 +334,10 @@ fn decompose_and_study(
         None,
         equivalence_mode,
         GraphBackend::GraphRS,
+        None, // node_id_generator: Option<&mut impl Iterator<Item = usize>>, generates id for nodes otherwise default
         Some(&constraints_original_index),
         None,
+        None, // maximum_cluster_size: Option<usize> -- recursively re-clusters - otherwise doesn't
         None, // minimum_equivalence_size: Option<usize> -- flag for minimum size to try equivalence
         None, // equivalence_comparison_budget: Option<usize> -- flag for maximum number of comparisons made -- use only one
         false
