@@ -78,6 +78,7 @@ pub fn decompose_circuit<C: Constraint, S: Circuit<C>>(
             }
         };
     
+    println!("LOG: Finished graph construction");
     //insert_and_print_timing(debug, &mut timing, "graph_construction", graph_construction_timer.elapsed());
     timing_info.graph_construction = graph_construction_timer.elapsed().as_secs_f32();
 
@@ -90,6 +91,8 @@ pub fn decompose_circuit<C: Constraint, S: Circuit<C>>(
     //insert_and_print_timing(debug, &mut timing, "clustering", partition_timer.elapsed());
     timing_info.clustering = partition_timer.elapsed().as_secs_f32();
     timing_info.total += timing_info.clustering;
+    println!("LOG: Finished partition");
+
 
     // Convert into DAG
     let dagnode_timer = Instant::now();
@@ -100,6 +103,8 @@ pub fn decompose_circuit<C: Constraint, S: Circuit<C>>(
     //insert_and_print_timing(debug, &mut timing, "dag_construction_merging", dagnode_timer.elapsed());
     timing_info.dag_construction = dagnode_timer.elapsed().as_secs_f32();
     timing_info.total += timing_info.dag_construction;
+    println!("LOG: Finished DAG from partition phase");
+
 
     let equivalency_timer = Instant::now();
     let (mut equivalency_local, mut equivalency_structural): (Option<Vec<Vec<usize>>>, Option<Vec<Vec<usize>>>) = (None, None);
@@ -121,6 +126,8 @@ pub fn decompose_circuit<C: Constraint, S: Circuit<C>>(
     //insert_and_print_timing(debug, &mut timing, "equivalency", equivalency_timer.elapsed());
     timing_info.equivalency = equivalency_timer.elapsed().as_secs_f32();
     timing_info.total += timing_info.equivalency;
+    println!("LOG: Finished equivalence");
+
 
 
     //insert_and_print_timing(debug, &mut timing, "total", total_time);
