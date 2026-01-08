@@ -59,11 +59,11 @@ pub fn decompose_circuit<C: Constraint, S: Circuit<C>>(
 
     let graph_construction_timer = Instant::now();
     
-    let backend = graph_backend;
+    if debug {println!("LOG: Entering graph construction");}
     let graph: Box<dyn CanLeiden> = 
-        match backend {
+        match graph_backend {
             GraphBackend::GraphRS => {
-                Box::new(shared_signal_graph_graphrs(circuit))
+                Box::new(shared_signal_graph_graphrs(circuit, debug))
             }
             GraphBackend::SingleClustering => {
                 panic!("SingleClustering currently unsupported due to dependency issues")
