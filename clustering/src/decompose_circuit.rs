@@ -46,7 +46,7 @@ pub fn decompose_circuit<C: Constraint, S: Circuit<C>>(
     inverse_sig_mapping: Option<&[usize]>,
     minimum_equivalence_size: Option<usize>,
     equivalence_comparison_budget: Option<usize>,
-    _debug: bool
+    debug: bool
 ) -> StructureReader {
 
     let mut timing_info: TimingInfo = TimingInfo{
@@ -56,13 +56,6 @@ pub fn decompose_circuit<C: Constraint, S: Circuit<C>>(
     	equivalency: 0.0,
     	total: 0.0,
     };
-
-    /*
-    fn insert_and_print_timing(debug: bool, timing: &mut HashMap<&'static str, Duration>, key: &'static str, val: Duration) {
-    	timing.insert(key, val);
-    	if debug {println!("Completed {}: {:?}", key, timing.get(&key));}
-    }
-    */
 
     let graph_construction_timer = Instant::now();
     
@@ -78,9 +71,8 @@ pub fn decompose_circuit<C: Constraint, S: Circuit<C>>(
             }
         };
     
-    println!("LOG: Finished graph construction");
-    //insert_and_print_timing(debug, &mut timing, "graph_construction", graph_construction_timer.elapsed());
     timing_info.graph_construction = graph_construction_timer.elapsed().as_secs_f32();
+    if debug {println!("LOG: Finished graph construction in {:?}s", timing_info.graph_construction);}
 
     // Partition Graph
     let partition_timer = Instant::now();
@@ -91,7 +83,7 @@ pub fn decompose_circuit<C: Constraint, S: Circuit<C>>(
     //insert_and_print_timing(debug, &mut timing, "clustering", partition_timer.elapsed());
     timing_info.clustering = partition_timer.elapsed().as_secs_f32();
     timing_info.total += timing_info.clustering;
-    println!("LOG: Finished partition");
+    if debug {println!("LOG: Finished clustering in {:?}s", timing_info.clustering);}
 
 
     // Convert into DAG
@@ -103,7 +95,7 @@ pub fn decompose_circuit<C: Constraint, S: Circuit<C>>(
     //insert_and_print_timing(debug, &mut timing, "dag_construction_merging", dagnode_timer.elapsed());
     timing_info.dag_construction = dagnode_timer.elapsed().as_secs_f32();
     timing_info.total += timing_info.dag_construction;
-    println!("LOG: Finished DAG from partition phase");
+    if debug {println!("LOG: Finished DAG construction in {:?}s", timing_info.dag_construction);}
 
 
     let equivalency_timer = Instant::now();
@@ -123,15 +115,9 @@ pub fn decompose_circuit<C: Constraint, S: Circuit<C>>(
         }
     };
 
-    //insert_and_print_timing(debug, &mut timing, "equivalency", equivalency_timer.elapsed());
     timing_info.equivalency = equivalency_timer.elapsed().as_secs_f32();
     timing_info.total += timing_info.equivalency;
-    println!("LOG: Finished equivalence");
-
-
-
-    //insert_and_print_timing(debug, &mut timing, "total", total_time);
-
+    if debug {println!("LOG: Finished equivalence in {:?}s", timing_info.equivalency);}
 
     let dagnode_info: Vec<NodeInfo> = dagnodes.into_values().map(|node| node.to_json(inverse_coni_mapping, inverse_sig_mapping)).collect();
     StructureReader {timing: timing_info, nodes: dagnode_info, equivalency_local: equivalency_local, equivalency_structural: equivalency_structural}
