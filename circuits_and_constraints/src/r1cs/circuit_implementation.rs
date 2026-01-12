@@ -17,8 +17,6 @@ impl Circuit<R1CSConstraint> for R1CSData {
     
     
     fn get_constraints(&self) -> &Vec< impl Borrow<R1CSConstraint>> {&self.constraints}
-
-    fn normi_to_coni(&self) -> &Vec<usize> {unimplemented!("This function is not implemented yet")}
     fn n_inputs(&self) -> usize {self.header_data.public_inputs + self.header_data.private_inputs}
     fn n_outputs(&self) -> usize {self.header_data.public_outputs}
     fn signal_is_input(&self, signal: &usize) -> bool {let sig = *signal; self.header_data.public_outputs < sig && sig <= self.header_data.public_inputs + self.header_data.private_inputs + self.header_data.public_outputs} 
@@ -35,7 +33,7 @@ impl Circuit<R1CSConstraint> for R1CSData {
         input_signals: Option<&HashSet<usize>>, 
         output_signals: Option<&HashSet<usize>>, 
         signal_map: Option<&HashMap<usize,usize>>, 
-        _return_signal_mapping: Option<bool> // TODO: implement in the mapping overhoal
+        _return_signal_mapping: Option<bool> // TODO: implement in the mapping overhaul
     ) -> LightweightCircuit<'a, R1CSConstraint> where Self: 'a {
         // Assumes correct inputs
 

@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use std::borrow::Borrow;
 use rand::Rng;
 
-use crate::constraint::{Constraint};
+use crate::constraint::{Constraint, ShuffleConstraint};
 
 pub trait Circuit<C: Constraint> {
 
@@ -17,7 +17,6 @@ pub trait Circuit<C: Constraint> {
         self.get_constraints().into_iter().flat_map(|cons| cons.borrow().normalise(self.prime()).into_iter()).collect()
     }
 
-    fn normi_to_coni(&self) -> &Vec<usize>;
     fn n_inputs(&self) -> usize;
     fn n_outputs(&self) -> usize;
     fn signal_is_input(&self, signal: &usize) -> bool;
@@ -38,7 +37,7 @@ pub trait Circuit<C: Constraint> {
     ) -> Self::SubCircuit<'a> where Self: 'a;
 }
 
-pub trait ShuffleCircuit<C> {
+pub trait ShuffleCircuit<C: Constraint + ShuffleConstraint> {
 
     fn get_mut_constraints(&mut self) -> &mut Vec<C>;
     fn shuffle_signals(self, rng: &mut impl Rng) -> Self;
