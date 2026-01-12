@@ -5,7 +5,7 @@ use std::cmp::{Eq, PartialEq, Ord, PartialOrd, Ordering};
 use std::hash::{Hash, Hasher};
 use std::borrow::Borrow;
 
-use crate::constraint::Constraint;
+use crate::constraint::{Constraint, ShuffleConstraint};
 use crate::circuit::{ShuffleCircuit, Circuit};
 
 pub fn signals_to_constraints_with_them<C: Constraint>(
@@ -29,7 +29,7 @@ use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 use rand::seq::SliceRandom;
 
-pub fn circuit_shuffle<C: Constraint, S: Circuit<C> + ShuffleCircuit<C>>(
+pub fn circuit_shuffle<C: Constraint + ShuffleConstraint, S: Circuit<C> + ShuffleCircuit<C>>(
     inputfile: &String, seed: u64, 
     add_constant_factor: bool,
     shuffle_constraint_order: bool,

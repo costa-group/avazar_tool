@@ -38,7 +38,6 @@ impl<'a, C: Constraint> Circuit<C> for LightweightCircuit<'a, C> {
         &self.constraints
     }
 
-    fn normi_to_coni(&self) -> &Vec<usize> {unimplemented!("This function is not implemented yet")}
     fn n_inputs(&self) -> usize {self.inputs.len()}
     fn n_outputs(&self) -> usize {self.outputs.len()}
     fn signal_is_input(&self, signal: &usize) -> bool {self.inputs.contains(signal)}

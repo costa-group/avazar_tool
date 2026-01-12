@@ -24,9 +24,6 @@ pub trait Constraint {
     ) -> () where Self: 'a + Sized;
     
     fn is_nonlinear(&self) -> bool;
-    fn get_coefficients(&self) -> impl Hash + Eq;
-    fn add_random_constant_factor(&mut self, rng: &mut impl Rng, field: &BigInt) -> ();
-    fn shuffle_constraint_internals(&mut self, rng: &mut impl Rng) -> ();
     fn is_ordered(&self) -> bool;
     fn singular_class_requires_additional_constraints() -> bool;
 
@@ -38,4 +35,9 @@ pub trait Constraint {
         signal_to_fingerprint: &[HashMap<usize, usize>; 2],
         is_singular_class: bool
     ) -> Vec<Clause>;
+}
+
+pub trait ShuffleConstraint {
+    fn add_random_constant_factor(&mut self, rng: &mut impl Rng, field: &BigInt) -> ();
+    fn shuffle_constraint_internals(&mut self, rng: &mut impl Rng) -> ();
 }
