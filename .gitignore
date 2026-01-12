@@ -21,6 +21,8 @@
 !circuits_and_constraints/src/*.rs
 !circuits_and_constraints/src/r1cs
 !circuits_and_constraints/src/r1cs/*.rs
+!circuits_and_constraints/src/acir
+!circuits_and_constraints/src/acir/*.rs
 
 !civer
 !civer/Cargo.toml
