@@ -28,6 +28,7 @@ pub fn signals_to_constraints_with_them<C: Constraint>(
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 use rand::seq::SliceRandom;
+use std::error::Error;
 
 pub fn circuit_shuffle<C: Constraint + ShuffleConstraint, S: Circuit<C> + ShuffleCircuit<C>>(
     inputfile: &String, seed: u64, 
@@ -35,10 +36,10 @@ pub fn circuit_shuffle<C: Constraint + ShuffleConstraint, S: Circuit<C> + Shuffl
     shuffle_constraint_order: bool,
     shuffle_signals: bool,
     shuffle_constraint_internals: bool
-) -> (S, S) {
+) -> Result<(S, S), Box<dyn Error>> {
 
-    let circ = S::parse_file(inputfile);
-    let mut circ_shuffled = S::parse_file(&inputfile);
+    let circ = S::parse_file(inputfile)?;
+    let mut circ_shuffled = S::parse_file(&inputfile)?;
 
     let mut rng = ChaCha20Rng::seed_from_u64(seed);
     let mut add_constant_factor_rng = ChaCha20Rng::seed_from_u64(rng.random::<u64>());
@@ -67,7 +68,7 @@ pub fn circuit_shuffle<C: Constraint + ShuffleConstraint, S: Circuit<C> + Shuffl
         }
     }
 
-    (circ, circ_shuffled)
+    Ok((circ, circ_shuffled))
 }
 
 /*

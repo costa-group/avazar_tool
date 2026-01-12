@@ -21,6 +21,14 @@ pub enum EquivalenceMode {
     None
 }
 
+#[derive(Debug, Display, Copy, Clone, ValueEnum)]
+pub enum FileType {
+    #[strum(serialize = "r1cs")]
+    R1CS,
+    #[strum(serialize = "acir")]
+    ACIR
+}
+
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 pub struct Args {
@@ -43,6 +51,9 @@ pub struct Args {
 
     #[arg(short, long="equivalence", value_enum, default_value_t=EquivalenceMode::Structural)]
     pub equivalence_mode: EquivalenceMode,
+
+    #[arg(short, long="file_type", value_enum, default_value_t=FileType::ACIR)]
+    pub file_type: FileType,
 
     #[arg(long="min_equiv_size", conflicts_with="equivalence_comparison_budget")]
     pub minimum_equivalence_size: Option<usize>,

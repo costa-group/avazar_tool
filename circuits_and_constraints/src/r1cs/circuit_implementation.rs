@@ -1,6 +1,7 @@
 use circom_algebra::num_bigint::BigInt;
 use std::collections::{HashMap, HashSet};
 use std::borrow::Borrow;
+use std::error::Error;
 use rand::seq::SliceRandom;
 use rand::Rng;
 
@@ -24,7 +25,7 @@ impl Circuit<R1CSConstraint> for R1CSData {
     fn get_signals(&self) -> impl Iterator<Item = usize> {1..self.header_data.total_wires}
     fn get_input_signals(&self) -> impl Iterator<Item = usize> {self.header_data.public_outputs+1..=self.header_data.public_inputs + self.header_data.private_inputs + self.header_data.public_outputs}
     fn get_output_signals(&self) -> impl Iterator<Item = usize> {1..=self.header_data.public_outputs}
-    fn parse_file(file: &str) -> Self {read_r1cs(file).unwrap()}
+    fn parse_file(filepath: &str) -> Result<Self, Box<dyn Error>> where Self: Sized {Ok(read_r1cs(filepath)?)}
     
     type SubCircuit<'a> = LightweightCircuit<'a, R1CSConstraint> where Self: 'a;
     fn take_subcircuit<'a>(

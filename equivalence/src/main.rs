@@ -19,7 +19,7 @@ fn main() {
         println!("{} {:?}", args.file1path, args.file2path);
 
         let parsing_shuffling_timer = Instant::now();
-        let (r1cs, r1cs_shuffled): (R1CSData, R1CSData) = circuit_shuffle(&args.file1path, 25565, true, true, true, !args.dont_shuffle_internals);
+        let (r1cs, r1cs_shuffled): (R1CSData, R1CSData) = circuit_shuffle(&args.file1path, 25565, true, true, true, !args.dont_shuffle_internals).ok().unwrap();
         println!("shuffled, {:?}", parsing_shuffling_timer.elapsed());
         // dummy test expand later
 
@@ -27,7 +27,7 @@ fn main() {
     } else {
         println!("{} {:?}", args.file1path, args.file2path);
 
-        let  (r1cs1, r1cs2) = (R1CSData::parse_file(&args.file1path), R1CSData::parse_file(&args.file2path.unwrap()));
+        let  (r1cs1, r1cs2) = (R1CSData::parse_file(&args.file1path).ok().unwrap(), R1CSData::parse_file(&args.file2path.unwrap()).ok().unwrap());
 
         println!("{:?}", compare_circuits(&[&r1cs1, &r1cs2], args.debug))
     }

@@ -1,5 +1,6 @@
 use circom_algebra::num_bigint::BigInt;
 use std::collections::{HashMap, HashSet};
+use std::error::Error;
 use std::borrow::Borrow;
 use rand::Rng;
 
@@ -24,7 +25,7 @@ pub trait Circuit<C: Constraint> {
     fn get_signals(&self) -> impl Iterator<Item = usize>;
     fn get_input_signals(&self) -> impl Iterator<Item = usize>;
     fn get_output_signals(&self) -> impl Iterator<Item = usize>;
-    fn parse_file(file: &str) -> Self;
+    fn parse_file(filepath: &str) -> Result<Self, Box<dyn Error>> where Self: Sized;
     
     type SubCircuit<'a>: Circuit<C> where Self: 'a;
     fn take_subcircuit<'a>(

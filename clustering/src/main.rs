@@ -22,14 +22,16 @@ pub mod decompose_circuit;
 
 use utils::structure::StructureReader;
 use crate::decompose_circuit::decompose_circuit;
-use crate::argument_parsing::{Args};
-use utils::read_r1cs::R1CSData;
+use crate::argument_parsing::{Args, FileType};
+use utils::read_r1cs::{R1CSData};
+use circuits_and_constraints::acir::{ACIRCircuit};
 use circuits_and_constraints::circuit::Circuit;
 
 fn main() {
     let args = Args::parse();
     let result = start(args);
     if result.is_err() {
+        eprintln!("{:?}", result);
         eprintln!("{}", Colour::Red.paint("previous errors were found"));
         std::process::exit(1);
     } else {
@@ -55,11 +57,24 @@ fn start(args: Args) -> Result<(), Box<dyn Error>> {
     // Pass circuit
     let circuit_parsing_timer = Instant::now();
     
-    let r1cs = R1CSData::parse_file(&args.filepath);
-    println!("Took {:?} to parse", circuit_parsing_timer.elapsed());
+    // TODO: refactor some code to make the dyn work
+    let result = match args.file_type {
+        FileType::R1CS => {
+            let circuit = R1CSData::parse_file(&args.filepath)?;
+            println!("Took {:?} to parse", circuit_parsing_timer.elapsed());
+            decompose_circuit(&circuit, args.resolution, args.target_size, args.equivalence_mode, 
+                args.graph_backend, None, None, args.minimum_equivalence_size, args.equivalence_comparison_budget, args.debug)
+            },
+        FileType::ACIR =>{
+            let circuit = ACIRCircuit::parse_file(&args.filepath)?;
+            println!("Took {:?} to parse", circuit_parsing_timer.elapsed());
+            decompose_circuit(&circuit, args.resolution, args.target_size, args.equivalence_mode, 
+                args.graph_backend, None, None, args.minimum_equivalence_size, args.equivalence_comparison_budget, args.debug)
+            }
+    };
     
-    let result = decompose_circuit(&r1cs, args.resolution, args.target_size, args.equivalence_mode, 
-        args.graph_backend, None, None, args.minimum_equivalence_size, args.equivalence_comparison_budget, args.debug);
+    
+    
 
     let filepath_rev: String = args.filepath.chars().rev().collect();
     let circname: String = filepath_rev[filepath_rev.find('.').expect("filepath didn't have filetype period")+1..filepath_rev.find('/').unwrap_or(filepath_rev.len())].chars().rev().collect();
