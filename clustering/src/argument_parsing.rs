@@ -52,7 +52,7 @@ pub struct Args {
     #[arg(short, long="equivalence", value_enum, default_value_t=EquivalenceMode::Structural)]
     pub equivalence_mode: EquivalenceMode,
 
-    #[arg(short, long="file_type", value_enum, default_value_t=FileType::ACIR)]
+    #[arg(short, long="file_type", value_enum, default_value_t=FileType::R1CS)]
     pub file_type: FileType,
 
     #[arg(long="min_equiv_size", conflicts_with="equivalence_comparison_budget")]
