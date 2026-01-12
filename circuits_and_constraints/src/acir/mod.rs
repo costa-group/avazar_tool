@@ -7,7 +7,7 @@ use std::collections::{HashSet, HashMap};
 pub struct ACIRConstraint {
     mult: HashMap<(usize, usize), BigInt>,
     linear: HashMap<usize, BigInt>,
-    constant: Option<BigInt>
+    constant: BigInt
 }
 
 pub struct ACIRCircuit {

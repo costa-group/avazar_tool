@@ -22,7 +22,7 @@ impl Constraint for ACIRConstraint {
 
         let factors: Vec<Cow<'a, BigInt>>;
 
-        if self.constant.as_ref().is_some_and(|constant| *constant != BigInt::from(0)) {factors = vec![Cow::Borrowed(self.constant.as_ref().unwrap())];}
+        if self.constant != BigInt::from(0) {factors = vec![Cow::Borrowed(&self.constant)];}
         else if self.mult.len() > 0 {factors = division_normalise(self.mult.values(), prime, true); }
         else {factors = division_normalise(self.linear.values(), prime, true);}
 
@@ -30,7 +30,7 @@ impl Constraint for ACIRConstraint {
             ACIRConstraint {
                 mult: self.mult.iter().map(|(k, v): (&_, &BigInt)| (*k, div(v, &factor, prime).ok().unwrap())).collect(),
                 linear: self.linear.iter().map(|(k, v): (&_, &BigInt)| (*k, div(v, &factor, prime).ok().unwrap())).collect(),
-                constant: self.constant.as_ref().map(|constant| div(constant, &factor, prime).ok().unwrap())
+                constant: div(&self.constant, &factor, prime).ok().unwrap()
             }
         ).collect()
     }
@@ -71,7 +71,7 @@ impl Constraint for ACIRConstraint {
             let mut new_fingerprint: Vec<(FingerprintIndex<T>, Characteristic<T>)> = 
                 new_fingerprint.into_iter().map(|(sig, characteristic): (usize, Characteristic<T>)| (FingerprintIndex {fingerprint: signal_to_fingerprint[&sig], index: sig}, characteristic)).collect();
             new_fingerprint.sort();
-            *fingerprint = Some((new_fingerprint, self.constant.as_ref()));
+            *fingerprint = Some((new_fingerprint, Some(&self.constant)));
         }
 
     }
