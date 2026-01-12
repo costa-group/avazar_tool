@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::borrow::Borrow;
+use std::error::Error;
 
 use circom_algebra::num_bigint::{BigInt};
 use crate::circuit::Circuit;
@@ -45,7 +46,7 @@ impl<'a, C: Constraint> Circuit<C> for LightweightCircuit<'a, C> {
     fn get_signals(&self) -> impl Iterator<Item = usize> {self.signals.iter().copied()}
     fn get_input_signals(&self) -> impl Iterator<Item = usize> {self.inputs.iter().copied()}
     fn get_output_signals(&self) -> impl Iterator<Item = usize> {self.outputs.iter().copied()}
-    fn parse_file(_file: &str) -> Self {unimplemented!("LightweightCircuit does not support file parsing")}
+    fn parse_file(_filepath: &str) -> Result<Self, Box<dyn Error>> where Self: Sized {Err("LightweightCircuit does not support parsing from file".into())}
     
     type SubCircuit<'b> = LightweightCircuit<'b, C> where Self: 'b;
     fn take_subcircuit<'b>(
