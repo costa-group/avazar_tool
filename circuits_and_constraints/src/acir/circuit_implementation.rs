@@ -13,12 +13,18 @@ use crate::constraint::Constraint;
 use crate::lightweight_circuit::LightweightCircuit;
 
 #[derive(Deserialize,Serialize, Debug)]
-struct ACIRReader {
-    prime: String,
+struct ACIRFunction {
     number_of_signals: usize,
     inputs: Vec<usize>,
     outputs: Vec<usize>,
     constraints: Vec<ACIRConstraintJSON>
+}
+
+#[derive(Deserialize,Serialize, Debug)]
+struct ACIRReader {
+    prime: String,
+    functions: Vec<ACIRFunction>,
+    num_functions: usize
 }
 
 #[derive(Deserialize,Serialize, Debug)]
@@ -58,7 +64,9 @@ impl Circuit<ACIRConstraint> for ACIRCircuit{
 
         let file = File::open(filepath)?;
         let reader = BufReader::new(file);
-        let ACIRReader {prime, inputs, outputs, constraints, ..} = serde_json::from_reader(reader)?;
+        let ACIRReader {prime, functions, num_functions} = serde_json::from_reader(reader)?;
+        if num_functions != 1 {return Err("Expected a single 'function' term in the ACIR JSON file".into());}
+        let ACIRFunction {inputs, outputs, constraints, ..} = functions.into_iter().nth(0).unwrap();
 
         fn to_constraint(json: ACIRConstraintJSON) -> Result<ACIRConstraint, Box<dyn Error>>  {
             let ACIRConstraintJSON {constant, linear, mul} = json;
@@ -94,30 +102,6 @@ impl Circuit<ACIRConstraint> for ACIRCircuit{
         })
     } 
 
-    // def parse_file(self, file: str) -> None:
-    //     fp = open(file, 'r')
-    //     acir_json = json.load(fp)
-    //     fp.close()
-
-    //     self._prime = int(acir_json["prime"])
-    //     self._nWires = int(acir_json["number_of_signals"])
-    //     self.input_signals = acir_json["inputs"]
-    //     self.output_signals = acir_json["outputs"]
-
-    //     self._constraints = list(map(lambda cons : parse_acir_constraint(cons, self.prime), acir_json["constraints"]))
-
-    //     ## fix any preprocessing bugs
-    //     circ_signals = set(itertools.chain(self.input_signals, self.output_signals, itertools.chain.from_iterable(map(lambda con : con.signals(), self.constraints))))
-    //     if len(circ_signals) != self._nWires: warnings.warn(f"Number of signals in file {self.nWires} does not match given value {len(circ_signals)}, fixing...")
-
-    //     next_int = itertools.count().__next__
-    //     sigmapp = {sig : next_int() for sig in sorted(circ_signals)}
-
-    //     self._constraints = list(map(lambda con : con.signal_map(sigmapp), self._constraints))
-    //     self._nWires = len(circ_signals)
-    //     self.input_signals = list(map(sigmapp.__getitem__, self.input_signals))
-    //     self.output_signals = list(map(sigmapp.__getitem__, self.output_signals))
-    
     // TODO: code duplication with this same take_subcircuit implementation across 3 circuit types
     type SubCircuit<'a> = LightweightCircuit<'a, ACIRConstraint> where Self: 'a;
     fn take_subcircuit<'a>(
