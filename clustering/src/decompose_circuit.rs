@@ -19,6 +19,7 @@ pub fn decompose_node<C: Constraint>(
     outputs: &[usize],
     resolution: Option<f64>,
     target_size: Option<f64>,
+    leiden_max_iterations: Option<usize>,
     equivalence_mode: EquivalenceMode,
     graph_backend: GraphBackend,
     inverse_coni_mapping: Option<&[usize]>,
@@ -30,7 +31,7 @@ pub fn decompose_node<C: Constraint>(
     let lw_circ = LightweightCircuit::<C>::from(prime, constraints, inputs, outputs);
     decompose_circuit(
         &lw_circ, 
-        resolution, target_size, equivalence_mode, graph_backend,
+        resolution, target_size, leiden_max_iterations, equivalence_mode, graph_backend,
         inverse_coni_mapping, inverse_sig_mapping, minimum_equivalence_size, equivalence_comparison_budget,
         debug)
 }
@@ -39,6 +40,7 @@ pub fn decompose_circuit<C: Constraint, S: Circuit<C>>(
     circuit: &S,
     resolution: Option<f64>,
     target_size: Option<f64>,
+    leiden_max_iterations: Option<usize>,
     equivalence_mode: EquivalenceMode,
     graph_backend: GraphBackend,
     inverse_coni_mapping: Option<&[usize]>,
@@ -68,7 +70,7 @@ pub fn decompose_circuit<C: Constraint, S: Circuit<C>>(
     let partition_timer = Instant::now();
 
     let resolution = match resolution { Some(r) => r, None => ((graph.num_edges() << 1) as f64)/(target_size.unwrap_or(f64::log2(graph.num_edges() as f64)).powi(2)) };
-    let partition: Vec<Vec<usize>> = graph.get_partition(resolution, 5, 25565);
+    let partition: Vec<Vec<usize>> = graph.get_partition(resolution, leiden_max_iterations.unwrap_or(5), 25565);
     
     //insert_and_print_timing(debug, &mut timing, "clustering", partition_timer.elapsed());
     timing_info.clustering = partition_timer.elapsed().as_secs_f32();

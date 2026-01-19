@@ -34,5 +34,8 @@ pub struct Args {
     pub equivalence_comparison_budget: Option<usize>,
 
     #[arg(long)]
+    pub leiden_max_iterations: Option<usize>,
+
+    #[arg(long)]
     pub debug: bool
 }

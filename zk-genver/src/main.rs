@@ -350,6 +350,7 @@ fn decompose_and_study(
         &node_info.output_signals,
         None,
         Some(target_size as f64),
+        None,
         equivalence_mode,
         GraphBackend::GraphRS,
         Some(&constraints_original_index),
