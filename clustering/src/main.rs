@@ -15,14 +15,14 @@ use std::error::Error;
 use std::time::{Instant};
 use clap::Parser;
 
-mod leiden_clustering;
 mod argument_parsing;
 pub mod decompose_circuit;
 
 
 use utils::structure::StructureReader;
 use crate::decompose_circuit::decompose_circuit;
-use crate::argument_parsing::{Args, FileType};
+use crate::argument_parsing::{Args};
+use utils::small_utilities::FileType;
 use utils::read_r1cs::{R1CSData};
 use circuits_and_constraints::acir::{ACIRCircuit};
 use circuits_and_constraints::circuit::Circuit;

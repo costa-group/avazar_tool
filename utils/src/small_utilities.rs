@@ -2,6 +2,39 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::hash::Hash;
 use itertools::Itertools;
 
+use clap::{ValueEnum};
+use strum_macros::{Display};
+
+#[derive(Debug, Display, Copy, Clone, ValueEnum)]
+pub enum GraphBackend {
+    #[strum(serialize = "graphrs")]
+    GraphRS,
+    #[strum(serialize = "singleclustering")]
+    SingleClustering,
+    #[strum(serialize = "xgraph")]
+    XGraph
+}
+
+#[derive(Debug, Display, Copy, Clone, ValueEnum)]
+pub enum EquivalenceMode {
+    #[strum(serialize = "total")]
+    Total,
+    #[strum(serialize = "structural")]
+    Structural,
+    #[strum(serialize = "local")]
+    Local,
+    #[strum(serialize = "none")]
+    None
+}
+
+#[derive(Debug, Display, Copy, Clone, ValueEnum)]
+pub enum FileType {
+    #[strum(serialize = "r1cs")]
+    R1CS,
+    #[strum(serialize = "acir")]
+    ACIR
+}
+
 pub fn distance_to_source_set<'a, T: Eq + Hash + Copy>(source_set: impl Iterator<Item = &'a T>, adjacencies: &'a HashMap<T, HashSet<T>>) -> HashMap<&'a T, usize> {
 
     let mut distance: HashMap<&T, usize> = source_set.map(|idx| (idx, 0)).collect();

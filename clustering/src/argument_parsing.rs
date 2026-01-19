@@ -1,33 +1,5 @@
-use clap::{Parser, ValueEnum};
-use strum_macros::{Display};
-
-#[derive(Debug, Display, Copy, Clone, ValueEnum)]
-pub enum GraphBackend {
-    #[strum(serialize = "graphrs")]
-    GraphRS,
-    #[strum(serialize = "singleclustering")]
-    SingleClustering
-}
-
-#[derive(Debug, Display, Copy, Clone, ValueEnum)]
-pub enum EquivalenceMode {
-    #[strum(serialize = "total")]
-    Total,
-    #[strum(serialize = "structural")]
-    Structural,
-    #[strum(serialize = "local")]
-    Local,
-    #[strum(serialize = "none")]
-    None
-}
-
-#[derive(Debug, Display, Copy, Clone, ValueEnum)]
-pub enum FileType {
-    #[strum(serialize = "r1cs")]
-    R1CS,
-    #[strum(serialize = "acir")]
-    ACIR
-}
+use clap::Parser;
+use utils::small_utilities::{GraphBackend, EquivalenceMode, FileType};
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]

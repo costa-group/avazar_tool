@@ -8,10 +8,9 @@ use utils::structure::{NodeInfo, StructureReader, TimingInfo};
 use circuit_graphing::directed_acyclic_graph::dag_from_partition::dag_from_partition;
 use circuit_graphing::directed_acyclic_graph::dag_postprocessing::merge_passthrough;
 use circuit_graphing::directed_acyclic_graph::equivalence_classes::{subcircuit_fingerprinting_equivalency, subcircuit_fingerprint_with_structural_augmentation_equivalency, subcircuit_fingerprinting_equivalency_and_structural_augmentation_equivalency};
-use circuit_graphing::graphing_circuits::{shared_signal_graph_graphrs};
-use crate::argument_parsing::{GraphBackend, EquivalenceMode};
-use crate::leiden_clustering::{CanLeiden};
-
+use circuit_graphing::graphing_circuits::{shared_signal_graph};
+use circuit_graphing::leiden_clustering::{CanLeiden};
+use utils::small_utilities::{GraphBackend, EquivalenceMode};
 
 pub fn decompose_node<C: Constraint>(
     prime: &BigInt, 
@@ -60,16 +59,7 @@ pub fn decompose_circuit<C: Constraint, S: Circuit<C>>(
     let graph_construction_timer = Instant::now();
     
     if debug {println!("LOG: Entering graph construction");}
-    let graph: Box<dyn CanLeiden> = 
-        match graph_backend {
-            GraphBackend::GraphRS => {
-                Box::new(shared_signal_graph_graphrs(circuit, debug))
-            }
-            GraphBackend::SingleClustering => {
-                panic!("SingleClustering currently unsupported due to dependency issues")
-                // Box::new(shared_signal_graph_single_clustering(circuit))
-            }
-        };
+    let graph: Box<dyn CanLeiden> = shared_signal_graph(circuit, graph_backend, debug);
     
     timing_info.graph_construction = graph_construction_timer.elapsed().as_secs_f32();
     if debug {println!("LOG: Finished graph construction in {:?}s", timing_info.graph_construction);}

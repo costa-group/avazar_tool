@@ -11,7 +11,7 @@ use input_user::Input;
 use std::path::PathBuf;
 use crate::modular_reasoning::check_tags;
 use clustering::decompose_circuit::decompose_node;
-use clustering::argument_parsing::{GraphBackend, EquivalenceMode};
+use utils::small_utilities::{GraphBackend, EquivalenceMode};
 
 
 use ansi_term::Colour;
