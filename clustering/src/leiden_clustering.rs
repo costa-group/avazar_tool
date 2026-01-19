@@ -44,8 +44,10 @@ impl CanLeiden for Graph<usize, usize> {
     }
 
     fn get_partition(self: Box<Self>, resolution: f64, _max_iterations: usize, seed: u64) -> Vec<Vec<usize>> {
+        // graphrs erroneously divides by 0.5 * m instead of 2 * m ... so we need to divide by 4 to correct this.
+
         // let result = leiden(&self, true, QualityFunction::Modularity, Some(resolution), None, None);
-        let result: Vec<HashSet<usize>> = louvain_communities(&self, true, Some(resolution), Some(1e-6), Some(seed)).unwrap(); // fixing a bug in their implementation
+        let result: Vec<HashSet<usize>> = louvain_communities(&self, true, Some(resolution * 0.25), Some(1e-6), Some(seed)).unwrap(); // fixing a bug in their implementation
 
 
         result.into_iter().map(|set| set.into_iter().collect()).collect()
