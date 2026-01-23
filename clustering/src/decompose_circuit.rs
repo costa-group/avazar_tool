@@ -52,7 +52,7 @@ pub fn decompose_circuit<C: Constraint, S: Circuit<C>>(
 
     let mut timing_info: TimingInfo = TimingInfo{
     	clustering: 0.0,
-        graph_construction: 0.0,
+        graph_construction: Some(0.0),
     	dag_construction: 0.0,
     	equivalency: 0.0,
     	total: 0.0,
@@ -63,8 +63,8 @@ pub fn decompose_circuit<C: Constraint, S: Circuit<C>>(
     if debug {println!("LOG: Entering graph construction");}
     let graph: Box<dyn CanLeiden> = shared_signal_graph(circuit, graph_backend, debug);
     
-    timing_info.graph_construction = graph_construction_timer.elapsed().as_secs_f32();
-    if debug {println!("LOG: Finished graph construction in {:?}s", timing_info.graph_construction);}
+    timing_info.graph_construction = Some(graph_construction_timer.elapsed().as_secs_f32());
+    if debug {println!("LOG: Finished graph construction in {:?}s", timing_info.graph_construction.unwrap());}
 
     // Partition Graph
     let partition_timer = Instant::now();

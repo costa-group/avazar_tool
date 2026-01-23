@@ -9,7 +9,7 @@ use circom_algebra::algebra::Constraint;
 
 #[derive(Deserialize,Serialize, Debug)]
 pub struct TimingInfo{
-    pub graph_construction: f32,
+    pub graph_construction: Option<f32>,
     pub clustering: f32,
     pub dag_construction: f32,
     pub equivalency: f32,
@@ -109,7 +109,7 @@ pub fn generate_empty_structure(
 
     let aux_timing = TimingInfo{
         clustering: 0.0,
-        graph_construction: 0.0,
+        graph_construction: Some(0.0),
         dag_construction: 0.0,
         equivalency: 0.0,
         total: 0.0
