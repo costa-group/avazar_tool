@@ -25,9 +25,8 @@ pub struct DAGNode<'a, C: Constraint + 'a, S: Circuit<C> + 'a> {
 
 impl<'a, C: Constraint + 'a, S: Circuit<C> + 'a> DAGNode<'a, C, S> {
 
-    pub fn new(circ: &'a S, node_id: usize, constraints: Vec<usize>, input_signals: HashSet<usize>, output_signals: HashSet<usize>) -> DAGNode<'a, C, S> {
-        
-        Self { circ: circ, id: node_id, constraints: constraints, input_signals: input_signals, output_signals: output_signals, successors: Vec::new(), predecessors: Vec::new(), _phantom: PhantomData }
+    pub fn new(circ: &'a S, node_id: usize, constraints: Vec<usize>, input_signals: HashSet<usize>, output_signals: HashSet<usize>, successors: Option<Vec<usize>>, predecessors: Option<Vec<usize>>) -> DAGNode<'a, C, S> {
+        Self { circ: circ, id: node_id, constraints: constraints, input_signals: input_signals, output_signals: output_signals, successors: successors.unwrap_or_else(|| Vec::new()), predecessors: predecessors.unwrap_or_else(|| Vec::new()), _phantom: PhantomData }
     }
 
     pub fn len(&self) -> usize {
@@ -36,6 +35,10 @@ impl<'a, C: Constraint + 'a, S: Circuit<C> + 'a> DAGNode<'a, C, S> {
 
     pub fn get_circ(&self) -> &'a S {
         self.circ
+    }
+
+    pub fn signals(&self) -> HashSet<usize> {
+        self.get_constraint_indices().flat_map(|coni| self.circ.get_constraints()[coni].borrow().signals()).collect()
     }
 
     pub fn add_successors(&mut self, to_add: impl Iterator<Item = usize>) -> () {
@@ -135,5 +138,32 @@ impl<'a, C: Constraint + 'a, S: Circuit<C> + 'a> DAGNode<'a, C, S> {
 
         nodes.insert(root, newnode);
         root
+    }
+
+    pub fn replace_circ<'b, T: Circuit<C> + 'b>(self, circ: &'b T) -> DAGNode<'b, C, T> where 'b : 'a {
+        let Self { id, constraints, input_signals, output_signals, successors, predecessors, ..} = self;
+        DAGNode::<'b, C, T>::new(circ, id, constraints, input_signals, output_signals, Some(successors), Some(predecessors))
+    }
+
+    pub fn signal_to_nodes(nodes: impl Iterator<Item = &'a DAGNode<'a, C, S>>) -> HashMap<usize, Vec<usize>> {
+        let mut signal_to_nodes: HashMap<usize, Vec<usize>> = HashMap::new();
+
+        for node in nodes {
+            for sig in node.signals() {
+                signal_to_nodes.entry(sig).or_insert_with(|| Vec::new()).push(node.id);
+            }
+        }
+
+        signal_to_nodes
+    }
+
+    pub fn map_internal_indices(&mut self, inverse_constraint_mapping: Option<&[usize]>, inverse_signal_mapping: Option<&[usize]>) -> () {
+        // TODO: code duplication
+        let signal_mapping = |sig: usize| if inverse_signal_mapping.is_none() {sig} else {inverse_signal_mapping.unwrap()[sig]};
+        let constraint_mapping = |coni: usize| if inverse_constraint_mapping.is_none() {coni} else {inverse_constraint_mapping.unwrap()[coni]};
+
+        self.constraints = self.constraints.iter().copied().map(constraint_mapping).collect();
+        self.input_signals = self.input_signals.iter().copied().map(signal_mapping).collect();
+        self.output_signals = self.output_signals.iter().copied().map(signal_mapping).collect();
     }
 }
