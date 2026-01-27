@@ -93,11 +93,9 @@ pub fn merge_passthrough<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
     for (coni, node_id) in nodes.values().flat_map(|node| node.constraints.iter().map(|coni| (coni, node.id))) { coni_to_node[*coni] = node_id };
     
     let passthrough_signals: HashSet<usize> = nodes.values().flat_map(|node| get_passthrough_signals(node)).collect();
-    println!{"Log: {:?} passthrough_signals", passthrough_signals.len()};
 
     for signal in passthrough_signals.into_iter() {
 
-        println!{"Log: Dealing with signal {:?}", signal};
         let signal_timer = Instant::now();
 
 
@@ -107,7 +105,6 @@ pub fn merge_passthrough<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
         for nodeid in sig_to_coni[&signal].iter().map(|coni| coni_to_node[*coni]).collect::<HashSet<usize>>().into_iter() {
             if is_passthrough_for_signal(&nodes[&nodeid], &signal) {passthrough_nodes.push(nodeid);} else {non_passthrough_nodes.push(nodeid);}
         }
-        println!{"Log: {:?} passthrough nodes and {:?} non-passthrough nodes", passthrough_nodes.len(), non_passthrough_nodes.len()};
         if passthrough_nodes.len() == 0 {continue;}
         if non_passthrough_nodes.len() == 0 {panic!("There does not exist a non-passthrough node for signal {:?}", signal);}
 
@@ -133,8 +130,6 @@ pub fn merge_passthrough<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
         );
 
         // merge nodes
-        println!{"Log: merging {:?} nodes", to_merge.len()};
         DAGNode::merge_nodes(to_merge, nodes, &sig_to_coni, &mut coni_to_node);
-        println!("Log: Finished with in {:?}", signal_timer.elapsed());
     }
 }
