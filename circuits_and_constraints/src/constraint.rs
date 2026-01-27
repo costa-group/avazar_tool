@@ -25,7 +25,7 @@ pub trait Constraint {
     
     fn is_nonlinear(&self) -> bool;
     fn is_ordered(&self) -> bool;
-    fn is_bridge_constraint(&self, prime: BigInt, strict: bool) -> bool;
+    fn is_bridge_constraint(&self, prime: &BigInt, strict: bool) -> bool;
     fn singular_class_requires_additional_constraints() -> bool;
 
     fn encode_single_norm_pair(
