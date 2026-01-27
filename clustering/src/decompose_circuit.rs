@@ -193,7 +193,7 @@ pub fn decompose_circuit<C: Constraint, S: Circuit<C>>(
         }
         _ => {
             let preprocessed_nodes = match preprocessing {
-                ClusteringPreprocessing::BridgeFinding => bridge_partitioning(circuit, true),
+                ClusteringPreprocessing::BridgeFinding => bridge_partitioning(circuit, true, debug),
                 _ => {panic!("Unimplemented partitioning method {:?}", preprocessing);}
             };
             decompose_circuit_over_dagnodes(
