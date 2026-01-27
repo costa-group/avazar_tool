@@ -11,7 +11,7 @@ use input_user::Input;
 use std::path::PathBuf;
 use crate::modular_reasoning::check_tags;
 use clustering::decompose_circuit::decompose_node;
-use utils::small_utilities::{GraphBackend, EquivalenceMode};
+use utils::small_utilities::{GraphBackend, EquivalenceMode, ClusteringPreprocessing};
 
 
 use ansi_term::Colour;
@@ -353,6 +353,7 @@ fn decompose_and_study(
         None,
         equivalence_mode,
         GraphBackend::GraphRS,
+        ClusteringPreprocessing::None,
         Some(&constraints_original_index),
         None,
         None, // minimum_equivalence_size: Option<usize> -- flag for minimum size to try equivalence
