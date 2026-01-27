@@ -28,6 +28,14 @@ pub enum EquivalenceMode {
 }
 
 #[derive(Debug, Display, Copy, Clone, ValueEnum)]
+pub enum ClusteringPreprocessing {
+    #[strum(serialize = "none")]
+    None,
+    #[strum(serialize = "bridgefinding")]
+    BridgeFinding,
+}
+
+#[derive(Debug, Display, Copy, Clone, ValueEnum)]
 pub enum FileType {
     #[strum(serialize = "r1cs")]
     R1CS,
