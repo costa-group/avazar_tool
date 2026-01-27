@@ -58,10 +58,22 @@ pub fn distance_to_source_set<'a, T: Eq + Hash + Copy>(source_set: impl Iterator
     distance
 }
 
-pub fn dfs_can_reach_target_from_sources(source: &Vec<usize>, targets: &Vec<usize>, adjacencies: &HashMap<usize, &Vec<usize>>) -> Vec<usize> {
+pub fn dfs_merge_in_dag_with_bfs_preprocessing(parent: &usize, child: &usize, adjacencies: &HashMap<usize, &Vec<usize>>, preprocessing_steps: usize) -> Vec<usize> {
+    let mut can_reach_t: HashMap<&usize, bool> = HashMap::from([(child, true)]);
+    let mut current_iteration: HashSet<&usize> = HashSet::from([child]);
 
-    let mut can_reach_t: HashMap<&usize, bool> = targets.iter().map(|t| (t, true)).collect();
-    let mut stack: Vec<&usize> = source.into_iter().collect();
+    for _ in 0..preprocessing_steps {
+        current_iteration = current_iteration.into_iter().flat_map(|vertex| adjacencies[vertex].into_iter()).filter(|vertex| !can_reach_t.contains_key(vertex)).collect();
+        can_reach_t.extend(current_iteration.iter().copied().map(|vertex| (vertex, false)));
+    }
+
+    dfs_merge_in_dag(parent, child, adjacencies, Some(can_reach_t))
+}
+
+pub fn dfs_merge_in_dag(parent: &usize, child: &usize, adjacencies: &HashMap<usize, &Vec<usize>>, can_reach_t: Option<HashMap<&usize, bool>>) -> Vec<usize> {
+
+    let mut can_reach_t: HashMap<&usize, bool> = can_reach_t.unwrap_or(HashMap::from([(child, true)]));
+    let mut stack: Vec<&usize> = vec![parent];
 
     while stack.len() > 0 {
 
@@ -71,17 +83,17 @@ pub fn dfs_can_reach_target_from_sources(source: &Vec<usize>, targets: &Vec<usiz
             continue;
         };
 
-        stack.extend(adjacencies.get(curr).unwrap().iter().filter(|adj| can_reach_t.get(*adj).is_none()));
+        stack.extend(adjacencies[curr].into_iter().filter(|adj| can_reach_t.get(*adj).is_none()));
 
-        if adjacencies.get(curr).unwrap().iter().any(|adj| can_reach_t.get(adj).copied().unwrap_or(false) ) {
+        if adjacencies[curr].into_iter().any(|adj| can_reach_t.get(adj).copied().unwrap_or(false) ) {
             can_reach_t.entry(curr).or_insert(true);
-        } else if adjacencies.get(curr).unwrap().iter().all(|adj| !can_reach_t.get(adj).copied().unwrap_or(true) ) {
+        } else if adjacencies[curr].into_iter().all(|adj| !can_reach_t.get(adj).copied().unwrap_or(true) ) {
             can_reach_t.entry(curr).or_insert(false);
         }
 
     }
 
-    can_reach_t.into_iter().filter(|(_, val)| *val).map(|(k, _)| k).copied().filter(|k| !targets.contains(k)).collect()
+    can_reach_t.into_iter().filter(|(_, val)| *val).map(|(k, _)| k).copied().collect()
 }
 
 pub fn count_ints<T: Hash + Eq + Ord>(source: impl IntoIterator<Item = T>) -> Vec<(T, usize)> {
