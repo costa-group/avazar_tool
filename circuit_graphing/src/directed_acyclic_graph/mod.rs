@@ -102,37 +102,45 @@ impl<'a, C: Constraint + 'a, S: Circuit<C> + 'a> DAGNode<'a, C, S> {
 
         let root: usize = to_merge[0];
 
-        let new_successors: Vec<usize> = to_merge.iter().flat_map(|nkey| nodes.get(nkey).unwrap().get_successors()).copied().filter(|nkey| !to_merge.contains(nkey)).collect::<HashSet<usize>>().into_iter().collect();
-        let new_predecessors: Vec<usize> = to_merge.iter().flat_map(|nkey| nodes.get(nkey).unwrap().get_predecessors()).copied().filter(|nkey| !to_merge.contains(nkey)).collect::<HashSet<usize>>().into_iter().collect();
+        let new_successors: HashSet<usize> = to_merge.iter().flat_map(|nkey| nodes.get(nkey).unwrap().get_successors()).copied().filter(|nkey| !to_merge.contains(nkey)).collect();
+        let new_predecessors: HashSet<usize> = to_merge.iter().flat_map(|nkey| nodes.get(nkey).unwrap().get_predecessors()).copied().filter(|nkey| !to_merge.contains(nkey)).collect();
 
         // fix parents to point to root
         for nkey in new_predecessors.iter() {
-            nodes.get_mut(nkey).unwrap().successors = nodes.get(nkey).unwrap().successors.iter().copied().filter(|okey| !to_merge.contains(okey)).chain([root].into_iter()).collect();
+            let nnode = nodes.get_mut(nkey).unwrap();nnode.successors.retain_mut(|okey| !to_merge.contains(okey));nnode.successors.push(root);
         }
         // fix children to point to root
         for nkey in new_successors.iter() {
-            nodes.get_mut(&nkey).unwrap().predecessors = nodes.get(&nkey).unwrap().predecessors.iter().copied().filter(|okey| !to_merge.contains(okey)).chain([root].into_iter()).collect();
+            let nnode = nodes.get_mut(nkey).unwrap();nnode.predecessors.retain_mut(|okey| !to_merge.contains(okey));nnode.predecessors.push(root);
         }
 
-        let new_constraints: Vec<usize> = to_merge.iter().flat_map(|nkey| nodes.get(nkey).unwrap().constraints.iter()).copied().collect();
+        let circ: &'a S = nodes[&root].circ;        
 
-        let circ: &'a S = nodes.get(&root).unwrap().circ;
+        let mut new_constraints: Vec<usize> = Vec::new();
+        let mut new_input_signals: HashSet<usize> = HashSet::new();
+        let mut new_output_signals: HashSet<usize> = HashSet::new();
 
-        let new_input_signals: HashSet<usize> = to_merge.iter().flat_map(|nkey| nodes.get(nkey).unwrap().input_signals.iter()).copied().filter(|sig|
-            circ.signal_is_input(sig) || sig_to_coni.get(sig).unwrap().iter().copied().any(|coni| new_predecessors.contains(&coni_to_node[coni]))
-        ).collect();
-        let new_output_signals: HashSet<usize> = to_merge.iter().flat_map(|nkey| nodes.get(nkey).unwrap().output_signals.iter()).copied().filter(|sig|
-            circ.signal_is_output(sig) || sig_to_coni.get(sig).unwrap().iter().copied().any(|coni| new_successors.contains(&coni_to_node[coni]))
-        ).collect();
+        for nkey in to_merge.iter() {
+
+            let DAGNode { constraints, input_signals, output_signals, .. } = nodes.remove(nkey).unwrap();
+
+            new_constraints.extend(constraints);
+            new_input_signals.extend(input_signals.into_iter().filter(|sig|
+                circ.signal_is_input(sig) || sig_to_coni[sig].iter().copied().map(|coni| coni_to_node[coni]).collect::<HashSet<usize>>().intersection(&new_predecessors).count() > 0
+            ));
+            new_output_signals.extend(output_signals.into_iter().filter(|sig|
+                circ.signal_is_output(sig) || sig_to_coni[sig].iter().copied().map(|coni| coni_to_node[coni]).collect::<HashSet<usize>>().intersection(&new_successors).count() > 0
+            ));
+
+        }
 
         // fix coni_to_node
         for coni in new_constraints.iter().copied() { coni_to_node[coni] = root; };
-        for okey in to_merge.iter().skip(1) {nodes.remove(okey);};
 
         let newnode = DAGNode { circ: circ, id: root, 
             constraints: new_constraints, 
             input_signals: new_input_signals, output_signals: new_output_signals, 
-            successors: new_successors, predecessors: new_predecessors, 
+            successors: new_successors.into_iter().collect(), predecessors: new_predecessors.into_iter().collect(), 
             _phantom: PhantomData 
         };
 
