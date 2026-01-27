@@ -63,13 +63,13 @@ fn start(args: Args) -> Result<(), Box<dyn Error>> {
             let circuit = R1CSData::parse_file(&args.filepath)?;
             println!("Took {:?} to parse", circuit_parsing_timer.elapsed());
             decompose_circuit(&circuit, args.resolution, args.target_size, args.leiden_max_iterations, args.equivalence_mode, 
-                args.graph_backend, None, None, args.minimum_equivalence_size, args.equivalence_comparison_budget, args.debug)
+                args.graph_backend, args.preprocessing, None, None, args.minimum_equivalence_size, args.equivalence_comparison_budget, args.debug)
             },
         FileType::ACIR =>{
             let circuit = ACIRCircuit::parse_file(&args.filepath)?;
             println!("Took {:?} to parse", circuit_parsing_timer.elapsed());
             decompose_circuit(&circuit, args.resolution, args.target_size, args.leiden_max_iterations, args.equivalence_mode, 
-                args.graph_backend, None, None, args.minimum_equivalence_size, args.equivalence_comparison_budget, args.debug)
+                args.graph_backend, args.preprocessing, None, None, args.minimum_equivalence_size, args.equivalence_comparison_budget, args.debug)
             }
     };
     

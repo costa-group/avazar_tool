@@ -1,5 +1,5 @@
 use clap::Parser;
-use utils::small_utilities::{GraphBackend, EquivalenceMode, FileType};
+use utils::small_utilities::{GraphBackend, EquivalenceMode, FileType, ClusteringPreprocessing};
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -23,6 +23,9 @@ pub struct Args {
 
     #[arg(short, long="equivalence", value_enum, default_value_t=EquivalenceMode::Structural)]
     pub equivalence_mode: EquivalenceMode,
+
+    #[arg(short, long="preprocessing", value_enum, default_value_t=ClusteringPreprocessing::None)]
+    pub preprocessing: ClusteringPreprocessing,
 
     #[arg(short, long="file_type", value_enum, default_value_t=FileType::R1CS)]
     pub file_type: FileType,
