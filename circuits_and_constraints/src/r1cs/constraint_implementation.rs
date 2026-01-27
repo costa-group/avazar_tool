@@ -179,6 +179,9 @@ impl Constraint for R1CSConstraint {
     }
 
     fn is_ordered(&self) -> bool {!(self.0.len() > 0 && self.1.len() > 0 && self.0.values().sorted().eq(self.1.values().sorted()))}
+    fn is_bridge_constraint(&self, prime: BigInt, strict: bool) -> bool {
+        !self.is_nonlinear() && self.2.len() == 2 && self.2.values().sum::<BigInt>() == prime && (!strict || self.2.values().any(|coef| *coef == BigInt::from(1)))
+    }
 
     fn singular_class_requires_additional_constraints() -> bool {false}
 

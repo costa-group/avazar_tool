@@ -118,6 +118,10 @@ impl Constraint for ACIRConstraint {
     
     fn is_nonlinear(&self) -> bool {self.mult.len() > 0}
     fn is_ordered(&self) -> bool {true} // irelevant
+    fn is_bridge_constraint(&self, prime: BigInt, strict: bool) -> bool {
+        !self.is_nonlinear() && self.constant != BigInt::from(0) && self.linear.len() == 2 && self.linear.values().sum::<BigInt>() == prime && (!strict || self.linear.values().any(|coef| *coef == BigInt::from(1)))
+    }
+
     fn singular_class_requires_additional_constraints() -> bool {true}
 
     fn encode_single_norm_pair(
