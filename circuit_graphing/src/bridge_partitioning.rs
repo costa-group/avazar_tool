@@ -64,9 +64,9 @@ pub fn bridge_partitioning<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(circ: &'a
 
     // pass partition to hierarchy and return DAGNodes
     let mut dagnodes = dag_from_partition(circ, node_to_coni, &mut (0..));
-    println!(
-        "Number of passthrough clusters {:?} out of {:?}", dagnodes.values().filter(|&node| node.get_input_signals().intersection(node.get_output_signals()).count() > 0).count(), dagnodes.len()
-    );
+    if debug {println!(
+        "LOG: Number of passthrough clusters {:?} out of {:?}", dagnodes.values().filter(|&node| node.get_input_signals().intersection(node.get_output_signals()).count() > 0).count(), dagnodes.len()
+    );}
 
     merge_passthrough(circ, &mut dagnodes);
     if debug {println!("LOG: Finished dagnode construction in {:?}", dag_from_partition_timer.elapsed());}
