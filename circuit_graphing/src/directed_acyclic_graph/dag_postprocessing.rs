@@ -1,5 +1,4 @@
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::time::{Instant};
 
 use super::DAGNode;
 use circuits_and_constraints::constraint::Constraint;
@@ -7,6 +6,8 @@ use circuits_and_constraints::circuit::Circuit;
 use circuits_and_constraints::utils::signals_to_constraints_with_them;
 use utils::small_utilities::{dfs_merge_in_dag};
 
+#[allow(dead_code)]
+// merge_under_property is unused as merge_passthrough moved to not use it but retained in case of future
 fn merge_under_property<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
     circ: &'a S, nodes: &mut HashMap<usize, DAGNode<'a, C, S>>, 
     node_property: fn(&DAGNode<'a, C, S>) -> usize,
@@ -95,9 +96,6 @@ pub fn merge_passthrough<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
     let passthrough_signals: HashSet<usize> = nodes.values().flat_map(|node| get_passthrough_signals(node)).collect();
 
     for signal in passthrough_signals.into_iter() {
-
-        let signal_timer = Instant::now();
-
 
         // find nodes that contain signal as input but not as output
         let mut non_passthrough_nodes: Vec<usize> = Vec::new();
