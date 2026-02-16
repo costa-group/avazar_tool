@@ -34,6 +34,7 @@ pub struct NodeInfo{
     pub output_signals: Vec<usize>,
     pub signals: Vec<usize>, 
     pub is_custom: bool,
+    pub predecessors: Vec<usize>, //ids of the predecessors
     pub successors: Vec<usize> //ids of the successors 
 
 }
@@ -132,6 +133,7 @@ pub fn generate_empty_structure(
         input_signals: (n_outputs + 1..n_outputs + n_inputs + 1).collect(),
         signals: (1..n_signals).collect(),
         is_custom: false,
+        predecessors: vec![],
         successors: vec![]
     };
     StructureInfo{
