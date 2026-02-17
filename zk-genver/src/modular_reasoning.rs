@@ -9,7 +9,6 @@ use std::collections::HashMap;
 
 pub type SafetyImplication = (Vec<usize>, Vec<usize>);
 
-
     pub fn check_tags(
         node_info: &NodeInfo, 
         field: &BigInt, 
@@ -18,7 +17,8 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
         nodeid2pos: &HashMap<usize, usize>,
         constraint_list: &Vec<Constraint>,
         solver: PossibleSolver,
-        apply_deduction_assigned: bool
+        apply_deduction_assigned: bool,
+        apply_predecessors:bool
     ) 
     -> (PossibleResult, f64, usize, Vec<String>){
         
@@ -30,14 +30,27 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
         }
 
         let mut implications_safety: Vec<SafetyImplication> = Vec::new();
-        for node_id in &node_info.successors{
-            let pos = nodeid2pos[node_id];
-            let subtree_child = &node_list[pos];
-            let (mut new_signals, new_implications_safety) = generate_info_subtree(subtree_child);
-            signals.append(&mut new_signals);
-            implications_safety.push(new_implications_safety)
+        let mut to_check_next;
+        if !apply_predecessors{
+
+            for node_id in &node_info.successors{
+                let pos = nodeid2pos[node_id];
+                let subtree_child = &node_list[pos];
+                let (mut new_signals, new_implications_safety) = generate_info_subtree(subtree_child);
+                signals.append(&mut new_signals);
+                implications_safety.push(new_implications_safety)
+            }
+            to_check_next= node_info.successors.clone();
+        } else{
+            for node_id in &node_info.predecessors{
+                let pos = nodeid2pos[node_id];
+                let subtree_child = &node_list[pos];
+                let (mut new_signals, new_implications_safety) = generate_info_subtree(subtree_child);
+                signals.append(&mut new_signals);
+                implications_safety.push(new_implications_safety)
+            }
+            to_check_next = node_info.predecessors.clone();
         }
-        let mut to_check_next = node_info.successors.clone();
 
         
         let mut logs =  Vec::new();
@@ -74,7 +87,7 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
 
                     let pos = nodeid2pos[node_id];
                     let node = &node_list[pos];
-                    let result_add_components = add_info_component(node, &mut verification, node_list, nodeid2pos, constraint_list);                    
+                    let result_add_components = add_info_component(node, &mut verification, node_list, nodeid2pos, constraint_list,apply_predecessors);                    
                     if result_add_components.is_some(){
                         for aux in result_add_components.unwrap(){
                             to_check_next.push(aux);
@@ -100,7 +113,14 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
   
     
 
-    fn add_info_component(info: &NodeInfo, verification: &mut SafetyVerification, node_list: &Vec<NodeInfo>, nodeid2pos: &HashMap<usize, usize>, constraint_list: &Vec<Constraint>)-> Option<Vec<usize>>{
+    fn add_info_component(
+        info: &NodeInfo, 
+        verification: &mut SafetyVerification, 
+        node_list: &Vec<NodeInfo>, 
+        nodeid2pos: &HashMap<usize, usize>, 
+        constraint_list: &Vec<Constraint>,
+        apply_predecessors: bool
+    )-> Option<Vec<usize>>{
 
             for c in &info.constraints{
                 verification.constraints.push(constraint_list[*c].clone());
@@ -108,16 +128,29 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
             for s in &info.signals{
                 verification.signals.push_back(*s);
             }
-            for node_id in &info.successors{
-                let pos = nodeid2pos[node_id];
-                let subtree_child = &node_list[pos];
-                let (new_signals, new_safety_implication) = generate_info_subtree(subtree_child);
-                for s in new_signals{
-                    verification.signals.push_back(s);
+            if !apply_predecessors{
+                for node_id in &info.successors{
+                    let pos = nodeid2pos[node_id];
+                    let subtree_child = &node_list[pos];
+                    let (new_signals, new_safety_implication) = generate_info_subtree(subtree_child);
+                    for s in new_signals{
+                        verification.signals.push_back(s);
+                    }
+                    verification.implications_safety.push(new_safety_implication);
                 }
-                verification.implications_safety.push(new_safety_implication);
+                Some(info.successors.clone())
+            } else{
+                for node_id in &info.predecessors{
+                    let pos = nodeid2pos[node_id];
+                    let subtree_child = &node_list[pos];
+                    let (new_signals, new_safety_implication) = generate_info_subtree(subtree_child);
+                    for s in new_signals{
+                        verification.signals.push_back(s);
+                    }
+                    verification.implications_safety.push(new_safety_implication);
+                }
+                Some(info.predecessors.clone())
             }
-            Some(info.successors.clone())
 
     }
 

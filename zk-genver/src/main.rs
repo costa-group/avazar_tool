@@ -145,6 +145,8 @@ fn start() -> Result<(), ()> {
 
     let timeout: u64 = user_input.timeout;
     let apply_deduction_assigned: bool = user_input.apply_deduction_assigned;
+    let apply_predecessors: bool = user_input.apply_predecessors;
+
 
 
     let starting_constraints = if user_input.original_structure.is_some(){
@@ -201,6 +203,7 @@ fn start() -> Result<(), ()> {
             timeout, 
             solver,
             apply_deduction_assigned,
+            apply_predecessors,
             &mut results
         );
     }
@@ -225,6 +228,7 @@ fn start() -> Result<(), ()> {
                 equivalence_mode,
                 target_size,
                 apply_deduction_assigned,
+                apply_predecessors,
                 &mut results,
             );
         }
@@ -261,7 +265,9 @@ fn process_node(
     timeout: u64,
     solver: PossibleSolver,
     apply_deduction_assigned: bool,
+    apply_predecessors: bool,
     results: &mut ResultInfo,
+
 ) {
 
     // To not study the custom templates
@@ -287,7 +293,8 @@ fn process_node(
         &nodeid2pos, 
         &constraints ,
         solver,
-        apply_deduction_assigned
+        apply_deduction_assigned,
+        apply_predecessors
     );
         
         //for log in logs{
@@ -321,6 +328,7 @@ fn decompose_and_study(
     equivalence_mode: EquivalenceMode,
     target_size: usize,
     apply_deduction_assigned: bool,
+    apply_predecessors: bool,
     results: &mut ResultInfo,
 ) {
     println!("LOG: Reconsidering again node {}", node_id);
@@ -409,6 +417,7 @@ fn decompose_and_study(
             timeout, 
             solver,
             apply_deduction_assigned,
+            apply_predecessors,
             &mut new_results
         );
     }

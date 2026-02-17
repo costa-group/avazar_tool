@@ -11,6 +11,7 @@ pub struct Input {
     pub use_civer: bool,
     pub _flag_verbose: bool,
     pub apply_deduction_assigned: bool,
+    pub apply_predecessors: bool,
     pub prime: BigInt,
     pub clustering_size: usize,
     pub equivalence_mode: usize,
@@ -30,6 +31,7 @@ impl Input {
         let prime = input_processing::get_prime(&matches)?;
         let clustering_size = input_processing::get_clustering_size(&matches)?;
         let apply_deduction_assigned = input_processing::get_apply_deduction_assigned(&matches);
+        let apply_predecessors = input_processing::get_apply_predecessors(&matches);
         let equivalence_mode = input_processing::get_equivalence_mode(&matches)?;
         let target_size = input_processing::get_target_size(&matches)?;
 
@@ -45,6 +47,7 @@ impl Input {
             prime,
             clustering_size,
             apply_deduction_assigned,
+            apply_predecessors,
             equivalence_mode,
             target_size
         })
@@ -111,6 +114,10 @@ mod input_processing {
 
     pub fn get_apply_deduction_assigned(matches: &ArgMatches) -> bool {
         matches.is_present("apply_deduction_assigned")
+    }
+    
+    pub fn get_apply_predecessors(matches: &ArgMatches) -> bool {
+        matches.is_present("apply_predecessors")
     }
 
     pub fn get_prime(matches: &ArgMatches) -> Result<BigInt, ()>{
@@ -228,6 +235,14 @@ mod input_processing {
                     .takes_value(false)
                     .hidden(false)
                     .help("Activate to apply the deduction rule for linear constraints")
+                    .display_order(600)
+            )
+            .arg(
+                Arg::with_name("apply_predecessors")
+                    .long("apply_predecessors")
+                    .takes_value(false)
+                    .hidden(false)
+                    .help("Activate to start adding predecessors instead of childs")
                     .display_order(600)
             )
             .arg(
