@@ -5,7 +5,9 @@ use circom_algebra::num_bigint::BigInt;
 use std::collections::LinkedList;
 use std::time::{Instant, Duration};
 use utils::structure::NodeInfo;
-use std::collections::HashMap;
+use std::collections::{HashSet,HashMap};
+use crate::ResultInfo;
+
 
 pub type SafetyImplication = (Vec<usize>, Vec<usize>);
 
@@ -18,9 +20,11 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
         constraint_list: &Vec<Constraint>,
         solver: PossibleSolver,
         apply_deduction_assigned: bool,
-        apply_predecessors:bool
+        apply_predecessors:bool,
+        no_abstract_fails:bool,
+        results:&ResultInfo
     ) 
-    -> (PossibleResult, f64, usize, Vec<String>){
+    -> (PossibleResult, f64, usize, Vec<String>, HashSet<usize>){
         
         let mut signals: LinkedList<usize> = node_info.signals.clone().into_iter().collect(); 
         
@@ -29,45 +33,71 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
             constraints.push(constraint_list[*c].clone());
         }
 
+                let mut logs =  Vec::new();
+        let mut n_rounds = 0;
         let mut implications_safety: Vec<SafetyImplication> = Vec::new();
-        let mut to_check_next;
+
+
+        let mut verification = SafetyVerification::new(
+            &node_info.node_id.to_string(), 
+            signals, 
+            node_info.input_signals.clone(),
+            node_info.output_signals.clone(),
+            constraints.clone(), 
+            implications_safety,
+            field,
+            verification_timeout,
+            apply_deduction_assigned
+        );
+
+        let mut to_check_next=Vec::new();
         if !apply_predecessors{
 
             for node_id in &node_info.successors{
                 let pos = nodeid2pos[node_id];
                 let subtree_child = &node_list[pos];
                 let (mut new_signals, new_implications_safety) = generate_info_subtree(subtree_child);
-                signals.append(&mut new_signals);
-                implications_safety.push(new_implications_safety)
+                verification.signals.append(&mut new_signals);
+
+                if no_abstract_fails && results.studied_nodes.contains_key(node_id){
+                    let result = results.studied_nodes.get(node_id).unwrap();
+                    match result{
+                        PossibleResult::VERIFIED => {
+                            verification.implications_safety.push(new_implications_safety);
+                            to_check_next.push(*node_id);
+                        }
+                        _ =>{
+                            if !verification.added_nodes.contains(node_id) { 
+                                let pos = nodeid2pos[node_id];
+                                let node = &node_list[pos];
+                                let result_add_components = add_info_component(node, &mut verification, node_list, nodeid2pos, constraint_list,apply_predecessors);                    
+                                if result_add_components.is_some(){
+                                    for aux in result_add_components.unwrap(){
+                                        to_check_next.push(aux);
+                                    }
+                                }
+                                verification.added_nodes.insert(*node_id);
+                            }
+                        }
+                    }
+
+                }else{
+                    verification.implications_safety.push(new_implications_safety);
+                    to_check_next.push(*node_id);
+                }
             }
-            to_check_next= node_info.successors.clone();
         } else{
             for node_id in &node_info.predecessors{
                 let pos = nodeid2pos[node_id];
                 let subtree_child = &node_list[pos];
                 let (mut new_signals, new_implications_safety) = generate_info_subtree(subtree_child);
-                signals.append(&mut new_signals);
-                implications_safety.push(new_implications_safety)
+                verification.signals.append(&mut new_signals);
+                verification.implications_safety.push(new_implications_safety)
             }
             to_check_next = node_info.predecessors.clone();
         }
 
         
-        let mut logs =  Vec::new();
-        let mut n_rounds = 0;
-
-
-        let mut verification = SafetyVerification::new(
-            &node_info.node_id.to_string(), 
-            signals.clone(), 
-            node_info.input_signals.clone(),
-            node_info.output_signals.clone(),
-            constraints.clone(), 
-            implications_safety.clone(),
-            field,
-            verification_timeout,
-            apply_deduction_assigned
-        );
         logs.push(format!("Checking template {}\n", node_info.node_id));
         logs.push(format!("Number of signals (i,int,o): {}\n", node_info.signals.len()));      
         logs.push(format!("Number of constraints in template: {}\n", node_info.constraints.len()));
@@ -106,7 +136,7 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
         } 
         let duration = inicio.elapsed();  
         pretty_print_result(&mut logs, duration, n_rounds, &result_safety);
-        (result_safety, duration.as_secs_f64(), n_rounds, logs)
+        (result_safety, duration.as_secs_f64(), n_rounds, logs,verification.added_nodes)
         
     }
 

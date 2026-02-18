@@ -12,6 +12,7 @@ use std::path::PathBuf;
 use crate::modular_reasoning::check_tags;
 use clustering::decompose_circuit::decompose_node;
 use utils::small_utilities::{GraphBackend, EquivalenceMode, ClusteringPreprocessing};
+use crate::PossibleResult::VERIFIED;
 
 
 use ansi_term::Colour;
@@ -192,8 +193,8 @@ fn start() -> Result<(), ()> {
 
     };
 
-    for node in &structure.nodes{
-        process_node(node, 
+    for node in structure.nodes.iter().rev(){
+        process_node(&node, 
             &structure, 
             &constraints, 
             &local_equivalence_classes,
@@ -281,11 +282,11 @@ fn process_node(
         return;
     }
 
-        println!("LOG: Considering node {} with {} constraints", node.node_id, node.constraints.len());
-
+    println!("LOG: Considering node {} with {} constraints", node.node_id, node.constraints.len());
+    let no_abstract_fails = false;
             
     // If the equivalence class of the node has not been studied, we process it.
-    let (result, _, n_rounds, _logs) = check_tags(
+    let (result, _, n_rounds, logs, included_nodes) = check_tags(
         node,
         &field,
         timeout,
@@ -294,23 +295,55 @@ fn process_node(
         &constraints ,
         solver,
         apply_deduction_assigned,
-        apply_predecessors
+        apply_predecessors,
+        no_abstract_fails,
+        results
     );
         
         //for log in logs{
         //    println!("{}", log);
         //}
+
+    // check if one of the children is verified using the parent. If so, do not generalize to any class
+    let mut verified_child = false;
+    if result == VERIFIED && no_abstract_fails{
+        for id_included in included_nodes{
+
+            if results.studied_nodes.contains_key(&id_included){
+
+                let prev_result = results.studied_nodes.get_mut(&id_included).unwrap();
+                match prev_result{
+                    PossibleResult::VERIFIED =>{
+                    },
+                    PossibleResult::FAILED =>{
+                        results.failed_nodes.remove(&id_included);
+                        *prev_result = VERIFIED; 
+                        verified_child = true;
+                    },
+                    PossibleResult::UNKNOWN =>{
+                        results.unknown_nodes.remove(&id_included);
+                        *prev_result = VERIFIED;
+                        verified_child = true;
+                    },
+                    _ => unreachable!(),
+                }	
+            }
+        }
+    }
+
         
     if n_rounds == 0{
     	// No need to study children, can generalize to all the local equivalence class
     	 let id_class = local_equivalence_classes.get(&node.node_id).unwrap();
          let local_eq_class = &structure.local_equivalency[*id_class];
          update_result_for_class(&result, local_eq_class, results);
-    } else{
+    } else if !verified_child{
         // Considering children, only generalize to the structural equivalence class
          let id_class = structural_equivalence_classes.get(&node.node_id).unwrap();
          let structural_eq_class = &structure.structural_equivalency[*id_class];
         update_result_for_class(&result, structural_eq_class, results);
+    } else{
+        update_result_for_class(&result, &vec![node.node_id], results);
     }
 
 }
