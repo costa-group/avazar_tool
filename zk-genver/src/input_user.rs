@@ -297,7 +297,7 @@ mod input_processing {
                     .short("clustering_size")
                     .long("clustering_size")
                     .takes_value(true)
-                    .default_value("200")
+                    .default_value("100")
                     .display_order(600)
                     .help("To choose the size of the nodes that are considered for clustering. The default value is 200. In order to not apply clustering, use clustering_size 0"),
             )

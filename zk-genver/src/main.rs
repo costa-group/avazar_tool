@@ -27,7 +27,9 @@ struct ResultInfo{
     verified_constraints: usize,
     fails_original_templates: Option<HashSet<String>>,// include which constraints fail in each component or not?
     number_unverified_orig_constraints: Option<usize>, // the number of constraints included in the unverified templates
-    number_unverified_orig_constraints_noreps: Option<usize> // the number of constraints included in the unverified templates
+    number_unverified_orig_constraints_noreps: Option<usize>, // the number of constraints included in the unverified templates
+    unverified_nodes_to_templates: Option<HashMap<usize, HashSet<String>>>,
+    unverified_nodes_to_nodes: Option<HashMap<usize, HashSet<usize>>>,
 
 }
 
@@ -190,7 +192,8 @@ fn start() -> Result<(), ()> {
         fails_original_templates: None,
         number_unverified_orig_constraints: None,
         number_unverified_orig_constraints_noreps: None,
-
+        unverified_nodes_to_templates:None,
+        unverified_nodes_to_nodes: None
     };
 
     for node in structure.nodes.iter().rev(){
@@ -248,7 +251,8 @@ fn start() -> Result<(), ()> {
             &mut results, 
             &structure, 
             &nodeid2pos, 
-            starting_constraints.as_ref().unwrap());
+            starting_constraints.as_ref().unwrap(),
+        );
     }
 
     // print the results    
@@ -428,6 +432,8 @@ fn decompose_and_study(
         fails_original_templates: None,
         number_unverified_orig_constraints: None,
         number_unverified_orig_constraints_noreps: None,
+        unverified_nodes_to_templates:None,
+        unverified_nodes_to_nodes:None,
 
     };
 
@@ -573,57 +579,96 @@ fn compute_info_fails_original_template(
     let mut original_unverified_templates = HashSet::new();
     let mut number_unverified_orig_constraints = 0;
     let mut number_unverified_orig_constraints_noreps = 0;
+    let mut unverified_nodes_to_templates = HashMap::new();
+    let mut unverified_nodes_to_nodes = HashMap::new();
+
+
+    let mut constraint_to_node = vec![0; results.total_constraints];
+    for node in &structure.nodes{
+        for c_index in &node.constraints{
+            constraint_to_node[*c_index] = node.node_id;
+        }
+    }
 
     for node_id in &results.failed_nodes{
         let node_info = &structure.nodes[nodeid2pos[node_id]];
+        let mut unverified_templates = HashSet::new();
+        let mut unverified_nodes = HashSet::new();
         for c in &node_info.constraints{
             let (prev_c, component, mut last_c) = 
                 get_constraint_info_component(original_structure, *c);
             if last_c == 0{
                 last_c = results.total_constraints;
             }
+            for c in prev_c..last_c{
+                unverified_nodes.insert(constraint_to_node[c]);
+            }
             //number_unverified_orig_constraints += last_c - prev_c;
             if !original_unverified_templates.contains(&component){
                 number_unverified_orig_constraints_noreps += last_c - prev_c;
             }
             original_unverified_templates.insert(component.clone());
-        }       
+            unverified_templates.insert(component);
+        }   
+        unverified_nodes_to_templates.insert(*node_id, unverified_templates);
+        unverified_nodes_to_nodes.insert(*node_id, unverified_nodes);
+
     }
     for node_id in &results.unknown_nodes{
         let node_info = &structure.nodes[nodeid2pos[node_id]];
+        let mut unverified_templates = HashSet::new();
+        let mut unverified_nodes = HashSet::new();
         for c in &node_info.constraints{
             let (prev_c, component, mut last_c) = 
                 get_constraint_info_component(original_structure, *c);
             if last_c == 0{
                 last_c = results.total_constraints;
             }
+            for c in prev_c..last_c{
+                unverified_nodes.insert(constraint_to_node[c]);
+            }
             //number_unverified_orig_constraints += last_c - prev_c;
             if !original_unverified_templates.contains(&component){
                 number_unverified_orig_constraints_noreps += last_c - prev_c;
             }
             original_unverified_templates.insert(component.clone());
-        }       
+            unverified_templates.insert(component);
+        }   
+        unverified_nodes_to_templates.insert(*node_id, unverified_templates);
+        unverified_nodes_to_nodes.insert(*node_id, unverified_nodes);
     }
 
     for node_id in &results.unknown_undivisible_nodes{
         let node_info = &structure.nodes[nodeid2pos[node_id]];
+        let mut unverified_templates = HashSet::new();
+        let mut unverified_nodes = HashSet::new();
         for c in &node_info.constraints{
             let (prev_c, component, mut last_c) = 
                 get_constraint_info_component(original_structure, *c);
             if last_c == 0{
                 last_c = results.total_constraints;
             }
+            for c in prev_c..last_c{
+                unverified_nodes.insert(constraint_to_node[c]);
+            }
             //number_unverified_orig_constraints += last_c - prev_c;
             if !original_unverified_templates.contains(&component){
                 number_unverified_orig_constraints_noreps += last_c - prev_c;
             }
             original_unverified_templates.insert(component.clone());
-        }       
+            unverified_templates.insert(component);
+        }   
+        unverified_nodes_to_templates.insert(*node_id, unverified_templates);
+        unverified_nodes_to_nodes.insert(*node_id, unverified_nodes);
+
     }
 
     //results.number_unverified_orig_constraints = Some(number_unverified_orig_constraints);
     results.number_unverified_orig_constraints_noreps = Some(number_unverified_orig_constraints_noreps);    
     results.fails_original_templates = Some(original_unverified_templates);
+    results.unverified_nodes_to_templates = Some(unverified_nodes_to_templates); 
+    results.unverified_nodes_to_nodes = Some(unverified_nodes_to_nodes); 
+
 }
 
 fn print_pretty_results(results: &ResultInfo){
@@ -673,9 +718,30 @@ fn print_pretty_results(results: &ResultInfo){
             }
             //println!("The total number of constraints in these templates is: {} ({}%)", number_unverified_orig_constraints, (number_unverified_orig_constraints as f64 / results.total_constraints as f64) * 100.0);
             println!("The number of constraints in these templates is: {}", number_unverified_orig_constraints_noreps);
-            println!("\n\n\n");
+            println!("\n\n\n\n");
 
         }
 
+        println!("******* INFO UNVERIFIED NODES *******");
+        let failed_node_to_temp = results.unverified_nodes_to_templates.as_ref().unwrap();
+        let failed_node_to_nodes = results.unverified_nodes_to_nodes.as_ref().unwrap();
+
+        for (node_id, temps) in failed_node_to_temp{
+            println!("- The node {} is not verified and has constraints of templates:", node_id);
+            for t in temps{
+                println!("   *{}", t);
+            }
+            let nodes = failed_node_to_nodes.get(node_id).unwrap();
+            println!("- The constraints of these templates are in nodes:");
+            for t in nodes{
+                println!("   *{}", t);
+            }
+            println!("\n");
+
+        }
+        
+
     }
+
+
 }
