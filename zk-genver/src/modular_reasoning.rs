@@ -22,7 +22,8 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
         apply_deduction_assigned: bool,
         apply_predecessors:bool,
         no_abstract_fails:bool,
-        results:&ResultInfo
+        results:&ResultInfo,
+        internal_solver: &str
     ) 
     -> (PossibleResult, f64, usize, Vec<String>, HashSet<usize>){
         
@@ -47,7 +48,8 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
             implications_safety,
             field,
             verification_timeout,
-            apply_deduction_assigned
+            apply_deduction_assigned,
+            internal_solver
         );
 
         let mut to_check_next=Vec::new();
@@ -228,7 +230,7 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
 
     fn prove_safety(
         problem: &SafetyVerification,
-        solver: PossibleSolver
+        solver: PossibleSolver,
     )-> (PossibleResult, Vec<String>) {
         match solver{
             PossibleSolver::CIVER =>{

@@ -16,6 +16,7 @@ pub struct Input {
     pub clustering_size: usize,
     pub equivalence_mode: usize,
     pub target_size: usize,
+    pub internal_solver: String,
 }
 
 
@@ -34,6 +35,7 @@ impl Input {
         let apply_predecessors = input_processing::get_apply_predecessors(&matches);
         let equivalence_mode = input_processing::get_equivalence_mode(&matches)?;
         let target_size = input_processing::get_target_size(&matches)?;
+        let internal_solver = input_processing::get_internal_solver(&matches)?;
 
 
         Result::Ok(Input {
@@ -49,7 +51,8 @@ impl Input {
             apply_deduction_assigned,
             apply_predecessors,
             equivalence_mode,
-            target_size
+            target_size,
+            internal_solver,
         })
     }
 }
@@ -163,6 +166,16 @@ mod input_processing {
         }
     }
 
+    pub fn get_internal_solver(matches: &ArgMatches) -> Result<String, ()> {
+        let solver = matches.value_of("internal_solver").unwrap_or("z3");
+        match solver {
+            "z3" | "ffsol" | "cvc5" => Ok(solver.to_string()),
+            _ => {
+                Err(eprintln!("{}", Colour::Red.paint("invalid internal_solver. Must be one of: z3, ffsol, cvc5")))
+            }
+        }
+    }
+
     pub fn get_equivalence_mode(matches: &ArgMatches) -> Result<usize,  ()> {
         
         match matches.is_present("equivalence"){
@@ -252,6 +265,15 @@ mod input_processing {
                     .hidden(false)
                     .help("Solver to be used for the verification of the circuit. ZK-GENVER allows picus and civer (default)")
                     .display_order(480)
+            )
+            .arg(
+                Arg::with_name("internal_solver")
+                    .long("internal_solver")
+                    .takes_value(true)
+                    .hidden(false)
+                    .default_value("z3")
+                    .help("Internal solver for CIVER: z3, ffsol, or cvc5 (default: z3)")
+                    .display_order(485)
             )
             .arg(
                 Arg::with_name("equivalence")

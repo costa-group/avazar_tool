@@ -205,7 +205,8 @@ fn start() -> Result<(), ()> {
             solver,
             apply_deduction_assigned,
             apply_predecessors,
-            &mut results
+            &mut results,
+            user_input.internal_solver.as_str() 
         );
     }
 
@@ -231,6 +232,7 @@ fn start() -> Result<(), ()> {
                 apply_deduction_assigned,
                 apply_predecessors,
                 &mut results,
+                user_input.internal_solver.as_str(),
             );
         }
         to_study_again = reconsider_big_nodes(&structure, &nodeid2pos, &mut results, clustering_size);
@@ -268,6 +270,7 @@ fn process_node(
     apply_deduction_assigned: bool,
     apply_predecessors: bool,
     results: &mut ResultInfo,
+    internal_solver: &str,
 
 ) {
 
@@ -297,7 +300,8 @@ fn process_node(
         apply_deduction_assigned,
         apply_predecessors,
         no_abstract_fails,
-        results
+        results,
+        internal_solver
     );
         
         //for log in logs{
@@ -363,6 +367,7 @@ fn decompose_and_study(
     apply_deduction_assigned: bool,
     apply_predecessors: bool,
     results: &mut ResultInfo,
+    internal_solver: &str,
 ) {
     println!("LOG: Reconsidering again node {}", node_id);
     let node_info = structure.nodes.get(*nodeid2pos.get(&node_id).unwrap()).unwrap();
@@ -451,7 +456,8 @@ fn decompose_and_study(
             solver,
             apply_deduction_assigned,
             apply_predecessors,
-            &mut new_results
+            &mut new_results,
+            internal_solver
         );
     }
 
