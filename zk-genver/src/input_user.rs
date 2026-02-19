@@ -12,6 +12,7 @@ pub struct Input {
     pub _flag_verbose: bool,
     pub apply_deduction_assigned: bool,
     pub apply_predecessors: bool,
+    pub apply_bidirectional: bool,
     pub prime: BigInt,
     pub clustering_size: usize,
     pub equivalence_mode: usize,
@@ -33,6 +34,8 @@ impl Input {
         let clustering_size = input_processing::get_clustering_size(&matches)?;
         let apply_deduction_assigned = input_processing::get_apply_deduction_assigned(&matches);
         let apply_predecessors = input_processing::get_apply_predecessors(&matches);
+        let apply_bidirectional = input_processing::get_apply_bidirectional(&matches);
+
         let equivalence_mode = input_processing::get_equivalence_mode(&matches)?;
         let target_size = input_processing::get_target_size(&matches)?;
         let internal_solver = input_processing::get_internal_solver(&matches)?;
@@ -50,6 +53,7 @@ impl Input {
             clustering_size,
             apply_deduction_assigned,
             apply_predecessors,
+            apply_bidirectional,
             equivalence_mode,
             target_size,
             internal_solver,
@@ -121,6 +125,10 @@ mod input_processing {
     
     pub fn get_apply_predecessors(matches: &ArgMatches) -> bool {
         matches.is_present("apply_predecessors")
+    }
+
+    pub fn get_apply_bidirectional(matches: &ArgMatches) -> bool {
+        matches.is_present("apply_bidirectional")
     }
 
     pub fn get_prime(matches: &ArgMatches) -> Result<BigInt, ()>{
@@ -259,6 +267,14 @@ mod input_processing {
                     .display_order(600)
             )
             .arg(
+                Arg::with_name("apply_bidirectional")
+                    .long("apply_bidirectional")
+                    .takes_value(false)
+                    .hidden(false)
+                    .help("Activate to start adding predecessors and childs")
+                    .display_order(600)
+            )
+            .arg(
                 Arg::with_name("solver")
                     .long("solver")
                     .takes_value(true)
@@ -297,7 +313,7 @@ mod input_processing {
                     .short("clustering_size")
                     .long("clustering_size")
                     .takes_value(true)
-                    .default_value("100")
+                    .default_value("200")
                     .display_order(600)
                     .help("To choose the size of the nodes that are considered for clustering. The default value is 200. In order to not apply clustering, use clustering_size 0"),
             )

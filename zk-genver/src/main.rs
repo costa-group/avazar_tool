@@ -149,6 +149,8 @@ fn start() -> Result<(), ()> {
     let timeout: u64 = user_input.timeout;
     let apply_deduction_assigned: bool = user_input.apply_deduction_assigned;
     let apply_predecessors: bool = user_input.apply_predecessors;
+    let apply_bidirectional: bool = user_input.apply_bidirectional;
+
 
 
 
@@ -208,6 +210,7 @@ fn start() -> Result<(), ()> {
             solver,
             apply_deduction_assigned,
             apply_predecessors,
+            apply_bidirectional,
             &mut results,
             user_input.internal_solver.as_str() 
         );
@@ -234,6 +237,7 @@ fn start() -> Result<(), ()> {
                 target_size,
                 apply_deduction_assigned,
                 apply_predecessors,
+                apply_bidirectional,
                 &mut results,
                 user_input.internal_solver.as_str(),
             );
@@ -273,6 +277,7 @@ fn process_node(
     solver: PossibleSolver,
     apply_deduction_assigned: bool,
     apply_predecessors: bool,
+    apply_bidirectional: bool,
     results: &mut ResultInfo,
     internal_solver: &str,
 
@@ -303,6 +308,7 @@ fn process_node(
         solver,
         apply_deduction_assigned,
         apply_predecessors,
+        apply_bidirectional,
         no_abstract_fails,
         results,
         internal_solver
@@ -325,11 +331,16 @@ fn process_node(
                     },
                     PossibleResult::FAILED =>{
                         results.failed_nodes.remove(&id_included);
+                        results.verified_nodes.insert(id_included);
+
                         *prev_result = VERIFIED; 
                         verified_child = true;
                     },
                     PossibleResult::UNKNOWN =>{
                         results.unknown_nodes.remove(&id_included);
+                        results.failed_nodes.remove(&id_included);
+                        results.verified_nodes.insert(id_included);
+
                         *prev_result = VERIFIED;
                         verified_child = true;
                     },
@@ -370,6 +381,7 @@ fn decompose_and_study(
     target_size: usize,
     apply_deduction_assigned: bool,
     apply_predecessors: bool,
+    apply_bidirectional: bool,
     results: &mut ResultInfo,
     internal_solver: &str,
 ) {
@@ -462,6 +474,7 @@ fn decompose_and_study(
             solver,
             apply_deduction_assigned,
             apply_predecessors,
+            apply_bidirectional,
             &mut new_results,
             internal_solver
         );
