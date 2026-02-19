@@ -330,6 +330,7 @@ fn process_node(
                     PossibleResult::VERIFIED =>{
                     },
                     PossibleResult::FAILED =>{
+                    	println!("Child node {} becomes safe when considering father constraints", id_included);
                         results.failed_nodes.remove(&id_included);
                         results.verified_nodes.insert(id_included);
 
@@ -337,6 +338,7 @@ fn process_node(
                         verified_child = true;
                     },
                     PossibleResult::UNKNOWN =>{
+                        println!("Child node {} becomes safe when considering father constraints", id_included);
                         results.unknown_nodes.remove(&id_included);
                         results.failed_nodes.remove(&id_included);
                         results.verified_nodes.insert(id_included);
