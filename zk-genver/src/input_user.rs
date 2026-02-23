@@ -18,6 +18,7 @@ pub struct Input {
     pub equivalence_mode: usize,
     pub target_size: usize,
     pub internal_solver: String,
+    pub extra_rounds: usize
 }
 
 
@@ -39,6 +40,8 @@ impl Input {
         let equivalence_mode = input_processing::get_equivalence_mode(&matches)?;
         let target_size = input_processing::get_target_size(&matches)?;
         let internal_solver = input_processing::get_internal_solver(&matches)?;
+        let extra_rounds = input_processing::get_extra_rounds(&matches)?;
+       
 
 
         Result::Ok(Input {
@@ -57,6 +60,7 @@ impl Input {
             equivalence_mode,
             target_size,
             internal_solver,
+            extra_rounds
         })
     }
 }
@@ -216,6 +220,17 @@ mod input_processing {
         }
     }
 
+    pub fn get_extra_rounds(matches: &ArgMatches) -> Result<usize, ()> {
+        let timeout_argument = matches.value_of("extra_rounds").unwrap();
+        let timeout = usize::from_str_radix(timeout_argument, 10);
+        if let Result::Ok(time) = timeout { 
+           Ok(time)
+        }
+        else { 
+            Result::Err(eprintln!("{}", Colour::Red.paint("invalid extra_rounds")))
+        }
+    }
+
     pub fn view() -> ArgMatches<'static> {
         App::new("ZK-GENVER")
             .about("General modular verifier for ZK-circuits")
@@ -325,6 +340,15 @@ mod input_processing {
                     .default_value("0")
                     .display_order(600)
                     .help("To choose the target size of the nodes that is used in the clustering. In order to not apply target size, use target_size 0. The default value is 0."),
+            )
+            .arg (
+                Arg::with_name("extra_rounds")
+                    .short("extra_rounds")
+                    .long("extra_rounds")
+                    .takes_value(true)
+                    .default_value("0")
+                    .display_order(600)
+                    .help("To choose the number of extra rounds of adding successors/predecessors when a node makes timeout. The default value is 0."),
             )
             
             .get_matches()

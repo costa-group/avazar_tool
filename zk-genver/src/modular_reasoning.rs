@@ -24,7 +24,8 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
         apply_bidirectional: bool,
         no_abstract_fails:bool,
         results:&ResultInfo,
-        internal_solver: &str
+        internal_solver: &str,
+        extra_rounds: usize,
     ) 
     -> (PossibleResult, f64, usize, Vec<String>, HashSet<usize>){
         
@@ -35,8 +36,9 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
             constraints.push(constraint_list[*c].clone());
         }
 
-                let mut logs =  Vec::new();
+        let mut logs =  Vec::new();
         let mut n_rounds = 0;
+        let mut unknown_rounds = 0;
         let mut implications_safety: Vec<SafetyImplication> = Vec::new();
 
 
@@ -109,7 +111,16 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
 
         let (mut result_safety, mut logs_round) = prove_safety(&verification, solver);
 
-        let mut finished_verification = result_safety.finished_verification();
+        let mut finished_verification = match result_safety{
+            PossibleResult::UNKNOWN =>{
+                unknown_rounds += 1;
+                unknown_rounds > extra_rounds
+            },
+            PossibleResult::FAILED =>{
+                false
+            },
+            _ => true
+        };
         logs.append(&mut logs_round);
         
         while !finished_verification && !to_check_next.is_empty(){
@@ -134,7 +145,16 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
 
             logs.push(format!("### Trying to verify adding constraints of the children\n"));
             (result_safety, logs_round) = prove_safety(&verification, solver);
-            finished_verification = result_safety.finished_verification();
+            finished_verification = match result_safety{
+                PossibleResult::UNKNOWN =>{
+                    unknown_rounds += 1;
+                    unknown_rounds > extra_rounds
+                },
+                PossibleResult::FAILED =>{
+                    false
+                },
+                _ => true
+            };
             logs.append(&mut logs_round);
 
         } 
