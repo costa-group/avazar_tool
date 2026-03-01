@@ -75,7 +75,7 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
                             if !verification.added_nodes.contains(node_id) { 
                                 let pos = nodeid2pos[node_id];
                                 let node = &node_list[pos];
-                                let result_add_components = add_info_component(node, &mut verification, node_list, nodeid2pos, constraint_list,apply_predecessors, apply_bidirectional);                    
+                                let result_add_components = add_info_component(node, &mut verification, node_list, nodeid2pos, constraint_list, true, false);                    
                                 if result_add_components.is_some(){
                                     for aux in result_add_components.unwrap(){
                                         to_check_next.push(aux);
@@ -100,7 +100,7 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
                 verification.signals.append(&mut new_signals);
                 verification.implications_safety.push(new_implications_safety)
             }
-            to_check_next = node_info.predecessors.clone();
+            to_check_next.extend(node_info.predecessors.iter().copied());
         }
 
         
@@ -183,6 +183,7 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
             for s in &info.signals{
                 verification.signals.push_back(*s);
             }
+            let mut next_to_check: Vec<usize> = Vec::new();
             if !apply_predecessors || apply_bidirectional{
                 for node_id in &info.successors{
                     let pos = nodeid2pos[node_id];
@@ -193,7 +194,7 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
                     }
                     verification.implications_safety.push(new_safety_implication);
                 }
-                return Some(info.successors.clone());
+                next_to_check.extend(info.successors.iter().copied());
             } 
             if apply_predecessors || apply_bidirectional{
                 for node_id in &info.predecessors{
@@ -205,9 +206,10 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
                     }
                     verification.implications_safety.push(new_safety_implication);
                 }
-                return Some(info.predecessors.clone());
+                next_to_check.extend(info.predecessors.iter().copied());
             }
-            None
+
+            if next_to_check.len() > 0 {Some(next_to_check)} else {None}
     }
 
     fn generate_info_subtree(info: &NodeInfo)-> (LinkedList<usize>, SafetyImplication){
