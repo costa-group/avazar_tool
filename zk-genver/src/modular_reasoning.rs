@@ -56,14 +56,9 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
         );
 
         let mut to_check_next=Vec::new();
-        if !apply_predecessors || apply_bidirectional{
-            generate_and_add_node_info(&node_info.successors, &mut verification, node_list, nodeid2pos, results, apply_bidirectional);
-            to_check_next.extend(node_info.successors.iter().copied());
-        } 
-        if apply_predecessors || apply_bidirectional{
-            generate_and_add_node_info(&node_info.predecessors, &mut verification, node_list, nodeid2pos, results, apply_bidirectional);
-            to_check_next.extend(node_info.predecessors.iter().copied());
-        }
+
+        if !apply_predecessors || apply_bidirectional{to_check_next.extend(node_info.successors.iter().copied());} 
+        if apply_predecessors || apply_bidirectional{to_check_next.extend(node_info.predecessors.iter().copied());}
 
         
         logs.push(format!("Checking template {}\n", node_info.node_id));
@@ -90,14 +85,12 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
 
             let new_components = std::mem::take(&mut to_check_next);
             for node_id in &new_components{
-                if !verification.added_nodes.contains(node_id) { 
+                if *node_id != node_info.node_id && !verification.added_nodes.contains(node_id) { 
 
                     let pos = nodeid2pos[node_id];
                     let node = &node_list[pos];
                     let result_add_components = add_info_component(node, &mut verification, node_list, nodeid2pos, constraint_list, results, apply_predecessors, apply_bidirectional);                    
-                    if result_add_components.is_some(){
-                        to_check_next.extend(result_add_components.unwrap().into_iter());
-                    }
+                    if result_add_components.is_some(){to_check_next.extend(result_add_components.unwrap().into_iter());}
                     verification.added_nodes.insert(*node_id);
                 }
             }
@@ -124,9 +117,6 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
         
     }
 
-  
-    
-
     fn add_info_component(
         info: &NodeInfo, 
         verification: &mut SafetyVerification, 
@@ -145,29 +135,10 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
                 verification.signals.push_back(*s);
             }
             let mut to_check_next: Vec<usize> = Vec::new();
-            if !apply_predecessors || apply_bidirectional{
-                generate_and_add_node_info(&info.successors, verification, node_list, nodeid2pos, results, apply_bidirectional);
-                to_check_next.extend(info.successors.iter().copied());
-            } 
-            if apply_predecessors || apply_bidirectional{
-                generate_and_add_node_info(&info.predecessors, verification, node_list, nodeid2pos, results, apply_bidirectional);
-                to_check_next.extend(info.predecessors.iter().copied());
-            }
+            if !apply_predecessors || apply_bidirectional{to_check_next.extend(info.successors.iter().copied());} 
+            if  apply_predecessors || apply_bidirectional{to_check_next.extend(info.predecessors.iter().copied());}
 
             if to_check_next.len() > 0 {Some(to_check_next)} else {None}
-    }
-
-    fn generate_and_add_node_info(node_ids: &[usize], verification: &mut SafetyVerification, node_list: &Vec<NodeInfo>, nodeid2pos: &HashMap<usize, usize>, results:&ResultInfo, apply_bidirectional: bool) -> () {
-        for node_id in node_ids {
-            let pos = nodeid2pos[node_id];
-            let subtree_child = &node_list[pos];
-            let (mut new_signals, new_implications_safety) = generate_info_subtree(subtree_child);
-            verification.signals.append(&mut new_signals);
-
-            if !apply_bidirectional || results.studied_nodes.get(node_id).is_some_and(|res| *res == PossibleResult::VERIFIED) {
-                verification.implications_safety.push(new_implications_safety);
-            }
-        }
     }
 
     fn generate_info_subtree(info: &NodeInfo)-> (LinkedList<usize>, SafetyImplication){
