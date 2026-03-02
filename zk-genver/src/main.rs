@@ -297,7 +297,7 @@ fn process_node(
     }
 
     println!("LOG: Considering node {} with {} constraints", node.node_id, node.constraints.len());
-    let no_abstract_fails = true;
+    let no_abstract_fails = false;
             
     // If the equivalence class of the node has not been studied, we process it.
     let (result, _, n_rounds, logs, included_nodes) = check_tags(
