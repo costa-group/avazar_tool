@@ -10,7 +10,7 @@ pub enum PossibleSolver{
 }
 
 
-#[derive(PartialEq, Eq, Clone, Debug)] 
+#[derive(PartialEq, Eq, Clone, Copy, Debug)] 
 pub enum PossibleResult{
     VERIFIED, UNKNOWN, FAILED, NOSTUDIED, NOTHING
 } impl PossibleResult {
