@@ -68,7 +68,6 @@ impl TemplateVerification{
 
     pub fn deduce(&mut self)-> (PossibleResult, Vec<String>) {        //self.print_pretty_template_verification();
         
-        self.deduce_round();
         //self.normalize();
 
         let mut logs = Vec::new();
@@ -119,11 +118,13 @@ impl TemplateVerification{
     }
 
 
-    pub fn try_prove_safety(&self, logs: &mut Vec<String>) -> PossibleResult{
+    pub fn try_prove_safety(&mut self, logs: &mut Vec<String>) -> PossibleResult{
         let signals_vec = self.signals.iter().cloned().collect::<Vec<_>>();
         
         match self.internal_solver.as_str() {
-            "z3" => try_prove_safety_with_z3(
+            "z3" => {
+            self.deduce_round();
+            try_prove_safety_with_z3(
                 &self.inputs,
                 &self.outputs,
                 &signals_vec,
@@ -134,21 +135,21 @@ impl TemplateVerification{
                 self.verification_timeout,
                 self.apply_deduction_assigned,
                 logs,
-            ),
+            )
+        },
             "ffsol" => try_prove_safety_with_ffsol(
                 &self.inputs,
                 &self.outputs,
                 &signals_vec,
                 &self.constraints,
                 &self.implications_safety,
-                &self.deductions,
                 &self.field,
                 self.verification_timeout,
-                self.apply_deduction_assigned,
                 logs,
             ),
             _ => {
                 logs.push(format!("ERROR: Unknown solver: {}. Using Z3 as fallback.", self.internal_solver));
+                self.deduce_round();
                 try_prove_safety_with_z3(
                     &self.inputs,
                     &self.outputs,

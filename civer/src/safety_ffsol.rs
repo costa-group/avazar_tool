@@ -6,7 +6,7 @@ use std::thread;
 use std::time::Duration;
 use num_bigint_dig::BigInt;
 use solvers_interface::PossibleResult;
-use circom_algebra::algebra::{Constraint, ExecutedInequation};
+use circom_algebra::algebra::Constraint;
 use z3::Config;
 use z3::Context;
 use z3::Solver;
@@ -18,13 +18,60 @@ use nix::unistd::Pid;
 use nix::sys::signal::{killpg, Signal};
 use wait_timeout::ChildExt;
 
-use crate::tags_checking::{
-    Signal2Bounds,
-};
-use crate::safety_z3::insert_constraint_in_smt;
+//This function only works if 0 <= a <= field - 1
+fn to_neg(a: &BigInt, field: &BigInt) -> BigInt{
+    if a < &(field/BigInt::from(2)){
+        a.clone()
+    }
+    else {
+        a - field
+    }
+}
 
-pub type Signal2BoundsFfsol = HashMap<usize, ExecutedInequation<usize>>;
+pub fn insert_constraint_in_smt(
+    constraint: &Constraint<usize>,
+    ctx: &Context,
+    solver: &Solver,
+    signals_to_smt_symbols: &HashMap<usize, z3::ast::Int>,
+    field: &BigInt,
+    num_k: usize,
+    p: &z3::ast::Int,
+    _verbose: bool,
+) {
+    let mut value_a = z3::ast::Int::from_u64(ctx, 0);
+    let mut value_b = z3::ast::Int::from_u64(ctx, 0);
+    let mut value_c = z3::ast::Int::from_u64(ctx, 0);
 
+
+    for (signal, value) in constraint.a(){
+        if *signal == 0{
+            value_a += &z3::ast::Int::from_str(&ctx, &to_neg(value, field).to_string()).unwrap()
+        } else{
+            value_a += signals_to_smt_symbols.get(signal).unwrap() *
+                &z3::ast::Int::from_str(&ctx, &to_neg(value, field).to_string()).unwrap();
+        }
+    }
+    for (signal, value) in constraint.b(){
+        if *signal == 0{
+            value_b += &z3::ast::Int::from_str(&ctx, &to_neg(value, field).to_string()).unwrap()
+        } else{
+            value_b += signals_to_smt_symbols.get(signal).unwrap() *
+                &z3::ast::Int::from_str(&ctx, &to_neg(value, field).to_string()).unwrap();
+        }
+    }
+    for (signal, value) in constraint.c(){
+        if *signal == 0{
+            value_c += &z3::ast::Int::from_str(&ctx, &to_neg(value, field).to_string()).unwrap()
+        } else{
+            value_c += signals_to_smt_symbols.get(signal).unwrap() *
+                &z3::ast::Int::from_str(&ctx, &to_neg(value, field).to_string()).unwrap();
+        }
+    }
+
+    let pol = value_a * value_b;
+    let c = pol._eq(&value_c);
+    solver.assert(&c);
+}
 
 pub fn try_prove_safety_with_ffsol(
     inputs: &Vec<usize>,
@@ -32,10 +79,8 @@ pub fn try_prove_safety_with_ffsol(
     signals: &Vec<usize>,
     constraints: &Vec<Constraint<usize>>,
     implications_safety: &Vec<(Vec<usize>, Vec<usize>)>,
-    deductions: &Signal2Bounds,
     field: &BigInt,
     verification_timeout: u64,
-    apply_deduction_assigned: bool,
     logs: &mut Vec<String>,
 ) -> PossibleResult {
         let mut cfg = Config::new();
@@ -46,7 +91,11 @@ pub fn try_prove_safety_with_ffsol(
         let field_z3 = z3::ast::Int::from_str(&ctx, &field.to_string()).unwrap();
         let mut aux_signals_to_smt_rep = HashMap::new();
         let mut aux_signals_to_smt_rep_aux = HashMap::new();
- 
+    
+        println!("Number of signals: {}", signals.len());
+        println!("Number of inputs: {}", inputs.len());
+        println!("Number of outputs: {}", outputs.len());
+        println!("Number of constraints: {}", constraints.len());
         for s in signals {
             let is_input = inputs.contains(s);
 
@@ -69,7 +118,6 @@ pub fn try_prove_safety_with_ffsol(
                 &solver,
                 &aux_signals_to_smt_rep,
                 &field,
-                &deductions,
                 i,
                 &field_z3,
                 false,
@@ -81,7 +129,6 @@ pub fn try_prove_safety_with_ffsol(
                 &solver,
                 &aux_signals_to_smt_rep_aux,
                 &field,
-                &deductions,
                 i,
                 &field_z3,
                 false,
