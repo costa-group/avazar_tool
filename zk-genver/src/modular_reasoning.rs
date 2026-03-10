@@ -58,7 +58,9 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
         let mut to_check_next=Vec::new();
 
         if !apply_predecessors || apply_bidirectional{to_check_next.extend(node_info.successors.iter().copied());} 
-        if apply_predecessors || apply_bidirectional{to_check_next.extend(node_info.predecessors.iter().copied());}
+        if apply_predecessors || apply_bidirectional{
+            assert!(node_info.predecessors.is_some(), "Predecessors should be Some if apply_predecessors or apply_bidirectional is true");
+            to_check_next.extend(node_info.predecessors.iter().flat_map(|v| v.iter().copied()));}
 
         
         logs.push(format!("Checking template {}\n", node_info.node_id));
@@ -136,7 +138,9 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
             }
             let mut to_check_next: Vec<usize> = Vec::new();
             if !apply_predecessors || apply_bidirectional{to_check_next.extend(info.successors.iter().copied());} 
-            if  apply_predecessors || apply_bidirectional{to_check_next.extend(info.predecessors.iter().copied());}
+            if  apply_predecessors || apply_bidirectional{
+                assert!(info.predecessors.is_some(), "Predecessors should be Some if apply_predecessors or apply_bidirectional is true");
+                to_check_next.extend(info.predecessors.iter().flat_map(|v| v.iter().copied()));}
 
             if to_check_next.len() > 0 {Some(to_check_next)} else {None}
     }
