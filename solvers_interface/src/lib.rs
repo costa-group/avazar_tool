@@ -1,4 +1,7 @@
 pub mod picus_interface;
+pub mod ffsol_interface;
+pub mod cvc5_interface;
+mod smt2_utils;
 use std::collections::{HashSet, LinkedList};
 use num_bigint_dig::BigInt;
 
@@ -6,7 +9,7 @@ use circom_algebra::algebra::Constraint;
 
 #[derive(PartialEq, Eq, Clone, Copy)] 
 pub enum PossibleSolver{
-    PICUS, CIVER
+    PICUS, CIVER, FFSOL, CVC5
 }
 
 
@@ -42,7 +45,6 @@ pub struct SafetyVerification {
     pub verification_timeout: u64,
     pub added_nodes: HashSet<usize>,
     pub apply_deduction_assigned: bool,
-    pub internal_solver: String
 }
 
 impl SafetyVerification{
@@ -57,7 +59,6 @@ impl SafetyVerification{
         field: &BigInt,
         verification_timeout: u64, 
         apply_deduction_assigned: bool,
-        internal_solver: &str
     ) -> SafetyVerification {
         let mut fixed_constraints = Vec::new();
         for mut c in constraints{
@@ -76,8 +77,11 @@ impl SafetyVerification{
             verification_timeout, 
             added_nodes: HashSet::new(),
             apply_deduction_assigned,
-            internal_solver: internal_solver.clone().to_string()
         }
     }
     
 }
+
+
+
+

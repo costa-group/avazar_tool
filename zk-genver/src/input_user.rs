@@ -9,6 +9,8 @@ pub struct Input {
     pub original_structure: Option<PathBuf>,
     pub use_picus: bool,
     pub use_civer: bool,
+    pub use_ffsol: bool,
+    pub use_cvc5: bool,
     pub _flag_verbose: bool,
     pub apply_deduction_assigned: bool,
     pub apply_predecessors: bool,
@@ -17,7 +19,6 @@ pub struct Input {
     pub clustering_size: usize,
     pub equivalence_mode: usize,
     pub target_size: usize,
-    pub internal_solver: String,
     pub extra_rounds: usize
 }
 
@@ -29,7 +30,7 @@ impl Input {
         let input_structure = input_processing::get_input_structure(&matches)?;
         let timeout =  input_processing::get_timeout(&matches)?;
         let original_structure = input_processing::get_original_structure(&matches)?;
-        let (use_civer, use_picus) = input_processing::get_solver(&matches)?;
+        let (use_civer, use_picus, use_ffsol,use_cvc5) = input_processing::get_solver(&matches)?;
         let _flag_verbose =  input_processing::get_flag_verbose(&matches);
         let prime = input_processing::get_prime(&matches)?;
         let clustering_size = input_processing::get_clustering_size(&matches)?;
@@ -39,7 +40,6 @@ impl Input {
 
         let equivalence_mode = input_processing::get_equivalence_mode(&matches)?;
         let target_size = input_processing::get_target_size(&matches)?;
-        let internal_solver = input_processing::get_internal_solver(&matches)?;
         let extra_rounds = input_processing::get_extra_rounds(&matches)?;
        
 
@@ -51,6 +51,8 @@ impl Input {
             original_structure,
             use_picus,
             use_civer,
+            use_ffsol,
+            use_cvc5,
             _flag_verbose,
             prime,
             clustering_size,
@@ -59,7 +61,6 @@ impl Input {
             apply_bidirectional,
             equivalence_mode,
             target_size,
-            internal_solver,
             extra_rounds
         })
     }
@@ -157,7 +158,7 @@ mod input_processing {
         }
     }
     
-    pub fn get_solver(matches: &ArgMatches) -> Result<(bool, bool),  ()> {
+    pub fn get_solver(matches: &ArgMatches) -> Result<(bool, bool, bool,bool),  ()> {
         
         match matches.is_present("solver"){
             true => 
@@ -165,26 +166,19 @@ mod input_processing {
                    let solver = matches.value_of("solver").unwrap();
                    if solver == "civer"
                       {
-                        Ok((true, false))
+                        Ok((true, false, false,false))
                     } else if solver == "picus"{
-                        Ok((false, true))
-                    }
-                    else{
+                        Ok((false, true, false,false ))
+                    } else if solver == "ffsol"{
+                        Ok((false, false, true,false))
+                    } else if solver == "cvc5"{
+                        Ok((false, false, true,false))
+                    }else{
                         Result::Err(eprintln!("{}", Colour::Red.paint("invalid solver")))
                     }
                }
                
-            false => Ok((true, false)),
-        }
-    }
-
-    pub fn get_internal_solver(matches: &ArgMatches) -> Result<String, ()> {
-        let solver = matches.value_of("internal_solver").unwrap_or("z3");
-        match solver {
-            "z3" | "ffsol" | "cvc5" => Ok(solver.to_string()),
-            _ => {
-                Err(eprintln!("{}", Colour::Red.paint("invalid internal_solver. Must be one of: z3, ffsol, cvc5")))
-            }
+            false => Ok((true, false, false,false)),
         }
     }
 
@@ -294,17 +288,8 @@ mod input_processing {
                     .long("solver")
                     .takes_value(true)
                     .hidden(false)
-                    .help("Solver to be used for the verification of the circuit. ZK-GENVER allows picus and civer (default)")
+                    .help("Solver to be used for the verification of the circuit. ZK-GENVER allows ffsol, cvc5, picus and civer (default)")
                     .display_order(480)
-            )
-            .arg(
-                Arg::with_name("internal_solver")
-                    .long("internal_solver")
-                    .takes_value(true)
-                    .hidden(false)
-                    .default_value("z3")
-                    .help("Internal solver for CIVER: z3, ffsol, or cvc5 (default: z3)")
-                    .display_order(485)
             )
             .arg(
                 Arg::with_name("equivalence")

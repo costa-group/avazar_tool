@@ -1,5 +1,5 @@
 use civer::tags_checking::TemplateVerification;
-use solvers_interface::{SafetyVerification, PossibleResult, PossibleSolver, picus_interface};
+use solvers_interface::{PossibleResult, PossibleSolver, SafetyVerification, cvc5_interface, ffsol_interface, picus_interface};
 type Constraint = circom_algebra::algebra::Constraint<usize>;
 use circom_algebra::num_bigint::BigInt;
 use std::collections::LinkedList;
@@ -24,7 +24,6 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
         apply_bidirectional: bool,
         no_abstract_fails:bool,
         results:&ResultInfo,
-        internal_solver: &str,
         extra_rounds: usize,
     ) 
     -> (PossibleResult, f64, usize, Vec<String>, HashSet<usize>){
@@ -52,7 +51,6 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
             field,
             verification_timeout,
             apply_deduction_assigned,
-            internal_solver
         );
 
         let mut to_check_next=Vec::new();
@@ -260,6 +258,12 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
             },
             PossibleSolver::PICUS =>{
                 picus_interface::deduce(problem)
+            },
+            PossibleSolver::FFSOL=>{
+                ffsol_interface::deduce(problem)
+            },
+            PossibleSolver::CVC5=>{
+                cvc5_interface::deduce(problem)
             }
         }
     }

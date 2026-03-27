@@ -167,7 +167,11 @@ fn start() -> Result<(), ()> {
         PossibleSolver::CIVER
     } else if user_input.use_picus{
         PossibleSolver::PICUS
-    } else{
+    } else if user_input.use_ffsol{
+        PossibleSolver::FFSOL
+    }else if user_input.use_cvc5{
+        PossibleSolver::CVC5
+    }else {
         unreachable!()
     };
 
@@ -212,7 +216,6 @@ fn start() -> Result<(), ()> {
             apply_predecessors,
             apply_bidirectional,
             &mut results,
-            user_input.internal_solver.as_str(),
             user_input.extra_rounds
         );
     }
@@ -240,7 +243,6 @@ fn start() -> Result<(), ()> {
                 apply_predecessors,
                 apply_bidirectional,
                 &mut results,
-                user_input.internal_solver.as_str(),
                 user_input.extra_rounds
             );
         }
@@ -281,7 +283,6 @@ fn process_node(
     apply_predecessors: bool,
     apply_bidirectional: bool,
     results: &mut ResultInfo,
-    internal_solver: &str,
     extra_rounds: usize
 ) {
 
@@ -313,7 +314,6 @@ fn process_node(
         apply_bidirectional,
         no_abstract_fails,
         results,
-        internal_solver,
         extra_rounds
     );
         
@@ -388,7 +388,6 @@ fn decompose_and_study(
     apply_predecessors: bool,
     apply_bidirectional: bool,
     results: &mut ResultInfo,
-    internal_solver: &str,
     extra_rounds: usize,
 ) {
     println!("LOG: Reconsidering again node {}", node_id);
@@ -482,7 +481,6 @@ fn decompose_and_study(
             apply_predecessors,
             apply_bidirectional,
             &mut new_results,
-            internal_solver,
             extra_rounds
         );
     }

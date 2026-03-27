@@ -108,6 +108,36 @@ impl<C: Default + Clone + Display + Hash + Eq> ArithmeticExpression<C> {
         string_coefficients
     }
 
+    // printing utils
+    fn coefficients_to_smt2(coefficients: &HashMap<C, BigInt>, signal_to_smt2_name: &HashMap<C,String>) -> String {
+        if coefficients.is_empty(){
+            return "".to_string();
+        }
+
+        let mut string_coefficients = "(ff.add ".to_string();
+        for (signal, value) in coefficients {
+            let component_string = if value.is_zero() {
+                "".to_string()
+            } else if signal.eq(&ArithmeticExpression::constant_coefficient()) {
+                format!("{} ", value.to_str_radix(10))
+            } else {
+                if *value == BigInt::from(1){
+                    format!("{}", 
+                        signal_to_smt2_name[signal]                    
+                    )
+                } else{
+                    format!("(ff.mul {} {}) ", 
+                        signal_to_smt2_name[signal], 
+                        value.to_str_radix(10)
+                    )
+                }
+            };
+            string_coefficients.push_str(component_string.as_str());
+        }
+        string_coefficients.push(')');
+        string_coefficients
+    }
+
     // constraint generation utils
     // transforms constraints into a constraint, None if the expression was non-quadratic
     pub fn transform_expression_to_constraint_form(
@@ -1215,6 +1245,27 @@ impl<C: Default + Clone + Display + Hash + Eq> Constraint<C> {
         println!("A: {}", ArithmeticExpression::string_from_coefficients(self.a()));
         println!("B: {}", ArithmeticExpression::string_from_coefficients(self.b()));
         println!("C: {}", ArithmeticExpression::string_from_coefficients(self.c()));
+    }
+
+    pub fn constraint_to_smt2(&self, signal_to_smt2_name: &HashMap<C,String>) -> String{
+        
+        let right_side = if self.a.is_empty() || self.b.is_empty(){
+            ArithmeticExpression::coefficients_to_smt2(self.c(),signal_to_smt2_name)
+        } else{
+            let mul = format!("(ff.mul {} {})",
+                ArithmeticExpression::coefficients_to_smt2(self.a(),signal_to_smt2_name),
+                ArithmeticExpression::coefficients_to_smt2(self.b(),signal_to_smt2_name)
+            );
+            if self.c.is_empty(){
+                mul
+            } else{
+                format!("(ff.add {} {})",
+                    mul,
+                    ArithmeticExpression::coefficients_to_smt2(self.c(),signal_to_smt2_name)
+                )
+            }
+        };
+        format!("(= 0 {})", right_side)
     }
 
     pub fn b(&self) -> &HashMap<C, BigInt> {
