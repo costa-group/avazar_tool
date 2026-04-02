@@ -1,6 +1,69 @@
 
 use std::collections::{HashMap, LinkedList};
-use crate::{BigInt, SafetyVerification};
+use crate::{BigInt, SafetyVerification,EquivalenceVerification};
+
+
+pub fn equivalence_problem_to_smt2(problem: &EquivalenceVerification)->LinkedList<String>{
+    let mut smt2_problem = LinkedList::new();
+    let mut header = declare_header(&problem.field);
+    smt2_problem.append(&mut header);
+
+    let mut signal_to_name = HashMap::new();
+    let mut signal_to_name_aux = HashMap::new();
+ 
+    for s in &problem.signals_1 {
+        let name = format!("s_{}",s);
+        smt2_problem.push_back(declare_signal(&name)); 
+        signal_to_name.insert(*s,name.clone());
+    }
+
+    for s in &problem.signals_2 {
+        let name = format!("saux_{}",s);
+        smt2_problem.push_back(declare_signal(&name)); 
+        signal_to_name_aux.insert(*s,name.clone());
+    }
+
+    for constraint in &problem.constraints_1 {
+        smt2_problem.push_back(
+            format!("(assert {})",
+                constraint.constraint_to_smt2(&signal_to_name)
+            )
+        );
+    }
+
+    for constraint in &problem.constraints_2 {
+        smt2_problem.push_back(
+            format!("(assert {})",
+                constraint.constraint_to_smt2(&signal_to_name_aux)
+            )
+        );
+    }
+
+
+    // for imp in &problem.implications_equivalence{
+    //     let new_imp = implication_to_smt2(imp,&signal_to_name,&signal_to_name_aux);
+    //     smt2_problem.push_back(
+    //         format!("(assert {})",
+    //             new_imp
+    //         )
+    //     );
+    // }
+
+    smt2_problem.push_back(
+        format!("(assert {})",
+            declare_all_signals_equal(&problem.inputs_1, &signal_to_name, &problem.inputs_2,&signal_to_name_aux)
+        )
+    );
+
+    smt2_problem.push_back(
+        format!("(assert (not {}))",
+            declare_all_signals_equal(&problem.outputs_1, &signal_to_name, &problem.outputs_2,&signal_to_name_aux)
+        )
+    );
+    smt2_problem.push_back(format!("(check-sat)"));
+    smt2_problem
+    
+}
 
 
 pub fn safety_problem_to_smt2(problem: &SafetyVerification)->LinkedList<String>{
@@ -51,7 +114,7 @@ pub fn safety_problem_to_smt2(problem: &SafetyVerification)->LinkedList<String>{
 
     smt2_problem.push_back(
         format!("(assert (not {}))",
-            declare_all_outputs_equal(&problem.outputs, &signal_to_name, &signal_to_name_aux)
+            declare_all_signals_equal(&problem.outputs, &signal_to_name, &problem.outputs,&signal_to_name_aux)
         )
     );
     smt2_problem.push_back(format!("(check-sat)"));
@@ -105,16 +168,17 @@ pub fn implication_to_smt2(imp: &(Vec<usize>, Vec<usize>), signal_to_names: &Has
 }
 
 
-pub fn declare_all_outputs_equal(outputs: &Vec<usize>, signal_to_names: &HashMap<usize,String>, signal_to_names_aux: &HashMap<usize,String>) -> String{
-    if outputs.len() == 0{
+pub fn declare_all_signals_equal(signals: &Vec<usize>, signal_to_names: &HashMap<usize,String>, signals_aux:&Vec<usize>,signal_to_names_aux: &HashMap<usize,String>) -> String{
+    if signals.len() == 0{
         "true".to_string()
-    } else if outputs.len() == 1{
-        let s = outputs[0];
-        format!("(= {} {})", signal_to_names[&s], signal_to_names_aux[&s])
+    } else if signals.len() == 1{
+        let s = signals[0];
+        let s_aux = signals_aux[0];
+        format!("(= {} {})", signal_to_names[&s], signal_to_names_aux[&s_aux])
     } else{
         let mut aux = "(and ".to_string();
-        for s in outputs{
-            aux = format!("{} (= {} {}) ", aux, signal_to_names[s], signal_to_names_aux[s]);
+        for i in 0..signals.len(){
+            aux = format!("{} (= {} {}) ", aux, signal_to_names[&signals[i]], signal_to_names_aux[&signals_aux[i]]);
         }
         aux = format!("{})",aux);
         aux

@@ -1,3 +1,4 @@
+use crate::EquivalenceVerification;
 use crate::{PossibleResult,SafetyVerification};
 use std::process::Command;
 use std::process::Stdio;
@@ -13,16 +14,66 @@ use std::thread;
 use nix::unistd::Pid;
 use nix::sys::signal::Signal;
 use nix::sys::signal::killpg;
-use crate::smt2_utils::safety_problem_to_smt2;
+use crate::smt2_utils::{safety_problem_to_smt2,equivalence_problem_to_smt2};
+
+pub fn study_equivalence(problem: &EquivalenceVerification)-> (PossibleResult, Vec<String>){
+    let mut logs = Vec::new();
+    
+    let smt2_problem: LinkedList<String> = equivalence_problem_to_smt2(problem);
+
+    let result_solver = handling_cvc5_call(&smt2_problem, problem.verification_timeout);
+
+    match result_solver{
+        PossibleResult::VERIFIED=>{
+            logs.push(format!("### THE CONSTRAINT SYSTEMS ARE NOT EQUIVALENT. FOUND COUNTEREXAMPLE USING SMT:\n"));
+        },
+        PossibleResult::FAILED=>{
+            logs.push(format!("### THE CONSTRAINT SYSTEMS ARE EQUIVALENT\n"));
+        },
+        PossibleResult::UNKNOWN=>{
+            logs.push("### UNKNOWN: VERIFICATION OF EQUIVALENCE TIMEOUT\n".to_string());
+        },
+        _=>{
+            unreachable!()
+        }
+
+    }
+
+    (result_solver, logs)
+
+}
 
 
-pub fn deduce(problem: &SafetyVerification)-> (PossibleResult, Vec<String>){
+pub fn study_safety(problem: &SafetyVerification)-> (PossibleResult, Vec<String>){
     
     let mut logs = Vec::new();
     
     let smt2_problem: LinkedList<String> = safety_problem_to_smt2(problem);
 
-       
+    let result_solver = handling_cvc5_call(&smt2_problem, problem.verification_timeout);
+
+    match result_solver{
+        PossibleResult::VERIFIED=>{
+            logs.push(format!("### THE TEMPLATE DOES NOT ENSURE SAFETY. FOUND COUNTEREXAMPLE USING SMT:\n"));
+        },
+        PossibleResult::FAILED=>{
+            logs.push(format!("### WEAK SAFETY ENSURED BY THE TEMPLATE\n"));
+        },
+        PossibleResult::UNKNOWN=>{
+            logs.push("### UNKNOWN: VERIFICATION OF WEAK SAFETY USING THE SPECIFICATION TIMEOUT\n".to_string());
+        },
+        _=>{
+            unreachable!()
+        }
+
+    }
+
+    (result_solver, logs)
+}
+
+
+
+pub fn handling_cvc5_call(smt2_problem: &LinkedList<String>,timeout:u64)-> PossibleResult{
     //produce a random number for the file name
     let mut rng = rand::thread_rng();
     let random_number: u32 = rng.gen();
@@ -74,7 +125,7 @@ pub fn deduce(problem: &SafetyVerification)-> (PossibleResult, Vec<String>){
     });
 
 // -------------------- timeout --------------------
-    let timeout = Duration::from_millis(problem.verification_timeout);
+    let timeout = Duration::from_millis(timeout);
 
     let _timed_out = match child.wait_timeout(timeout)
         .expect("Failed while waiting for the process")
@@ -103,20 +154,15 @@ pub fn deduce(problem: &SafetyVerification)-> (PossibleResult, Vec<String>){
     };
     let stdout = String::from_utf8_lossy(&output.stdout);
 
-    let mut result_solver = PossibleResult::UNKNOWN;
     if let Some(ultima_linea) = stdout.lines().rev().find(|l| !l.trim().is_empty()) {
         if ultima_linea == "unsat" { 
-            logs.push(format!("### THE TEMPLATE DOES NOT ENSURE SAFETY. FOUND COUNTEREXAMPLE USING SMT:\n"));
-		    result_solver = PossibleResult::VERIFIED;
+            PossibleResult::VERIFIED
        	} else if ultima_linea == "sat" {
-            logs.push(format!("### WEAK SAFETY ENSURED BY THE TEMPLATE\n"));
-		    result_solver = PossibleResult::FAILED;
+            PossibleResult::FAILED
 	    } else{
-            logs.push("### UNKNOWN: VERIFICATION OF WEAK SAFETY USING THE SPECIFICATION TIMEOUT\n".to_string());
+            PossibleResult::UNKNOWN
         }
     } else{
-        logs.push("### UNKNOWN: VERIFICATION OF WEAK SAFETY USING THE SPECIFICATION TIMEOUT\n".to_string());
+        PossibleResult::UNKNOWN
     }
-
-    (result_solver, logs)
 }

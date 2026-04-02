@@ -19,7 +19,8 @@ pub struct Input {
     pub clustering_size: usize,
     pub equivalence_mode: usize,
     pub target_size: usize,
-    pub extra_rounds: usize
+    pub extra_rounds: usize,
+    pub check_equivalence: Option<PathBuf>
 }
 
 
@@ -41,6 +42,7 @@ impl Input {
         let equivalence_mode = input_processing::get_equivalence_mode(&matches)?;
         let target_size = input_processing::get_target_size(&matches)?;
         let extra_rounds = input_processing::get_extra_rounds(&matches)?;
+        let check_equivalence = input_processing::get_check_equivalence(&matches)?;
        
 
 
@@ -61,7 +63,8 @@ impl Input {
             apply_bidirectional,
             equivalence_mode,
             target_size,
-            extra_rounds
+            extra_rounds,
+            check_equivalence
         })
     }
 }
@@ -90,6 +93,19 @@ mod input_processing {
                 Result::Ok(Some(route))
             } else {
                 Result::Err(eprintln!("{}", Colour::Red.paint("invalid input structure")))
+            }
+        } else{
+            Ok(None)
+        }
+    }
+
+    pub fn get_check_equivalence(matches: &ArgMatches) -> Result<Option<PathBuf>, ()> {
+        if matches.is_present("check_equivalence"){
+            let route = Path::new(matches.value_of("check_equivalence").unwrap()).to_path_buf();
+            if route.is_file() {
+                Result::Ok(Some(route))
+            } else {
+                Result::Err(eprintln!("{}", Colour::Red.paint("invalid file to check equivalence")))
             }
         } else{
             Ok(None)
@@ -249,6 +265,14 @@ mod input_processing {
                     .takes_value(true)
                     .help("Structure in which the circuit is initially processed. If not given, the circuit is clusterized by ZK-GENVER")
                     .display_order(460)
+            )
+            .arg(
+                Arg::with_name("check_equivalence")
+                    .long("check_equivalence")
+                    .hidden(false)
+                    .takes_value(true)
+                    .help("Argument to activate the equivalence check mode. It check the equivalence between the input and the given file")
+                    .display_order(130)
             )
             .arg(
                 Arg::with_name("timeout")

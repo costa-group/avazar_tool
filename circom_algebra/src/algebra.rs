@@ -122,7 +122,7 @@ impl<C: Default + Clone + Display + Hash + Eq> ArithmeticExpression<C> {
                 format!("{} ", value.to_str_radix(10))
             } else {
                 if *value == BigInt::from(1){
-                    format!("{}", 
+                    format!("{} ", 
                         signal_to_smt2_name[signal]                    
                     )
                 } else{
