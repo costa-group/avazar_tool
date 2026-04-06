@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashSet};
 use std::borrow::Borrow;
 use std::time::{Instant};
 
@@ -11,7 +11,7 @@ use crate::directed_acyclic_graph::{DAGNode};
 use crate::directed_acyclic_graph::dag_from_partition::dag_from_partition;
 use crate::directed_acyclic_graph::dag_postprocessing::merge_passthrough;
 
-pub fn bridge_partitioning<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(circ: &'a S, strict_bridge: bool, debug: bool) -> HashMap<usize, DAGNode<'a, C, S>> {
+pub fn bridge_partitioning<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(circ: &'a S, strict_bridge: bool, debug: bool) -> BTreeMap<usize, DAGNode<'a, C, S>> {
 
     // partition the constraints into clusters based on connectedness through non-bridge nodes
     if debug {println!("LOG: Beginning bridge partitioning");}
@@ -35,7 +35,7 @@ pub fn bridge_partitioning<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(circ: &'a
 
     // get a constraint_to_node && node_to_constraint maps
     let mut node_to_coni: Vec<Vec<usize>> = nonbridge_connectedness.get_components();
-    let mut signal_to_node: HashMap<usize, usize> = HashMap::new();
+    let mut signal_to_node: BTreeMap<usize, usize> = BTreeMap::new();
 
     for (parti, part) in node_to_coni.iter().enumerate() {for signal in part.iter().copied().flat_map(|coni| constraints[coni].borrow().signals().into_iter()).collect::<HashSet<usize>>().into_iter() {
         signal_to_node.insert(signal, parti); // by connectedness this can never overlap

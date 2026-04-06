@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 use std::borrow::Borrow;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use utils::structure::NodeInfo;
 use circuits_and_constraints::constraint::Constraint;
@@ -98,7 +98,7 @@ impl<'a, C: Constraint + 'a, S: Circuit<C> + 'a> DAGNode<'a, C, S> {
         }
     }
 
-    pub fn merge_nodes(to_merge: Vec<usize>, nodes: &mut HashMap<usize, DAGNode<'a, C, S>>, sig_to_coni: &HashMap<usize, Vec<usize>>, coni_to_node: &mut Vec<usize>) -> usize {
+    pub fn merge_nodes(to_merge: Vec<usize>, nodes: &mut BTreeMap<usize, DAGNode<'a, C, S>>, sig_to_coni: &HashMap<usize, Vec<usize>>, coni_to_node: &mut Vec<usize>) -> usize {
         // not especially elegant but whatever
 
         let root: usize = to_merge[0];
@@ -154,8 +154,8 @@ impl<'a, C: Constraint + 'a, S: Circuit<C> + 'a> DAGNode<'a, C, S> {
         DAGNode::<'b, C, T>::new(circ, id, constraints, input_signals, output_signals, Some(successors), Some(predecessors))
     }
 
-    pub fn signal_to_nodes(nodes: impl Iterator<Item = &'a DAGNode<'a, C, S>>) -> HashMap<usize, Vec<usize>> {
-        let mut signal_to_nodes: HashMap<usize, Vec<usize>> = HashMap::new();
+    pub fn signal_to_nodes(nodes: impl Iterator<Item = &'a DAGNode<'a, C, S>>) -> BTreeMap<usize, Vec<usize>> {
+        let mut signal_to_nodes: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
 
         for node in nodes {
             for sig in node.signals() {

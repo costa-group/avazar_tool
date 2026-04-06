@@ -40,5 +40,8 @@ pub struct Args {
     pub leiden_max_iterations: Option<usize>,
 
     #[arg(long)]
+    pub existing_partition: Option<String>,
+
+    #[arg(long)]
     pub debug: bool
 }

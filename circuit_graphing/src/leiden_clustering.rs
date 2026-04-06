@@ -1,7 +1,8 @@
-use std::collections::{HashSet, HashMap};
+use std::collections::{HashSet, HashMap, BTreeSet};
 
 use graphrs::Graph as RSGraph;
-use graphrs::algorithms::community::louvain::{louvain_communities as rs_louvain_communities};
+use graphrs::IdentityIndexer;
+use graphrs::algorithms::community::louvain::{louvain_communities_consume as rs_louvain_communities};
 
 use xgraph::Graph as XGraph;
 use xgraph::graph::algorithms::leiden_clustering::{CommunityDetection, CommunityConfig as XCommunityConfig};
@@ -26,7 +27,7 @@ impl CanLeiden for XGraph<f64, (), ()> {
     }
 }
 
-impl CanLeiden for RSGraph<usize, usize> {
+impl CanLeiden for RSGraph<usize, IdentityIndexer> {
     fn num_edges(&self) -> usize {
         self.number_of_edges()
     }
@@ -35,7 +36,7 @@ impl CanLeiden for RSGraph<usize, usize> {
         // graphrs erroneously divides by 0.5 * m instead of 2 * m ... so we need to divide by 4 to correct this.
 
         // let result = leiden(&self, true, QualityFunction::Modularity, Some(resolution), None, None);
-        let result: Vec<HashSet<usize>> = rs_louvain_communities(&self, true, Some(resolution * 0.5), Some(1e-6), Some(seed)).unwrap(); // fixing a bug in their implementation
+        let result: Vec<BTreeSet<usize>> = rs_louvain_communities(*self, true, Some(resolution * 0.5), Some(1e-6), Some(seed)).unwrap(); // fixing a bug in their implementation
 
         result.into_iter().map(|set| set.into_iter().collect()).collect()
     }

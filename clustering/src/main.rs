@@ -54,6 +54,13 @@ fn write_output_into_file<P: AsRef<Path>>(path: P, result: &StructureReader) -> 
 }
 
 fn start(args: Args) -> Result<(), Box<dyn Error>> {
+    
+    let existing_partition: Option<Vec<Vec<usize>>> =
+     args.existing_partition.map(
+        |path| bincode::deserialize_from(
+                std::fs::File::open(path).expect("Error when attempting to open file")
+            ).expect("Error attempting to deserialize partition")
+    );
     // Pass circuit
     let circuit_parsing_timer = Instant::now();
     
@@ -63,13 +70,13 @@ fn start(args: Args) -> Result<(), Box<dyn Error>> {
             let circuit = R1CSData::parse_file(&args.filepath)?;
             println!("Took {:?} to parse", circuit_parsing_timer.elapsed());
             decompose_circuit(&circuit, args.resolution, args.target_size, args.leiden_max_iterations, args.equivalence_mode, 
-                args.graph_backend, args.preprocessing, None, None, args.minimum_equivalence_size, args.equivalence_comparison_budget, args.debug)
+                args.graph_backend, args.preprocessing, None, None, args.minimum_equivalence_size, args.equivalence_comparison_budget, existing_partition, args.debug)
             },
         FileType::ACIR =>{
             let circuit = ACIRCircuit::parse_file(&args.filepath)?;
             println!("Took {:?} to parse", circuit_parsing_timer.elapsed());
             decompose_circuit(&circuit, args.resolution, args.target_size, args.leiden_max_iterations, args.equivalence_mode, 
-                args.graph_backend, args.preprocessing, None, None, args.minimum_equivalence_size, args.equivalence_comparison_budget, args.debug)
+                args.graph_backend, args.preprocessing, None, None, args.minimum_equivalence_size, args.equivalence_comparison_budget, existing_partition, args.debug)
             }
     };
     
