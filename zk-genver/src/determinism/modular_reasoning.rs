@@ -25,6 +25,7 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
         no_abstract_fails:bool,
         results:&ResultInfoDeterminism,
         extra_rounds: usize,
+        verbose: bool
     ) 
     -> (PossibleResult, f64, usize, Vec<String>, HashSet<usize>){
         
@@ -51,6 +52,7 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
             field,
             verification_timeout,
             apply_deduction_assigned,
+            verbose
         );
 
         let mut to_check_next=Vec::new();

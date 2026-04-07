@@ -46,6 +46,7 @@ pub struct SafetyVerification {
     pub verification_timeout: u64,
     pub added_nodes: HashSet<usize>,
     pub apply_deduction_assigned: bool,
+    pub verbose: bool
 }
 
 impl SafetyVerification{
@@ -60,6 +61,7 @@ impl SafetyVerification{
         field: &BigInt,
         verification_timeout: u64, 
         apply_deduction_assigned: bool,
+        verbose: bool
     ) -> SafetyVerification {
         let mut fixed_constraints = Vec::new();
         for mut c in constraints{
@@ -78,6 +80,7 @@ impl SafetyVerification{
             verification_timeout, 
             added_nodes: HashSet::new(),
             apply_deduction_assigned,
+            verbose
         }
     }
     
@@ -100,6 +103,7 @@ pub struct EquivalenceVerification {
     pub verification_timeout: u64,
     pub added_nodes: HashSet<usize>,
     pub apply_deduction_assigned: bool,
+    pub verbose: bool,
 }
 
 impl EquivalenceVerification{
@@ -118,6 +122,7 @@ impl EquivalenceVerification{
         field: &BigInt,
         verification_timeout: u64, 
         apply_deduction_assigned: bool,
+        verbose: bool
     ) -> EquivalenceVerification {
         let mut fixed_constraints_1 = Vec::new();
         for mut c in constraints_1{
@@ -145,6 +150,7 @@ impl EquivalenceVerification{
             verification_timeout, 
             added_nodes: HashSet::new(),
             apply_deduction_assigned,
+            verbose
         }
     }
     

@@ -11,7 +11,7 @@ pub struct Input {
     pub use_civer: bool,
     pub use_ffsol: bool,
     pub use_cvc5: bool,
-    pub _flag_verbose: bool,
+    pub flag_verbose: bool,
     pub apply_deduction_assigned: bool,
     pub apply_predecessors: bool,
     pub apply_bidirectional: bool,
@@ -32,7 +32,7 @@ impl Input {
         let timeout =  input_processing::get_timeout(&matches)?;
         let original_structure = input_processing::get_original_structure(&matches)?;
         let (use_civer, use_picus, use_ffsol,use_cvc5) = input_processing::get_solver(&matches)?;
-        let _flag_verbose =  input_processing::get_flag_verbose(&matches);
+        let flag_verbose =  input_processing::get_flag_verbose(&matches);
         let prime = input_processing::get_prime(&matches)?;
         let clustering_size = input_processing::get_clustering_size(&matches)?;
         let apply_deduction_assigned = input_processing::get_apply_deduction_assigned(&matches);
@@ -55,7 +55,7 @@ impl Input {
             use_civer,
             use_ffsol,
             use_cvc5,
-            _flag_verbose,
+            flag_verbose,
             prime,
             clustering_size,
             apply_deduction_assigned,
@@ -137,7 +137,7 @@ mod input_processing {
     }
 
     pub fn get_flag_verbose(matches: &ArgMatches) -> bool {
-        matches.is_present("flag_verbose")
+        matches.is_present("verbose")
     }
 
     pub fn get_apply_deduction_assigned(matches: &ArgMatches) -> bool {
@@ -289,6 +289,14 @@ mod input_processing {
                     .takes_value(false)
                     .hidden(false)
                     .help("Activate to apply the deduction rule for linear constraints")
+                    .display_order(600)
+            )
+            .arg(
+                Arg::with_name("verbose")
+                    .long("verbose")
+                    .takes_value(false)
+                    .hidden(false)
+                    .help("Activate to print debug messages and not remove intermediate files")
                     .display_order(600)
             )
             .arg(

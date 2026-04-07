@@ -81,7 +81,8 @@ pub fn prove_equivalence(user_input: Input) -> Result<(), ()> {
             Vec::new(),
             &field,
             user_input.timeout,
-            user_input.apply_deduction_assigned
+            user_input.apply_deduction_assigned,
+            user_input.flag_verbose
         );
 
         let (result,logs) = call_prove_equivalence(&to_study, solver);

@@ -121,7 +121,8 @@ pub fn prove_safety(user_input: Input) -> Result<(), ()> {
             apply_predecessors,
             apply_bidirectional,
             &mut results,
-            user_input.extra_rounds
+            user_input.extra_rounds,
+            user_input.flag_verbose
         );
     }
 
@@ -148,7 +149,8 @@ pub fn prove_safety(user_input: Input) -> Result<(), ()> {
                 apply_predecessors,
                 apply_bidirectional,
                 &mut results,
-                user_input.extra_rounds
+                user_input.extra_rounds,
+                user_input.flag_verbose
             );
         }
         to_study_again = reconsider_big_nodes(&structure, &nodeid2pos, &mut results, clustering_size);
@@ -188,7 +190,8 @@ fn process_node(
     apply_predecessors: bool,
     apply_bidirectional: bool,
     results: &mut ResultInfoDeterminism,
-    extra_rounds: usize
+    extra_rounds: usize,
+    verbose: bool
 ) {
 
     // To not study the custom templates
@@ -219,7 +222,8 @@ fn process_node(
         apply_bidirectional,
         no_abstract_fails,
         results,
-        extra_rounds
+        extra_rounds,
+        verbose
     );
         
         //for log in logs{
@@ -294,6 +298,7 @@ fn decompose_and_study(
     apply_bidirectional: bool,
     results: &mut ResultInfoDeterminism,
     extra_rounds: usize,
+    verbose: bool
 ) {
     println!("LOG: Reconsidering again node {}", node_id);
     let node_info = structure.nodes.get(*nodeid2pos.get(&node_id).unwrap()).unwrap();
@@ -386,7 +391,8 @@ fn decompose_and_study(
             apply_predecessors,
             apply_bidirectional,
             &mut new_results,
-            extra_rounds
+            extra_rounds,
+            verbose
         );
     }
 

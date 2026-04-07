@@ -14,6 +14,7 @@ use std::thread;
 use nix::unistd::Pid;
 use nix::sys::signal::Signal;
 use nix::sys::signal::killpg;
+use std::fs;
 use crate::smt2_utils::{safety_problem_to_smt2,equivalence_problem_to_smt2};
 
 pub fn study_equivalence(problem: &EquivalenceVerification)-> (PossibleResult, Vec<String>){
@@ -21,7 +22,7 @@ pub fn study_equivalence(problem: &EquivalenceVerification)-> (PossibleResult, V
     
     let smt2_problem: LinkedList<String> = equivalence_problem_to_smt2(problem);
 
-    let result_solver = handling_cvc5_call(&smt2_problem, problem.verification_timeout);
+    let result_solver = handling_cvc5_call(&smt2_problem, problem.verification_timeout,problem.verbose);
 
     match result_solver{
         PossibleResult::VERIFIED=>{
@@ -50,7 +51,7 @@ pub fn study_safety(problem: &SafetyVerification)-> (PossibleResult, Vec<String>
     
     let smt2_problem: LinkedList<String> = safety_problem_to_smt2(problem);
 
-    let result_solver = handling_cvc5_call(&smt2_problem, problem.verification_timeout);
+    let result_solver = handling_cvc5_call(&smt2_problem, problem.verification_timeout,problem.verbose);
 
     match result_solver{
         PossibleResult::VERIFIED=>{
@@ -73,7 +74,7 @@ pub fn study_safety(problem: &SafetyVerification)-> (PossibleResult, Vec<String>
 
 
 
-pub fn handling_cvc5_call(smt2_problem: &LinkedList<String>,timeout:u64)-> PossibleResult{
+pub fn handling_cvc5_call(smt2_problem: &LinkedList<String>,timeout:u64,verbose:bool)-> PossibleResult{
     //produce a random number for the file name
     let mut rng = rand::thread_rng();
     let random_number: u32 = rng.gen();
@@ -153,6 +154,13 @@ pub fn handling_cvc5_call(smt2_problem: &LinkedList<String>,timeout:u64)-> Possi
         stderr,
     };
     let stdout = String::from_utf8_lossy(&output.stdout);
+
+    if !verbose{
+        match fs::remove_file(&new_file_name) {
+            Ok(_) => {},
+            Err(e) => eprintln!("Error when eliminating the file: {}", e),
+        }
+    }
 
     if let Some(ultima_linea) = stdout.lines().rev().find(|l| !l.trim().is_empty()) {
         if ultima_linea == "unsat" { 
