@@ -44,13 +44,13 @@ pub fn equivalence_problem_to_smt2(problem: &EquivalenceVerification,use_old_syn
         if use_old_syntax{
             smt2_problem.push_back(
                format!("(assert {})",
-                  constraint.constraint_to_smt2_old(&signal_to_name)
+                  constraint.constraint_to_smt2_old(&signal_to_name_aux)
                 )
             );
         }else{
             smt2_problem.push_back(
                format!("(assert {})",
-                  constraint.constraint_to_smt2(&signal_to_name)
+                  constraint.constraint_to_smt2(&signal_to_name_aux)
                 )
             );
         }
