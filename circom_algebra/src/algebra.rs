@@ -114,7 +114,49 @@ impl<C: Default + Clone + Display + Hash + Eq> ArithmeticExpression<C> {
             return "".to_string();
         }
 
-        let mut string_coefficients = "(ff.add ".to_string();
+        let mut string_coefficients= if coefficients.len() > 1{
+            "(ff.add ".to_string()
+        }else{
+            "".to_string()
+        };
+
+        for (signal, value) in coefficients {
+            let component_string = if value.is_zero() {
+                "".to_string()
+            } else if signal.eq(&ArithmeticExpression::constant_coefficient()) {
+                format!("(as ff{} FF0) ", value.to_str_radix(10))
+            } else {
+                if *value == BigInt::from(1){
+                    format!("{} ", 
+                        signal_to_smt2_name[signal]                    
+                    )
+                } else{
+                    format!("(ff.mul {} (as ff{} FF0)) ", 
+                        signal_to_smt2_name[signal], 
+                        value.to_str_radix(10)
+                    )
+                }
+            };
+            string_coefficients.push_str(component_string.as_str());
+        }
+        if coefficients.len() > 1{
+          string_coefficients.push(')');
+        }
+        string_coefficients
+    }
+
+        // printing utils
+    fn coefficients_to_smt2_old(coefficients: &HashMap<C, BigInt>, signal_to_smt2_name: &HashMap<C,String>) -> String {
+        if coefficients.is_empty(){
+            return "".to_string();
+        }
+
+        let mut string_coefficients= if coefficients.len() > 1{
+            "(+ ".to_string()
+        }else{
+            "".to_string()
+        };
+
         for (signal, value) in coefficients {
             let component_string = if value.is_zero() {
                 "".to_string()
@@ -126,7 +168,7 @@ impl<C: Default + Clone + Display + Hash + Eq> ArithmeticExpression<C> {
                         signal_to_smt2_name[signal]                    
                     )
                 } else{
-                    format!("(ff.mul {} {}) ", 
+                    format!("(* {} {}) ", 
                         signal_to_smt2_name[signal], 
                         value.to_str_radix(10)
                     )
@@ -134,7 +176,9 @@ impl<C: Default + Clone + Display + Hash + Eq> ArithmeticExpression<C> {
             };
             string_coefficients.push_str(component_string.as_str());
         }
-        string_coefficients.push(')');
+        if coefficients.len() > 1{
+          string_coefficients.push(')');
+        }
         string_coefficients
     }
 
@@ -1265,8 +1309,30 @@ impl<C: Default + Clone + Display + Hash + Eq> Constraint<C> {
                 )
             }
         };
+        format!("(= (as ff0 FF0) {})", right_side)
+    }
+
+    pub fn constraint_to_smt2_old(&self, signal_to_smt2_name: &HashMap<C,String>) -> String{
+        
+        let right_side = if self.a.is_empty() || self.b.is_empty(){
+            ArithmeticExpression::coefficients_to_smt2_old(self.c(),signal_to_smt2_name)
+        } else{
+            let mul = format!("(* {} {})",
+                ArithmeticExpression::coefficients_to_smt2_old(self.a(),signal_to_smt2_name),
+                ArithmeticExpression::coefficients_to_smt2_old(self.b(),signal_to_smt2_name)
+            );
+            if self.c.is_empty(){
+                mul
+            } else{
+                format!("(+ {} {})",
+                    mul,
+                    ArithmeticExpression::coefficients_to_smt2_old(self.c(),signal_to_smt2_name)
+                )
+            }
+        };
         format!("(= 0 {})", right_side)
     }
+
 
     pub fn b(&self) -> &HashMap<C, BigInt> {
         &self.b

@@ -1,5 +1,5 @@
 use civer::tags_checking::TemplateVerification;
-use solvers_interface::{PossibleResult, PossibleSolver, SafetyVerification, cvc5_interface, ffsol_interface, picus_interface};
+use solvers_interface::{PossibleResult, PossibleSolver, SafetyVerification, cvc5_interface, ffsol_interface, picus_interface,z3_interface};
 type Constraint = circom_algebra::algebra::Constraint<usize>;
 use circom_algebra::num_bigint::BigInt;
 use std::collections::LinkedList;
@@ -266,7 +266,11 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
             },
             PossibleSolver::CVC5=>{
                 cvc5_interface::study_safety(problem)
+            },
+            PossibleSolver::Z3=>{
+                z3_interface::study_safety(problem)
             }
+
         }
     }
 

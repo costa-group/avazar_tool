@@ -20,7 +20,7 @@ use crate::smt2_utils::{safety_problem_to_smt2,equivalence_problem_to_smt2};
 pub fn study_equivalence(problem: &EquivalenceVerification)-> (PossibleResult, Vec<String>){
     let mut logs = Vec::new();
     
-    let smt2_problem: LinkedList<String> = equivalence_problem_to_smt2(problem);
+    let smt2_problem: LinkedList<String> = equivalence_problem_to_smt2(problem,false);
 
     let result_solver = handling_cvc5_call(&smt2_problem, problem.verification_timeout,problem.verbose);
 
@@ -79,6 +79,7 @@ pub fn handling_cvc5_call(smt2_problem: &LinkedList<String>,timeout:u64,verbose:
     let mut rng = rand::thread_rng();
     let random_number: u32 = rng.gen();
     let new_file_name = format!("output_{}.smt2", random_number);
+
 
     // Ensure the SMT2 text is fully written and flushed to disk before continuing.
     {

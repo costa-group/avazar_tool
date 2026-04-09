@@ -3,7 +3,7 @@ use std::collections::{HashMap, LinkedList};
 use crate::{BigInt, SafetyVerification,EquivalenceVerification};
 
 
-pub fn equivalence_problem_to_smt2(problem: &EquivalenceVerification)->LinkedList<String>{
+pub fn equivalence_problem_to_smt2(problem: &EquivalenceVerification,use_old_syntax:bool)->LinkedList<String>{
     let mut smt2_problem = LinkedList::new();
     let mut header = declare_header(&problem.field);
     smt2_problem.append(&mut header);
@@ -24,19 +24,36 @@ pub fn equivalence_problem_to_smt2(problem: &EquivalenceVerification)->LinkedLis
     }
 
     for constraint in &problem.constraints_1 {
-        smt2_problem.push_back(
-            format!("(assert {})",
-                constraint.constraint_to_smt2(&signal_to_name)
-            )
-        );
+        if use_old_syntax{
+            smt2_problem.push_back(
+               format!("(assert {})",
+                  constraint.constraint_to_smt2_old(&signal_to_name)
+                )
+            );
+        }else{
+            smt2_problem.push_back(
+               format!("(assert {})",
+                  constraint.constraint_to_smt2(&signal_to_name)
+                )
+            );
+        }
+        
     }
 
     for constraint in &problem.constraints_2 {
-        smt2_problem.push_back(
-            format!("(assert {})",
-                constraint.constraint_to_smt2(&signal_to_name_aux)
-            )
-        );
+        if use_old_syntax{
+            smt2_problem.push_back(
+               format!("(assert {})",
+                  constraint.constraint_to_smt2_old(&signal_to_name)
+                )
+            );
+        }else{
+            smt2_problem.push_back(
+               format!("(assert {})",
+                  constraint.constraint_to_smt2(&signal_to_name)
+                )
+            );
+        }
     }
 
 
@@ -104,7 +121,7 @@ pub fn safety_problem_to_smt2(problem: &SafetyVerification)->LinkedList<String>{
 
 
     for imp in &problem.implications_safety{
-        let new_imp = implication_to_smt2(imp,&signal_to_name,&signal_to_name_aux);
+        let new_imp = safety_implication_to_smt2(imp,&signal_to_name,&signal_to_name_aux);
         smt2_problem.push_back(
             format!("(assert {})",
                 new_imp
@@ -134,7 +151,7 @@ pub fn declare_header(prime: &BigInt)->LinkedList<String>{
     aux
 }
 
-pub fn implication_to_smt2(imp: &(Vec<usize>, Vec<usize>), signal_to_names: &HashMap<usize,String>, signal_to_names_aux: &HashMap<usize,String>) -> String{
+pub fn safety_implication_to_smt2(imp: &(Vec<usize>, Vec<usize>), signal_to_names: &HashMap<usize,String>, signal_to_names_aux: &HashMap<usize,String>) -> String{
     let left: String = if imp.0.len() == 0{
         "true".to_string()
     } else if imp.0.len() == 1{

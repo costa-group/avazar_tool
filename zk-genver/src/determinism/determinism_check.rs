@@ -68,18 +68,6 @@ pub fn prove_safety(user_input: Input) -> Result<(), ()> {
 
     let field = user_input.prime;
 
-    let solver = if user_input.use_civer{
-        PossibleSolver::CIVER
-    } else if user_input.use_picus{
-        PossibleSolver::PICUS
-    } else if user_input.use_ffsol{
-        PossibleSolver::FFSOL
-    }else if user_input.use_cvc5{
-        PossibleSolver::CVC5
-    }else {
-        unreachable!()
-    };
-
     let equivalence_mode = match user_input.equivalence_mode{
         0 => EquivalenceMode::None,
         1 => EquivalenceMode::Local,
@@ -116,7 +104,7 @@ pub fn prove_safety(user_input: Input) -> Result<(), ()> {
             &nodeid2pos, 
             &field, 
             timeout, 
-            solver,
+            user_input.solver_option,
             apply_deduction_assigned,
             apply_predecessors,
             apply_bidirectional,
@@ -142,7 +130,7 @@ pub fn prove_safety(user_input: Input) -> Result<(), ()> {
                 &mut max_node_id,
                 &field, 
                 timeout, 
-                solver,
+                user_input.solver_option,
                 equivalence_mode,
                 target_size,
                 apply_deduction_assigned,

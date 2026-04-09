@@ -1,4 +1,6 @@
 use std::path::PathBuf;
+use solvers_interface::PossibleSolver;
+
 use crate::BigInt;
 
 
@@ -7,10 +9,7 @@ pub struct Input {
     pub input_structure: Option<PathBuf>,
     pub timeout: u64,
     pub original_structure: Option<PathBuf>,
-    pub use_picus: bool,
-    pub use_civer: bool,
-    pub use_ffsol: bool,
-    pub use_cvc5: bool,
+    pub solver_option: PossibleSolver,
     pub flag_verbose: bool,
     pub apply_deduction_assigned: bool,
     pub apply_predecessors: bool,
@@ -31,7 +30,7 @@ impl Input {
         let input_structure = input_processing::get_input_structure(&matches)?;
         let timeout =  input_processing::get_timeout(&matches)?;
         let original_structure = input_processing::get_original_structure(&matches)?;
-        let (use_civer, use_picus, use_ffsol,use_cvc5) = input_processing::get_solver(&matches)?;
+        let solver_option = input_processing::get_solver(&matches)?;
         let flag_verbose =  input_processing::get_flag_verbose(&matches);
         let prime = input_processing::get_prime(&matches)?;
         let clustering_size = input_processing::get_clustering_size(&matches)?;
@@ -51,10 +50,7 @@ impl Input {
             input_structure,
             timeout,
             original_structure,
-            use_picus,
-            use_civer,
-            use_ffsol,
-            use_cvc5,
+            solver_option,
             flag_verbose,
             prime,
             clustering_size,
@@ -73,6 +69,7 @@ impl Input {
 mod input_processing {
     use ansi_term::Colour;
     use clap::{App, Arg, ArgMatches};
+    use solvers_interface::PossibleSolver;
     use std::path::{Path, PathBuf};
     use crate::BigInt;
 
@@ -174,27 +171,28 @@ mod input_processing {
         }
     }
     
-    pub fn get_solver(matches: &ArgMatches) -> Result<(bool, bool, bool,bool),  ()> {
-        
+    pub fn get_solver(matches: &ArgMatches) -> Result<PossibleSolver,()> {
+        use solvers_interface::PossibleSolver::*;
         match matches.is_present("solver"){
             true => 
                {
                    let solver = matches.value_of("solver").unwrap();
-                   if solver == "civer"
-                      {
-                        Ok((true, false, false,false))
+                   if solver == "civer"{
+                        Ok(CIVER)
                     } else if solver == "picus"{
-                        Ok((false, true, false,false ))
+                        Ok(PICUS)
                     } else if solver == "ffsol"{
-                        Ok((false, false, true,false))
+                        Ok(FFSOL)
                     } else if solver == "cvc5"{
-                        Ok((false, false, true,false))
+                        Ok(CVC5)
+                    } else if solver == "z3"{
+                        Ok(Z3)
                     }else{
                         Result::Err(eprintln!("{}", Colour::Red.paint("invalid solver")))
                     }
                }
                
-            false => Ok((true, false, false,false)),
+            false => Ok(CIVER),
         }
     }
 

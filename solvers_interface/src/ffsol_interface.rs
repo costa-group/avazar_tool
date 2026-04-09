@@ -20,7 +20,7 @@ use std::fs;
 pub fn study_equivalence(problem: &EquivalenceVerification)-> (PossibleResult, Vec<String>){
     let mut logs = Vec::new();
     
-    let smt2_problem: LinkedList<String> = equivalence_problem_to_smt2(problem);
+    let smt2_problem: LinkedList<String> = equivalence_problem_to_smt2(problem,false);
 
     let result_solver = handling_ffsol_call(&smt2_problem, problem.verification_timeout,problem.verbose);
 
@@ -164,7 +164,7 @@ pub fn handling_ffsol_call(smt2_problem: &LinkedList<String>,timeout:u64,verbose
 
     if !verbose{
         match fs::remove_file(&new_file_name) {
-            Ok(_) => println!("Archivo eliminado correctamente"),
+            Ok(_) => {},
             Err(e) => eprintln!("Error al eliminar el archivo: {}", e),
         }
     }

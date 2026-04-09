@@ -22,7 +22,8 @@ fn main() {
 
     let user_input = user_input.unwrap();
 
-    let result = if user_input.check_equivalence.is_some(){
+    let result: Result<(), ()> = if user_input.check_equivalence.is_some(){
+
         prove_equivalence(user_input)
     } else{
         prove_safety(user_input)

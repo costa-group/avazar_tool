@@ -6,6 +6,8 @@ use crate::processing_utils::*;
 
 use solvers_interface::ffsol_interface;
 use solvers_interface::cvc5_interface;
+use solvers_interface::z3_interface;
+
 
 #[derive(Default)]
 pub struct ResultInfoEquivalence{
@@ -55,12 +57,8 @@ pub fn prove_equivalence(user_input: Input) -> Result<(), ()> {
 
     let field = user_input.prime;
 
-    let solver = if user_input.use_ffsol{
-        PossibleSolver::FFSOL
-    }else if user_input.use_cvc5{
-        PossibleSolver::CVC5
-    }else {
-        println!("CIVER and PICUS cannot be used to check equivalence. Use FFSOL or CVC5 instead");
+    if user_input.solver_option==PossibleSolver::CIVER||user_input.solver_option==PossibleSolver::PICUS{
+        println!("CIVER and PICUS cannot be used to check equivalence. Use Z3,FFSOL or CVC5 instead");
         return Err(());
     };
 
@@ -85,7 +83,7 @@ pub fn prove_equivalence(user_input: Input) -> Result<(), ()> {
             user_input.flag_verbose
         );
 
-        let (result,logs) = call_prove_equivalence(&to_study, solver);
+        let (result,logs) = call_prove_equivalence(&to_study, user_input.solver_option);
         result
     };
 
@@ -118,7 +116,10 @@ fn call_prove_equivalence(
             },
             PossibleSolver::CVC5=>{
                 cvc5_interface::study_equivalence(problem)
-            }
+            },
+            PossibleSolver::Z3=>{
+                z3_interface::study_equivalence(problem)
+            },
             _ => unreachable!()
         }
     }
