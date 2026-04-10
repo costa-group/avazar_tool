@@ -229,6 +229,8 @@ fn process_node(
                 match prev_result{
                     PossibleResult::VERIFIED =>{
                     },
+                    PossibleResult::NOTHING =>{
+                    },
                     PossibleResult::FAILED =>{
                     	println!("Child node {} becomes safe when considering father constraints", id_included);
                         results.failed_nodes.remove(&id_included);
