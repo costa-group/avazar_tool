@@ -11,7 +11,7 @@ use input_user::Input;
 use std::path::PathBuf;
 use crate::modular_reasoning::check_tags;
 use clustering::decompose_circuit::decompose_node;
-use utils::small_utilities::{GraphBackend, EquivalenceMode, ClusteringPreprocessing};
+use utils::small_utilities::{GraphBackend, EquivalenceMode, ClusteringPreprocessing, DecomposeOptions};
 use crate::PossibleResult::VERIFIED;
 
 
@@ -410,23 +410,20 @@ fn decompose_and_study(
         );
     }
     
+    let decompose_options = DecomposeOptions {
+        resolution: Some(target_size as f64),
+        equivalence_mode: equivalence_mode,
+        inverse_coni_mapping: Some(&constraints_original_index),
+        ..Default::default()
+    };
+
 
     let structure_reader = decompose_node(
         field, 
         &constraints_copy, 
         &node_info.input_signals, 
         &node_info.output_signals,
-        None,
-        Some(target_size as f64),
-        None,
-        equivalence_mode,
-        GraphBackend::GraphRS,
-        ClusteringPreprocessing::None,
-        Some(&constraints_original_index),
-        None,
-        None, // minimum_equivalence_size: Option<usize> -- flag for minimum size to try equivalence
-        None, // equivalence_comparison_budget: Option<usize> -- flag for maximum number of comparisons made -- use only one
-        false
+        decompose_options
     );  
 
 

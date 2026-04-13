@@ -6,9 +6,10 @@ use itertools::Itertools;
 use clap::{ValueEnum};
 use strum_macros::{Display};
 
-#[derive(Debug, Display, Copy, Clone, ValueEnum)]
+#[derive(Debug, Default, Display, Copy, Clone, ValueEnum)]
 pub enum GraphBackend {
     #[strum(serialize = "graphrs")]
+    #[default]
     GraphRS,
     #[strum(serialize = "singleclustering")]
     SingleClustering,
@@ -16,7 +17,7 @@ pub enum GraphBackend {
     XGraph
 }
 
-#[derive(Debug, Display, Copy, Clone, ValueEnum)]
+#[derive(Debug, Default, Display, Copy, Clone, ValueEnum)]
 pub enum EquivalenceMode {
     #[strum(serialize = "total")]
     Total,
@@ -25,23 +26,42 @@ pub enum EquivalenceMode {
     #[strum(serialize = "local")]
     Local,
     #[strum(serialize = "none")]
+    #[default]
     None
 }
 
-#[derive(Debug, Display, Copy, Clone, ValueEnum)]
+#[derive(Debug, Default, Display, Copy, Clone, ValueEnum)]
 pub enum ClusteringPreprocessing {
     #[strum(serialize = "none")]
+    #[default]
     None,
     #[strum(serialize = "bridgefinding")]
     BridgeFinding,
 }
 
-#[derive(Debug, Display, Copy, Clone, ValueEnum)]
+#[derive(Debug, Default, Display, Copy, Clone, ValueEnum)]
 pub enum FileType {
     #[strum(serialize = "r1cs")]
+    #[default]
     R1CS,
     #[strum(serialize = "acir")]
     ACIR
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct DecomposeOptions<'a> {
+    pub resolution: Option<f64>,
+    pub target_size: Option<f64>,
+    pub leiden_max_iterations: Option<usize>,
+    pub equivalence_mode: EquivalenceMode,
+    pub graph_backend: GraphBackend,
+    pub preprocessing: ClusteringPreprocessing,
+    pub inverse_coni_mapping: Option<&'a [usize]>,
+    pub inverse_sig_mapping: Option<&'a [usize]>,
+    pub minimum_equivalence_size: Option<usize>,
+    pub equivalence_comparison_budget: Option<usize>,
+    pub existing_partition: Option<Vec<Vec<usize>>>,
+    pub debug: bool
 }
 
 pub fn distance_to_source_set<'a, T: Hash + Ord + Copy>(source_set: impl Iterator<Item = &'a T>, adjacencies: &'a HashMap<T, HashSet<T>>) -> HashMap<&'a T, usize> {
