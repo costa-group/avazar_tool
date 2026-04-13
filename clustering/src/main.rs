@@ -14,6 +14,10 @@ use std::io::Write;
 use std::error::Error;
 use std::time::{Instant};
 use clap::Parser;
+use mimalloc::MiMalloc;
+
+#[global_allocator]
+static GLOBAL: MiMalloc = MiMalloc;
 
 mod argument_parsing;
 pub mod decompose_circuit;
@@ -80,12 +84,12 @@ fn start(args: Args) -> Result<(), Box<dyn Error>> {
     let result = match args.file_type {
         FileType::R1CS => {
             let circuit = R1CSData::parse_file(&args.filepath)?;
-            println!("Took {:?} to parse", circuit_parsing_timer.elapsed());
+            if args.debug > 0 { println!("Took {:?} to parse", circuit_parsing_timer.elapsed()); }
             decompose_circuit(&circuit, decompose_options)
             },
         FileType::ACIR =>{
             let circuit = ACIRCircuit::parse_file(&args.filepath)?;
-            println!("Took {:?} to parse", circuit_parsing_timer.elapsed());
+            if args.debug > 0 { println!("Took {:?} to parse", circuit_parsing_timer.elapsed()); }
             decompose_circuit(&circuit, decompose_options)
             }
     };

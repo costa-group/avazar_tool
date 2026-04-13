@@ -42,6 +42,6 @@ pub struct Args {
     #[arg(long)]
     pub existing_partition: Option<String>,
 
-    #[arg(long)]
-    pub debug: bool
+    #[arg(long, default_value_t=0, help = "Debugger level, 0 = None, 1 = Minimal Checkpoints, 2 = Detailed Checkpoints")]
+    pub debug: usize
 }

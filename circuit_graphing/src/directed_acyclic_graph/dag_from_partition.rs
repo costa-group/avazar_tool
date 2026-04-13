@@ -11,7 +11,8 @@ use utils::small_utilities::{distance_to_source_set};
 use utils::union_find::{UnionFind};
 
 pub fn dag_from_partition<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
-    circ: &'a S, partition: Vec<Vec<usize>>, node_id_generator: &mut dyn Iterator<Item = usize>) -> HashMap<usize, DAGNode<'a, C, S>> {
+    circ: &'a S, partition: Vec<Vec<usize>>, node_id_generator: &mut dyn Iterator<Item = usize>,
+    debug: usize) -> HashMap<usize, DAGNode<'a, C, S>> {
 
     let timer = Instant::now();
 
@@ -35,25 +36,25 @@ pub fn dag_from_partition<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
     // get the signal indices
     let sig_to_coni = signals_to_constraints_with_them(circ.get_constraints(), None, None);
 
-    println!("LOG: Easy preprocessing done in {:?}", timer.elapsed().as_secs_f32());
+    if debug > 1 { println!("LOG: Easy preprocessing done in {:?}", timer.elapsed().as_secs_f32()); }
 
     let adjacent_parts = 
         |part_id: usize| -> HashSet<usize> {part_to_signals_arr.get(&part_id).unwrap().iter().copied().flat_map(|sig| sig_to_coni.get(&sig).unwrap()).map(|coni| coni_to_part[*coni].unwrap()).copied().filter(|opart_id| *opart_id != part_id).collect()};
 
     let adjacencies: HashMap<usize, HashSet<usize>> = partition.keys().map(|key| (*key, adjacent_parts(*key))).collect();
 
-    println!("LOG: Total-edges {:?}, max-edges {:?}", adjacencies.values().map(|set| set.len()).sum::<usize>(), adjacencies.values().map(|set| set.len()).max());
-    println!("LOG: Adjacency preprocessing done in {:?}", timer.elapsed().as_secs_f32());
+    if debug > 1 { println!("LOG: Total-edges {:?}, max-edges {:?}", adjacencies.values().map(|set| set.len()).sum::<usize>(), adjacencies.values().map(|set| set.len()).max()); }
+    if debug > 1 { println!("LOG: Adjacency preprocessing done in {:?}", timer.elapsed().as_secs_f32()); }
 
     let distance_to_inputs = distance_to_source_set(input_parts.iter(), &adjacencies);
     let distance_to_outputs = distance_to_source_set(output_parts.iter(), &adjacencies);
 
-    println!("LOG: Found distances to sources in {:?}", timer.elapsed().as_secs_f32());
+    if debug > 1 { println!("LOG: Found distances to sources in {:?}", timer.elapsed().as_secs_f32()); }
 
     // make the preorder
     let part_to_preorder: HashMap<usize, (usize, usize)> = partition.keys().map(|key| (*key, (*distance_to_inputs.get(key).unwrap_or(&usize::MAX), *distance_to_outputs.get(key).unwrap_or(&usize::MAX)))).collect();
 
-    println!("LOG: Constructed preorder in {:?}", timer.elapsed().as_secs_f32());
+    if debug > 1 { println!("LOG: Constructed preorder in {:?}", timer.elapsed().as_secs_f32()); }
 
     let mut nodes : HashMap<usize, DAGNode<'a, C, S>> = partition.into_iter().map(|(idx, part)| {
         (idx, 
@@ -66,7 +67,7 @@ pub fn dag_from_partition<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
             None, None))
     }).collect();
 
-    println!("LOG: Initialised nodes in {:?}", timer.elapsed().as_secs_f32());
+    if debug > 1 { println!("LOG: Initialised nodes in {:?}", timer.elapsed().as_secs_f32()); }
 
     // define arcs that can be defined and collate the others to be fuzzy
 
@@ -80,8 +81,8 @@ pub fn dag_from_partition<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
         else if !lt(part_to_preorder[idy], part_to_preorder[idx]) {fuzzy_adjacencies.entry(*idx).or_insert_with(|| HashSet::new()).insert(*idy);}
     }}
 
-    println!("LOG: Total fuzzy edges {:?}, max-edges {:?}", fuzzy_adjacencies.values().map(|set| set.len()).sum::<usize>(), fuzzy_adjacencies.values().map(|set| set.len()).max());
-    println!("LOG: Determined fuzzy arcs in {:?}", timer.elapsed().as_secs_f32());
+    if debug > 1 { println!("LOG: Total fuzzy edges {:?}, max-edges {:?}", fuzzy_adjacencies.values().map(|set| set.len()).sum::<usize>(), fuzzy_adjacencies.values().map(|set| set.len()).max()); }
+    if debug > 1 { println!("LOG: Determined fuzzy arcs in {:?}", timer.elapsed().as_secs_f32()); }
 
     // add arcs to DAG
 
@@ -102,7 +103,7 @@ pub fn dag_from_partition<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
     }
     for arc in arcs.into_iter() {add_arc_to_nodes(arc, &part_to_signals_arr, &mut nodes);}
 
-    println!("LOG: added non-fuzzy arcs in {:?}", timer.elapsed().as_secs_f32());
+    if debug > 1 { println!("LOG: added non-fuzzy arcs in {:?}", timer.elapsed().as_secs_f32()); }
 
     let mut verts_to_check : Vec<usize> =  fuzzy_adjacencies.keys().filter(|key| fuzzy_adjacencies[key].len() == 1).copied().collect();
 
@@ -132,17 +133,15 @@ pub fn dag_from_partition<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
     let mut coni_to_node: Vec<usize> = vec![0; circ.n_constraints()];
     for (coni, node_id) in nodes.values().flat_map(|node| node.constraints.iter().map(|coni| (coni, node.id))) { coni_to_node[*coni] = node_id };
 
-    println!("LOG: Determined fuzzy components in {:?}", timer.elapsed().as_secs_f32());
+    if debug > 1 { println!("LOG: Determined fuzzy components in {:?}", timer.elapsed().as_secs_f32()); }
 
     let components_to_merge = undirected_components.get_components();
-    println!("LOG: Need to merge {:?} components with total size {:?}", components_to_merge.len(), components_to_merge.iter().map(|s| s.len()).sum::<usize>());
+    if debug > 1 { println!("LOG: Need to merge {:?} components with total size {:?}", components_to_merge.len(), components_to_merge.iter().map(|s| s.len()).sum::<usize>()); }
 
     for (i, to_merge) in components_to_merge.into_iter().enumerate() {
-        println!("LOG: Merging component {:?} of size {:?}", i, to_merge.len());
         DAGNode::merge_nodes(to_merge.into_iter().collect(), &mut nodes, &sig_to_coni, &mut coni_to_node);
-        println!("LOG: Merged component {:?} in {:?}", i, timer.elapsed().as_secs_f32());
     }
-    println!("LOG: Merged fuzzy components in {:?}", timer.elapsed().as_secs_f32());
+    if debug > 1 { println!("LOG: Merged fuzzy components in {:?}", timer.elapsed().as_secs_f32()); }
 
     nodes
 }

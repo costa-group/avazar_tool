@@ -100,17 +100,11 @@ impl<'a, C: Constraint + 'a, S: Circuit<C> + 'a> DAGNode<'a, C, S> {
 
     pub fn merge_nodes(to_merge: HashSet<usize>, nodes: &mut HashMap<usize, DAGNode<'a, C, S>>, sig_to_coni: &HashMap<usize, Vec<usize>>, coni_to_node: &mut Vec<usize>) -> usize {
         // not especially elegant but whatever
-
-        use std::time::Instant;
-        let timer = Instant::now();
         if to_merge.len() == 0 {panic!("Attempting to merge no nodes");}
         let root: usize = *to_merge.iter().next().unwrap();
 
         let new_successors: HashSet<usize> = to_merge.iter().flat_map(|nkey| nodes.get(nkey).unwrap().get_successors()).copied().filter(|nkey| !to_merge.contains(nkey)).collect();
         let new_predecessors: HashSet<usize> = to_merge.iter().flat_map(|nkey| nodes.get(nkey).unwrap().get_predecessors()).copied().filter(|nkey| !to_merge.contains(nkey)).collect();
-
-        println!("-- LOG: Built adjacent node sets in {:?}", timer.elapsed().as_secs_f32());
-        println!("-- LOG: Successors {:?}, Predecessors {:?}", new_successors.len(), new_predecessors.len());
 
         // fix parents to point to root
         for nkey in new_predecessors.iter() {
@@ -120,8 +114,6 @@ impl<'a, C: Constraint + 'a, S: Circuit<C> + 'a> DAGNode<'a, C, S> {
         for nkey in new_successors.iter() {
             let nnode = nodes.get_mut(nkey).unwrap();nnode.predecessors.retain_mut(|okey| !to_merge.contains(okey));nnode.predecessors.push(root);
         }
-
-        println!("-- LOG: Fixed adjacent node sets for neighbours in {:?}", timer.elapsed().as_secs_f32());
 
         let circ: &'a S = nodes[&root].circ;        
 
@@ -142,9 +134,6 @@ impl<'a, C: Constraint + 'a, S: Circuit<C> + 'a> DAGNode<'a, C, S> {
             ));
 
         }
-
-        println!("-- LOG: Built new constraints/signal sets {:?}", timer.elapsed().as_secs_f32());
-        println!("-- LOG: Inputs {:?}, Outputs {:?}", new_input_signals.len(), new_output_signals.len());
 
         // fix coni_to_node
         for coni in new_constraints.iter().copied() { coni_to_node[coni] = root; };

@@ -61,7 +61,7 @@ pub struct DecomposeOptions<'a> {
     pub minimum_equivalence_size: Option<usize>,
     pub equivalence_comparison_budget: Option<usize>,
     pub existing_partition: Option<Vec<Vec<usize>>>,
-    pub debug: bool
+    pub debug: usize
 }
 
 pub fn distance_to_source_set<'a, T: Hash + Ord + Copy>(source_set: impl Iterator<Item = &'a T>, adjacencies: &'a HashMap<T, HashSet<T>>) -> HashMap<&'a T, usize> {

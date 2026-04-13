@@ -33,7 +33,7 @@ fn decompose_circuit_and_return_dagnodes<'a, C: Constraint, S: Circuit<C>>(
     decompose_options: DecomposeOptions
 ) -> (TimingInfo, HashMap<usize, DAGNode<'a, C, S>>) {
 
-    if decompose_options.debug {println!("LOG: Beginning Clustering of {:?} constraints", circuit.n_constraints());}
+    if decompose_options.debug > 0 {println!("LOG: Beginning Clustering of {:?} constraints", circuit.n_constraints());}
     let mut timing_info: TimingInfo = TimingInfo{
     	clustering: 0.0,
         graph_construction: Some(0.0),
@@ -48,7 +48,7 @@ fn decompose_circuit_and_return_dagnodes<'a, C: Constraint, S: Circuit<C>>(
         let graph: Box<dyn CanLeiden> = shared_signal_graph(circuit, decompose_options.graph_backend, decompose_options.debug);
         
         timing_info.graph_construction = Some(graph_construction_timer.elapsed().as_secs_f32());
-        if decompose_options.debug {println!("LOG: Finished graph construction in {:?}s", timing_info.graph_construction.unwrap());}
+        if decompose_options.debug > 0 {println!("LOG: Finished graph construction in {:?}s", timing_info.graph_construction.unwrap());}
 
         // Partition Graph
         let partition_timer = Instant::now();
@@ -59,14 +59,8 @@ fn decompose_circuit_and_return_dagnodes<'a, C: Constraint, S: Circuit<C>>(
         //insert_and_print_timing(debug, &mut timing, "clustering", partition_timer.elapsed());
         timing_info.clustering = partition_timer.elapsed().as_secs_f32();
         timing_info.total += timing_info.clustering;
-        if decompose_options.debug {println!("LOG: Finished clustering in {:?}s", timing_info.clustering);}
-        if decompose_options.debug {println!("LOG: Partitioned into {:?} parts", partition.len());}
-        if decompose_options.debug {
-            use std::fs::File;
-
-            let file = File::create("partition.bin").expect("expected to create file");
-            bincode::serialize_into(file, &partition).expect("expected bincode to work");
-        }
+        if decompose_options.debug > 0 {println!("LOG: Finished clustering in {:?}s", timing_info.clustering);}
+        if decompose_options.debug > 1{println!("LOG: Partitioned into {:?} parts", partition.len());}
     } else {
         partition = decompose_options.existing_partition.unwrap();
     }
@@ -74,7 +68,7 @@ fn decompose_circuit_and_return_dagnodes<'a, C: Constraint, S: Circuit<C>>(
     // Convert into DAG
     let dagnode_timer = Instant::now();
     
-    let mut dagnodes = dag_from_partition(circuit, partition, node_id_generator);
+    let mut dagnodes = dag_from_partition(circuit, partition, node_id_generator, decompose_options.debug);
     merge_passthrough(circuit, &mut dagnodes);
     
     //insert_and_print_timing(debug, &mut timing, "dag_construction_merging", dagnode_timer.elapsed());
@@ -84,8 +78,8 @@ fn decompose_circuit_and_return_dagnodes<'a, C: Constraint, S: Circuit<C>>(
     if decompose_options.inverse_coni_mapping.is_some() || decompose_options.inverse_sig_mapping.is_some() {
         for node in dagnodes.values_mut() {node.map_internal_indices(decompose_options.inverse_coni_mapping, decompose_options.inverse_sig_mapping);} 
     }
-    if decompose_options.debug {println!("LOG: Finished DAG construction in {:?}s", timing_info.dag_construction);}
-    if decompose_options.debug {println!("LOG: DAG has {:?} nodes", dagnodes.len());}
+    if decompose_options.debug > 0 {println!("LOG: Finished DAG construction in {:?}s", timing_info.dag_construction);}
+    if decompose_options.debug > 1{println!("LOG: DAG has {:?} nodes", dagnodes.len());}
 
     (timing_info, dagnodes)
 }
@@ -125,6 +119,7 @@ fn decompose_circuit_over_dagnodes<'a, C: Constraint, S: Circuit<C>>(
             leiden_max_iterations: decompose_options.leiden_max_iterations,
             graph_backend: decompose_options.graph_backend,
             inverse_coni_mapping: Some(&node.get_constraint_indices().collect::<Vec<_>>()),
+            debug: decompose_options.debug.checked_sub(1).unwrap_or_default(),
             ..Default::default()
         };
 
@@ -216,7 +211,7 @@ pub fn decompose_circuit<C: Constraint, S: Circuit<C>>(
 
     timing_info.equivalency = equivalency_timer.elapsed().as_secs_f32();
     timing_info.total += timing_info.equivalency;
-    if debug {println!("LOG: Finished equivalence in {:?}s", timing_info.equivalency);}
+    if debug > 0 {println!("LOG: Finished equivalence in {:?}s", timing_info.equivalency);}
 
     let dagnode_info: Vec<NodeInfo> = dagnodes.into_values().map(|node| node.to_json(inverse_coni_mapping, inverse_sig_mapping)).collect();
     StructureReader {timing: timing_info, nodes: dagnode_info, equivalency_local: equivalency_local, equivalency_structural: equivalency_structural}
