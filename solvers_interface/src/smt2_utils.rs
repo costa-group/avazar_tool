@@ -1,7 +1,7 @@
 
 use std::collections::{HashMap, LinkedList};
 use crate::{BigInt, SafetyVerification,EquivalenceVerification};
-
+use circom_algebra::algebra::Constraint;
 
 pub fn equivalence_problem_to_smt2(problem: &EquivalenceVerification,use_old_syntax:bool)->LinkedList<String>{
     let mut smt2_problem = LinkedList::new();
@@ -90,20 +90,23 @@ pub fn safety_problem_to_smt2(problem: &SafetyVerification)->LinkedList<String>{
 
     let mut signal_to_name = HashMap::new();
     let mut signal_to_name_aux = HashMap::new();
- 
     for s in &problem.signals {
-        let name = format!("s_{}",s);
-        smt2_problem.push_back(declare_signal(&name)); 
-        signal_to_name.insert(*s,name.clone());
-        
-        let name_aux = if problem.inputs.contains(&s){
-            name
-        }else{
-            let aux = format!("s_{}_aux",s);
-            smt2_problem.push_back(declare_signal(&aux)); 
-            aux  
-        };
-        signal_to_name_aux.insert(*s,name_aux);  
+        // if already declared do not insert 
+        if !signal_to_name.contains_key(s){
+            let name = format!("s_{}",s);
+            smt2_problem.push_back(declare_signal(&name)); 
+            signal_to_name.insert(*s,name.clone());
+            
+            let name_aux = if problem.inputs.contains(&s){
+                name
+            }else{
+                let aux = format!("s_{}_aux",s);
+                smt2_problem.push_back(declare_signal(&aux)); 
+                aux  
+            };
+            signal_to_name_aux.insert(*s,name_aux);
+        }
+  
     }
 
     for constraint in &problem.constraints {
@@ -117,6 +120,15 @@ pub fn safety_problem_to_smt2(problem: &SafetyVerification)->LinkedList<String>{
                 constraint.constraint_to_smt2(&signal_to_name_aux)
             )
         );
+
+        if problem.apply_deduction_assigned{
+            let deductions_uniqueness = apply_deduction_assigned(constraint,&signal_to_name,&signal_to_name_aux);
+            for imp in deductions_uniqueness{
+                smt2_problem.push_back(
+                    format!("(assert {})", imp)
+                );
+            } 
+        }
     }
 
 
@@ -128,6 +140,8 @@ pub fn safety_problem_to_smt2(problem: &SafetyVerification)->LinkedList<String>{
             )
         );
     }
+
+
 
     smt2_problem.push_back(
         format!("(assert (not {}))",
@@ -182,6 +196,67 @@ pub fn safety_implication_to_smt2(imp: &(Vec<usize>, Vec<usize>), signal_to_name
 
     format!("(=> {} {})", left, right)
 
+}
+
+pub fn apply_deduction_assigned(
+    c: &Constraint<usize>,
+    signals_to_names: &HashMap<usize,String>,
+    signals_to_names_aux: &HashMap<usize,String>,
+)->Vec<String> {
+
+    let all_signals = c.take_signals();
+    let only_linear_signals = c.take_only_linear_signals();
+
+    let mut uniqueness_implications = Vec::new();
+    // in case there are signals that are only_linear
+    for s_deduced in only_linear_signals {
+        // Generate the implication all signals in C are deterministic
+        //  => s_deduced is deterministic
+
+        let value_right_1 = signals_to_names.get(s_deduced).unwrap();
+        let value_right_2 = signals_to_names_aux.get(s_deduced).unwrap();
+        let right_side = format!("(= {} {})",
+            value_right_1,
+            value_right_2
+        );
+
+        let left_side = if all_signals.len() == 1{
+            "true".to_string()
+        } else {
+            let mut new_left_side = if all_signals.len() > 2{
+                "(and ".to_string()
+            }else{
+                "".to_string()
+            };
+            for s in &all_signals {
+                if *s != s_deduced {
+                    let value_s_1 = signals_to_names.get(s).unwrap();
+                    let value_s_2 = signals_to_names_aux.get(s).unwrap();
+                    new_left_side = format!("{}(= {} {}) ",
+                        new_left_side,
+                        value_s_1,
+                        value_s_2
+                    );
+    
+                }
+            }
+
+            if all_signals.len() > 2{
+                new_left_side = format!("{})", new_left_side);
+            }
+
+            new_left_side
+        };
+
+        uniqueness_implications.push(
+            format!("(=> {} {})",
+                left_side,
+                right_side
+            )
+        );  
+
+    }
+    uniqueness_implications
 }
 
 
