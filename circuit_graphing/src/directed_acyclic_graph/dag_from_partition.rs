@@ -138,7 +138,7 @@ pub fn dag_from_partition<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
     let components_to_merge = undirected_components.get_components();
     if debug > 1 { println!("LOG: Need to merge {:?} components with total size {:?}", components_to_merge.len(), components_to_merge.iter().map(|s| s.len()).sum::<usize>()); }
 
-    for (i, to_merge) in components_to_merge.into_iter().enumerate() {
+    for to_merge in components_to_merge.into_iter() {
         DAGNode::merge_nodes(to_merge.into_iter().collect(), &mut nodes, &sig_to_coni, &mut coni_to_node);
     }
     if debug > 1 { println!("LOG: Merged fuzzy components in {:?}", timer.elapsed().as_secs_f32()); }
