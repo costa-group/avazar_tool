@@ -1,3 +1,6 @@
 [submodule "Picus"]
 	path = Picus
 	url = https://github.com/Veridise/Picus
+[submodule "graphrs"]
+	path = graphrs
+	url = https://github.com/insertrandomcode/graphrs-lightweight-louvain
