@@ -1,8 +1,9 @@
 use std::marker::PhantomData;
 use std::borrow::Borrow;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{HashMap, BTreeSet, HashSet};
 
 use utils::structure::NodeInfo;
+use utils::small_utilities::Container;
 use circuits_and_constraints::constraint::Constraint;
 use circuits_and_constraints::circuit::Circuit;
 
@@ -98,13 +99,21 @@ impl<'a, C: Constraint + 'a, S: Circuit<C> + 'a> DAGNode<'a, C, S> {
         }
     }
 
-    pub fn merge_nodes(to_merge: Vec<usize>, nodes: &mut BTreeMap<usize, DAGNode<'a, C, S>>, sig_to_coni: &HashMap<usize, Vec<usize>>, coni_to_node: &mut Vec<usize>) -> usize {
+    pub fn merge_nodes(to_merge: Vec<usize>, nodes: &mut HashMap<usize, DAGNode<'a, C, S>>, sig_to_coni: &HashMap<usize, Vec<usize>>, coni_to_node: &mut Vec<usize>) -> usize {
         // not especially elegant but whatever
 
+        use std::time::Instant;
+        let timer = Instant::now();
         let root: usize = to_merge[0];
+
+        // runtimes exploded due to extremely large merges for larger circuit sizes, this leads to better search time
+        let to_merge: Container<usize> = if to_merge.len() > 100 {Container::Set(to_merge.into_iter().collect())} else {Container::Vec(to_merge)};        
 
         let new_successors: HashSet<usize> = to_merge.iter().flat_map(|nkey| nodes.get(nkey).unwrap().get_successors()).copied().filter(|nkey| !to_merge.contains(nkey)).collect();
         let new_predecessors: HashSet<usize> = to_merge.iter().flat_map(|nkey| nodes.get(nkey).unwrap().get_predecessors()).copied().filter(|nkey| !to_merge.contains(nkey)).collect();
+
+        println!("-- LOG: Built adjacent node sets in {:?}", timer.elapsed().as_secs_f32());
+        println!("-- LOG: Successors {:?}, Predecessors {:?}", new_successors.len(), new_predecessors.len());
 
         // fix parents to point to root
         for nkey in new_predecessors.iter() {
@@ -114,6 +123,8 @@ impl<'a, C: Constraint + 'a, S: Circuit<C> + 'a> DAGNode<'a, C, S> {
         for nkey in new_successors.iter() {
             let nnode = nodes.get_mut(nkey).unwrap();nnode.predecessors.retain_mut(|okey| !to_merge.contains(okey));nnode.predecessors.push(root);
         }
+
+        println!("-- LOG: Fixed adjacent node sets for neighbours in {:?}", timer.elapsed().as_secs_f32());
 
         let circ: &'a S = nodes[&root].circ;        
 
@@ -127,13 +138,16 @@ impl<'a, C: Constraint + 'a, S: Circuit<C> + 'a> DAGNode<'a, C, S> {
 
             new_constraints.extend(constraints);
             new_input_signals.extend(input_signals.into_iter().filter(|sig|
-                circ.signal_is_input(sig) || sig_to_coni[sig].iter().copied().map(|coni| coni_to_node[coni]).collect::<HashSet<usize>>().intersection(&new_predecessors).count() > 0
+                circ.signal_is_input(sig) || sig_to_coni[sig].iter().copied().map(|coni| coni_to_node[coni]).filter(|nodi| new_predecessors.contains(nodi)).count() > 0
             ));
             new_output_signals.extend(output_signals.into_iter().filter(|sig|
-                circ.signal_is_output(sig) || sig_to_coni[sig].iter().copied().map(|coni| coni_to_node[coni]).collect::<HashSet<usize>>().intersection(&new_successors).count() > 0
+                circ.signal_is_output(sig) || sig_to_coni[sig].iter().copied().map(|coni| coni_to_node[coni]).filter(|nodi| new_successors.contains(nodi)).count() > 0
             ));
 
         }
+
+        println!("-- LOG: Built new constraints/signal sets {:?}", timer.elapsed().as_secs_f32());
+        println!("-- LOG: Inputs {:?}, Outputs {:?}", new_input_signals.len(), new_output_signals.len());
 
         // fix coni_to_node
         for coni in new_constraints.iter().copied() { coni_to_node[coni] = root; };
@@ -154,8 +168,8 @@ impl<'a, C: Constraint + 'a, S: Circuit<C> + 'a> DAGNode<'a, C, S> {
         DAGNode::<'b, C, T>::new(circ, id, constraints, input_signals, output_signals, Some(successors), Some(predecessors))
     }
 
-    pub fn signal_to_nodes(nodes: impl Iterator<Item = &'a DAGNode<'a, C, S>>) -> BTreeMap<usize, Vec<usize>> {
-        let mut signal_to_nodes: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+    pub fn signal_to_nodes(nodes: impl Iterator<Item = &'a DAGNode<'a, C, S>>) -> HashMap<usize, Vec<usize>> {
+        let mut signal_to_nodes: HashMap<usize, Vec<usize>> = HashMap::new();
 
         for node in nodes {
             for sig in node.signals() {

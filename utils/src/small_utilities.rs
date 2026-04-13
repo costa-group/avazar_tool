@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::hash::Hash;
+use std::cmp::Ord;
 use itertools::Itertools;
 
 use clap::{ValueEnum};
@@ -43,17 +44,47 @@ pub enum FileType {
     ACIR
 }
 
-pub fn distance_to_source_set<'a, T: Eq + Hash + Copy>(source_set: impl Iterator<Item = &'a T>, adjacencies: &'a HashMap<T, HashSet<T>>) -> HashMap<&'a T, usize> {
+// Used in MergeNodes to handle having either a Vec or a HashSet
+#[derive(Debug, Display, Clone)]
+pub enum Container<T> 
+{
+    Vec(Vec<T>),
+    Set(HashSet<T>),
+}
+
+impl<T> Container<T> 
+where T: Eq + Hash
+{
+    pub fn contains(&self, value: &T) -> bool {
+        match self {
+            Container::Vec(v) => v.contains(value),
+            Container::Set(s) => s.contains(value),
+        }
+    }
+
+    pub fn iter(&self) -> Box<dyn Iterator<Item = &T> + '_> {
+        match self {
+            Container::Vec(v) => Box::new(v.iter()),
+            Container::Set(s) => Box::new(s.iter()),
+        }
+    }
+}
+
+pub fn distance_to_source_set<'a, T: Hash + Ord + Copy>(source_set: impl Iterator<Item = &'a T>, adjacencies: &'a HashMap<T, HashSet<T>>) -> HashMap<&'a T, usize> {
 
     let mut distance: HashMap<&T, usize> = source_set.map(|idx| (idx, 0)).collect();
     let mut queue: VecDeque<&T> = distance.keys().copied().collect();
 
     while queue.len() > 0 {
         let curr = queue.pop_front().unwrap();
-        queue.extend(adjacencies.get(curr).unwrap().into_iter().filter(|key| !distance.contains_key(key)));
-        let next_distance = distance.get(curr).unwrap() + 1;
-        for adj in adjacencies.get(curr).unwrap().into_iter() {distance.entry(adj).or_insert(next_distance);}
-    };
+        let next_distance = distance[curr] + 1;
+        for adj in adjacencies.get(curr).unwrap().into_iter() {
+            if let std::collections::hash_map::Entry::Vacant(entry) = distance.entry(adj) {
+                queue.push_back(adj);
+                entry.insert(next_distance);
+            }
+        }
+    }
 
     distance
 }

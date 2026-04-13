@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use super::DAGNode;
 use circuits_and_constraints::constraint::Constraint;
@@ -9,7 +9,7 @@ use utils::small_utilities::{dfs_merge_in_dag};
 #[allow(dead_code)]
 // merge_under_property is unused as merge_passthrough moved to not use it but retained in case of future
 fn merge_under_property<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
-    circ: &'a S, nodes: &mut BTreeMap<usize, DAGNode<'a, C, S>>, 
+    circ: &'a S, nodes: &mut HashMap<usize, DAGNode<'a, C, S>>, 
     node_property: fn(&DAGNode<'a, C, S>) -> usize,
     arc_property: fn(&DAGNode<'a, C, S>, &DAGNode<'a, C, S>, bool) -> usize
 ) -> () {
@@ -51,7 +51,7 @@ fn merge_under_property<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
         }
 
         // find, for each option, the nodes that will need to be merged
-        let adjacency_hashmap : BTreeMap<usize, &Vec<usize>> = nodes.iter().map(|(k, node)| (*k, node.get_successors())).collect();
+        let adjacency_hashmap : HashMap<usize, &Vec<usize>> = nodes.iter().map(|(k, node)| (*k, node.get_successors())).collect();
         let required_to_merge: Vec<(usize, Vec<usize>)> = potential_adjacent.into_iter().map(|(idx, &okey)| {
             let (parent, child) = if nnode.get_successors().contains(&okey) {(nkey, okey)} else {(okey, nkey)};
             (
@@ -77,7 +77,7 @@ fn merge_under_property<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
 }
 
 pub fn merge_passthrough<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
-    circ: &'a S, nodes: &mut BTreeMap<usize, DAGNode<'a, C, S>>, 
+    circ: &'a S, nodes: &mut HashMap<usize, DAGNode<'a, C, S>>, 
 ) -> () {
 
     // Merge passthrough now no longer uses merge_under_property to better take advantage of how signals work
@@ -115,7 +115,7 @@ pub fn merge_passthrough<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
         let chosen_extremal_passthrough: usize = passthrough_nodes.into_iter().max_by_key(extremal_passthrough_key).unwrap();
 
         // do the dfs_can_reach_target_from_sources for those two
-        let adjacency_hashmap : BTreeMap<usize, &Vec<usize>> = nodes.iter().map(|(k, node)| (*k, node.get_successors())).collect();
+        let adjacency_hashmap : HashMap<usize, &Vec<usize>> = nodes.iter().map(|(k, node)| (*k, node.get_successors())).collect();
         let (parent, child) = if non_passthrough_is_parent {(chosen_non_passthrough, chosen_extremal_passthrough)} else {(chosen_extremal_passthrough, chosen_non_passthrough)};
 
         // since we have a DAG the only potential path is from parent to child via other nodes -- hence don't need both.

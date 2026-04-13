@@ -1,4 +1,4 @@
-use std::collections::{HashMap, BTreeMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::time::{Instant};
 use std::borrow::Borrow;
 
@@ -53,7 +53,7 @@ fn decompose_circuit_and_return_dagnodes<'a, C: Constraint, S: Circuit<C>>(
     inverse_sig_mapping: Option<&[usize]>,
     existing_partition: Option<Vec<Vec<usize>>>,
     debug: bool
-) -> (TimingInfo, BTreeMap<usize, DAGNode<'a, C, S>>) {
+) -> (TimingInfo, HashMap<usize, DAGNode<'a, C, S>>) {
 
     if debug {println!("LOG: Beginning Clustering of {:?} constraints", circuit.n_constraints());}
     let mut timing_info: TimingInfo = TimingInfo{
@@ -115,18 +115,18 @@ fn decompose_circuit_and_return_dagnodes<'a, C: Constraint, S: Circuit<C>>(
 fn decompose_circuit_over_dagnodes<'a, C: Constraint, S: Circuit<C>>(
     circuit: &'a S,
     timing: &mut TimingInfo,
-    dagnodes: &BTreeMap<usize, DAGNode<'a, C, S>>,
+    dagnodes: &HashMap<usize, DAGNode<'a, C, S>>,
     resolution: Option<f64>,
     target_size: Option<f64>,
     leiden_max_iterations: Option<usize>,
     graph_backend: GraphBackend,
     debug: bool
-) -> BTreeMap<usize, DAGNode<'a, C, S>> {
+) -> HashMap<usize, DAGNode<'a, C, S>> {
 
     let mut node_id_generator = 0..;
     let constraints = circuit.get_constraints();
-    let mut new_dagnodes: BTreeMap<usize, DAGNode<'a, C, S>> = BTreeMap::new();
-    let mut previd_to_newids: BTreeMap<usize, HashSet<usize>> = BTreeMap::new();
+    let mut new_dagnodes: HashMap<usize, DAGNode<'a, C, S>> = HashMap::new();
+    let mut previd_to_newids: HashMap<usize, HashSet<usize>> = HashMap::new();
 
     // cluster each node individually
     for (nodid, node) in dagnodes.into_iter() {

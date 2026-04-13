@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::borrow::Borrow;
 use itertools::Itertools;
 use std::time::{Instant};
@@ -11,13 +11,13 @@ use utils::small_utilities::{distance_to_source_set};
 use utils::union_find::{UnionFind};
 
 pub fn dag_from_partition<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
-    circ: &'a S, partition: Vec<Vec<usize>>, node_id_generator: &mut dyn Iterator<Item = usize>) -> BTreeMap<usize, DAGNode<'a, C, S>> {
+    circ: &'a S, partition: Vec<Vec<usize>>, node_id_generator: &mut dyn Iterator<Item = usize>) -> HashMap<usize, DAGNode<'a, C, S>> {
 
     let timer = Instant::now();
 
-    let partition: BTreeMap<usize, Vec<usize>> = node_id_generator.zip(partition.into_iter()).collect();
+    let partition: HashMap<usize, Vec<usize>> = node_id_generator.zip(partition.into_iter()).collect();
     
-    let part_to_signals_arr: BTreeMap<usize, HashSet<usize>> = partition.keys().copied().map(|key| (key, partition.get(&key).unwrap().iter().copied().flat_map(|idx| circ.get_constraints()[idx].borrow().signals()).collect::<HashSet<usize>>())).collect();
+    let part_to_signals_arr: HashMap<usize, HashSet<usize>> = partition.keys().copied().map(|key| (key, partition.get(&key).unwrap().iter().copied().flat_map(|idx| circ.get_constraints()[idx].borrow().signals()).collect::<HashSet<usize>>())).collect();
 
     let input_parts: HashSet<usize> = partition.keys().copied().filter(|key| part_to_signals_arr.get(key).unwrap().iter().any(|sig| circ.signal_is_input(sig))).collect();
     let output_parts: HashSet<usize> = partition.keys().copied().filter(|key| part_to_signals_arr.get(key).unwrap().iter().any(|sig| circ.signal_is_output(sig))).collect();
@@ -42,8 +42,6 @@ pub fn dag_from_partition<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
 
     let adjacencies: HashMap<usize, HashSet<usize>> = partition.keys().map(|key| (*key, adjacent_parts(*key))).collect();
 
-    drop(part_to_signals_arr);
-
     println!("LOG: Total-edges {:?}, max-edges {:?}", adjacencies.values().map(|set| set.len()).sum::<usize>(), adjacencies.values().map(|set| set.len()).max());
     println!("LOG: Adjacency preprocessing done in {:?}", timer.elapsed().as_secs_f32());
 
@@ -53,13 +51,11 @@ pub fn dag_from_partition<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
     println!("LOG: Found distances to sources in {:?}", timer.elapsed().as_secs_f32());
 
     // make the preorder
-    let part_to_preorder: BTreeMap<usize, (usize, usize)> = partition.keys().map(|key| (*key, (*distance_to_inputs.get(key).unwrap_or(&usize::MAX), *distance_to_outputs.get(key).unwrap_or(&usize::MAX)))).collect();
-
-    let part_to_signals_arr: BTreeMap<usize, HashSet<usize>> = partition.keys().copied().map(|key| (key, partition.get(&key).unwrap().iter().copied().flat_map(|idx| circ.get_constraints()[idx].borrow().signals()).collect::<HashSet<usize>>())).collect();
+    let part_to_preorder: HashMap<usize, (usize, usize)> = partition.keys().map(|key| (*key, (*distance_to_inputs.get(key).unwrap_or(&usize::MAX), *distance_to_outputs.get(key).unwrap_or(&usize::MAX)))).collect();
 
     println!("LOG: Constructed preorder in {:?}", timer.elapsed().as_secs_f32());
 
-    let mut nodes : BTreeMap<usize, DAGNode<'a, C, S>> = partition.into_iter().map(|(idx, part)| {
+    let mut nodes : HashMap<usize, DAGNode<'a, C, S>> = partition.into_iter().map(|(idx, part)| {
         (idx, 
         DAGNode::new(
             circ, 
@@ -75,7 +71,7 @@ pub fn dag_from_partition<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
     // define arcs that can be defined and collate the others to be fuzzy
 
     let mut arcs : Vec<(usize, usize)> = Vec::new();
-    let mut fuzzy_adjacencies: BTreeMap<usize, HashSet<usize>> = BTreeMap::new();
+    let mut fuzzy_adjacencies: HashMap<usize, HashSet<usize>> = HashMap::new();
 
     fn lt(x: (usize, usize), y: (usize, usize)) -> bool {x.0 < y.0 && (y.1 <= x.1) || x.0 == y.0 && (y.1 < x.1)}
 
@@ -89,7 +85,7 @@ pub fn dag_from_partition<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
 
     // add arcs to DAG
 
-    fn add_arc_to_nodes<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(arc: (usize, usize), part_to_signals_arr: &BTreeMap<usize, HashSet<usize>>, nodes: &mut BTreeMap<usize, DAGNode<'a, C, S>>) -> () {
+    fn add_arc_to_nodes<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(arc: (usize, usize), part_to_signals_arr: &HashMap<usize, HashSet<usize>>, nodes: &mut HashMap<usize, DAGNode<'a, C, S>>) -> () {
         let (l, r) = arc;
 
         let shared_signals: Vec<usize> = part_to_signals_arr.get(&l).unwrap().intersection(part_to_signals_arr.get(&r).unwrap()).copied().collect();
@@ -138,9 +134,15 @@ pub fn dag_from_partition<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
 
     println!("LOG: Determined fuzzy components in {:?}", timer.elapsed().as_secs_f32());
 
-    for to_merge in undirected_components.get_components().into_iter() {
+    let components_to_merge = undirected_components.get_components();
+    println!("LOG: Need to merge {:?} components with total size {:?}", components_to_merge.len(), components_to_merge.iter().map(|s| s.len()).sum::<usize>());
+
+    for (i, to_merge) in components_to_merge.into_iter().enumerate() {
+        println!("LOG: Merging component {:?} of size {:?}", i, to_merge.len());
         DAGNode::merge_nodes(to_merge, &mut nodes, &sig_to_coni, &mut coni_to_node);
+        println!("LOG: Merged component {:?} in {:?}", i, timer.elapsed().as_secs_f32());
     }
+    println!("LOG: Merged fuzzy components in {:?}", timer.elapsed().as_secs_f32());
 
     nodes
 }

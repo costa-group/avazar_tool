@@ -1,4 +1,4 @@
-use std::collections::{HashSet, BTreeMap, HashMap};
+use std::collections::{HashSet, HashMap};
 use std::borrow::Borrow;
 use itertools::Itertools;
 
@@ -15,8 +15,8 @@ use crate::directed_acyclic_graph::iterated_label_propagation::iterated_label_pr
 // TODO: if required implement the mapping handler -- this requires refactoring compare_circuits
 
 fn naive_equivalency_analysis<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
-    nodes: &BTreeMap<usize, &DAGNode<'a, C, S>>, normalised_constraints_by_id: &BTreeMap<usize, Vec<C>>, sig_to_normi_by_id: &BTreeMap<usize, HashMap<usize, Vec<usize>>>,
-    fingerprints_to_normi_by_id: &BTreeMap<usize, HashMap<usize, Vec<usize>>>, fingerprints_to_sig_by_id: &BTreeMap<usize, HashMap<usize, Vec<usize>>>
+    nodes: &HashMap<usize, &DAGNode<'a, C, S>>, normalised_constraints_by_id: &HashMap<usize, Vec<C>>, sig_to_normi_by_id: &HashMap<usize, HashMap<usize, Vec<usize>>>,
+    fingerprints_to_normi_by_id: &HashMap<usize, HashMap<usize, Vec<usize>>>, fingerprints_to_sig_by_id: &HashMap<usize, HashMap<usize, Vec<usize>>>
 ) -> Vec<Vec<usize>> {
 
     let mut representative_circuits: Vec<S::SubCircuit<'a>> = Vec::new();
@@ -71,7 +71,7 @@ fn naive_equivalency_analysis<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
 }
 
 fn class_iterated_label_passing<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
-    nodes: &BTreeMap<usize, DAGNode<'a, C, S>>, initial_labels: HashMap<usize, Vec<usize>>
+    nodes: &HashMap<usize, DAGNode<'a, C, S>>, initial_labels: HashMap<usize, Vec<usize>>
 ) -> HashMap<usize, Vec<usize>> {
 
     let [label_to_nodes] = iterated_label_propagation(
@@ -83,10 +83,10 @@ fn class_iterated_label_passing<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
 }
 
 fn fingerprint_subcircuits<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
-    nodes: &BTreeMap<usize, DAGNode<'a, C, S>>, 
-    normalised_constraints_by_id: &BTreeMap<usize, Vec<C>>,
-    sig_to_normi_by_id: &BTreeMap<usize, HashMap<usize, Vec<usize>>>
-) -> (HashMap<usize, Vec<usize>>, BTreeMap<usize, HashMap<usize, Vec<usize>>>, BTreeMap<usize, HashMap<usize, Vec<usize>>>) {
+    nodes: &HashMap<usize, DAGNode<'a, C, S>>, 
+    normalised_constraints_by_id: &HashMap<usize, Vec<C>>,
+    sig_to_normi_by_id: &HashMap<usize, HashMap<usize, Vec<usize>>>
+) -> (HashMap<usize, Vec<usize>>, HashMap<usize, HashMap<usize, Vec<usize>>>, HashMap<usize, HashMap<usize, Vec<usize>>>) {
 
     // Get classes for norms/signals by fingerprinting
 
@@ -136,30 +136,30 @@ fn fingerprint_subcircuits<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
         fingerprints_to_nodes.entry(new_key).or_insert_with(|| Vec::new()).push(node_id);
     }
 
-    let fingerprints_to_normi_by_id: BTreeMap<usize, HashMap<usize, Vec<usize>>> = fingerprints_to_normi.into_iter().enumerate().map(|(idx, label_to_indices)| (indices[idx], label_to_indices)).collect();
-    let fingerprints_to_signals_by_id: BTreeMap<usize, HashMap<usize, Vec<usize>>> = fingerprints_to_signals.into_iter().enumerate().map(|(idx, label_to_indices)| (indices[idx], label_to_indices)).collect();
+    let fingerprints_to_normi_by_id: HashMap<usize, HashMap<usize, Vec<usize>>> = fingerprints_to_normi.into_iter().enumerate().map(|(idx, label_to_indices)| (indices[idx], label_to_indices)).collect();
+    let fingerprints_to_signals_by_id: HashMap<usize, HashMap<usize, Vec<usize>>> = fingerprints_to_signals.into_iter().enumerate().map(|(idx, label_to_indices)| (indices[idx], label_to_indices)).collect();
 
     (fingerprints_to_nodes, fingerprints_to_normi_by_id, fingerprints_to_signals_by_id)
 }
 
-fn dagnode_equivalency_preprocessing<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(nodes: &BTreeMap<usize, DAGNode<'a, C, S>>) -> (BTreeMap<usize, Vec<C>>, BTreeMap<usize, HashMap<usize, Vec<usize>>>) {
+fn dagnode_equivalency_preprocessing<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(nodes: &HashMap<usize, DAGNode<'a, C, S>>) -> (HashMap<usize, Vec<C>>, HashMap<usize, HashMap<usize, Vec<usize>>>) {
 
     let circ = nodes.values().next().unwrap().get_circ();
     let prime = circ.prime();
     let constraints = circ.get_constraints();
 
-    let normalised_constraints_by_id: BTreeMap<usize, Vec<C>> = nodes.iter().map(
+    let normalised_constraints_by_id: HashMap<usize, Vec<C>> = nodes.iter().map(
         |(key, node)| (*key, node.get_constraint_indices().flat_map(|coni| constraints[coni].borrow().normalise(prime)).collect())
     ).collect();
-    let sig_to_normi_by_id: BTreeMap<usize, HashMap<usize, Vec<usize>>> = nodes.keys().map(|key| (*key, signals_to_constraints_with_them(&normalised_constraints_by_id[key], None, None))).collect();
+    let sig_to_normi_by_id: HashMap<usize, HashMap<usize, Vec<usize>>> = nodes.keys().map(|key| (*key, signals_to_constraints_with_them(&normalised_constraints_by_id[key], None, None))).collect();
 
     (normalised_constraints_by_id, sig_to_normi_by_id)
 }
 
 fn dagnode_equivalency_body<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
-    subcircuit_groups: HashMap<usize, Vec<usize>>, nodes: &BTreeMap<usize, DAGNode<'a, C, S>>, 
-    normalised_constraints_by_id: &BTreeMap<usize, Vec<C>>, sig_to_normi_by_id: &BTreeMap<usize, HashMap<usize, Vec<usize>>>,
-    fingerprints_to_normi_by_id: &BTreeMap<usize, HashMap<usize, Vec<usize>>>, fingerprints_to_sig_by_id: &BTreeMap<usize, HashMap<usize, Vec<usize>>>,
+    subcircuit_groups: HashMap<usize, Vec<usize>>, nodes: &HashMap<usize, DAGNode<'a, C, S>>, 
+    normalised_constraints_by_id: &HashMap<usize, Vec<C>>, sig_to_normi_by_id: &HashMap<usize, HashMap<usize, Vec<usize>>>,
+    fingerprints_to_normi_by_id: &HashMap<usize, HashMap<usize, Vec<usize>>>, fingerprints_to_sig_by_id: &HashMap<usize, HashMap<usize, Vec<usize>>>,
     minimum_equivalence_size: Option<usize>, equivalence_comparison_budget: Option<usize>) -> Vec<Vec<usize>> {
 
     let mut equivalent: Vec<Vec<usize>> = Vec::new();
@@ -194,7 +194,7 @@ fn dagnode_equivalency_body<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
 }
 
 pub fn subcircuit_fingerprinting_equivalency<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
-    nodes: &mut BTreeMap<usize, DAGNode<'a, C, S>>, 
+    nodes: &mut HashMap<usize, DAGNode<'a, C, S>>, 
     minimum_equivalence_size: Option<usize>,
     equivalence_comparison_budget: Option<usize>) -> Vec<Vec<usize>> {
 
@@ -206,7 +206,7 @@ pub fn subcircuit_fingerprinting_equivalency<'a, C: Constraint + 'a, S: Circuit<
 }
 
 pub fn subcircuit_fingerprint_with_structural_augmentation_equivalency<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
-    nodes: &mut BTreeMap<usize, DAGNode<'a, C, S>>, 
+    nodes: &mut HashMap<usize, DAGNode<'a, C, S>>, 
     minimum_equivalence_size: Option<usize>,
     equivalence_comparison_budget: Option<usize>) -> Vec<Vec<usize>> {
 
@@ -222,7 +222,7 @@ pub fn subcircuit_fingerprint_with_structural_augmentation_equivalency<'a, C: Co
 }
 
 pub fn subcircuit_fingerprinting_equivalency_and_structural_augmentation_equivalency<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
-    nodes: &mut BTreeMap<usize, DAGNode<'a, C, S>>, 
+    nodes: &mut HashMap<usize, DAGNode<'a, C, S>>, 
     minimum_equivalence_size: Option<usize>,
     equivalence_comparison_budget: Option<usize>) -> (Vec<Vec<usize>>, Vec<Vec<usize>>) {
 
