@@ -1,9 +1,8 @@
 use std::marker::PhantomData;
 use std::borrow::Borrow;
-use std::collections::{HashMap, BTreeSet, HashSet};
+use std::collections::{HashMap, HashSet};
 
 use utils::structure::NodeInfo;
-use utils::small_utilities::Container;
 use circuits_and_constraints::constraint::Constraint;
 use circuits_and_constraints::circuit::Circuit;
 
@@ -99,15 +98,13 @@ impl<'a, C: Constraint + 'a, S: Circuit<C> + 'a> DAGNode<'a, C, S> {
         }
     }
 
-    pub fn merge_nodes(to_merge: Vec<usize>, nodes: &mut HashMap<usize, DAGNode<'a, C, S>>, sig_to_coni: &HashMap<usize, Vec<usize>>, coni_to_node: &mut Vec<usize>) -> usize {
+    pub fn merge_nodes(to_merge: HashSet<usize>, nodes: &mut HashMap<usize, DAGNode<'a, C, S>>, sig_to_coni: &HashMap<usize, Vec<usize>>, coni_to_node: &mut Vec<usize>) -> usize {
         // not especially elegant but whatever
 
         use std::time::Instant;
         let timer = Instant::now();
-        let root: usize = to_merge[0];
-
-        // runtimes exploded due to extremely large merges for larger circuit sizes, this leads to better search time
-        let to_merge: Container<usize> = if to_merge.len() > 100 {Container::Set(to_merge.into_iter().collect())} else {Container::Vec(to_merge)};        
+        if to_merge.len() == 0 {panic!("Attempting to merge no nodes");}
+        let root: usize = *to_merge.iter().next().unwrap();
 
         let new_successors: HashSet<usize> = to_merge.iter().flat_map(|nkey| nodes.get(nkey).unwrap().get_successors()).copied().filter(|nkey| !to_merge.contains(nkey)).collect();
         let new_predecessors: HashSet<usize> = to_merge.iter().flat_map(|nkey| nodes.get(nkey).unwrap().get_predecessors()).copied().filter(|nkey| !to_merge.contains(nkey)).collect();

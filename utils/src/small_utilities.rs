@@ -44,32 +44,6 @@ pub enum FileType {
     ACIR
 }
 
-// Used in MergeNodes to handle having either a Vec or a HashSet
-#[derive(Debug, Display, Clone)]
-pub enum Container<T> 
-{
-    Vec(Vec<T>),
-    Set(HashSet<T>),
-}
-
-impl<T> Container<T> 
-where T: Eq + Hash
-{
-    pub fn contains(&self, value: &T) -> bool {
-        match self {
-            Container::Vec(v) => v.contains(value),
-            Container::Set(s) => s.contains(value),
-        }
-    }
-
-    pub fn iter(&self) -> Box<dyn Iterator<Item = &T> + '_> {
-        match self {
-            Container::Vec(v) => Box::new(v.iter()),
-            Container::Set(s) => Box::new(s.iter()),
-        }
-    }
-}
-
 pub fn distance_to_source_set<'a, T: Hash + Ord + Copy>(source_set: impl Iterator<Item = &'a T>, adjacencies: &'a HashMap<T, HashSet<T>>) -> HashMap<&'a T, usize> {
 
     let mut distance: HashMap<&T, usize> = source_set.map(|idx| (idx, 0)).collect();
@@ -89,7 +63,7 @@ pub fn distance_to_source_set<'a, T: Hash + Ord + Copy>(source_set: impl Iterato
     distance
 }
 
-pub fn dfs_merge_in_dag_with_bfs_preprocessing(parent: &usize, child: &usize, adjacencies: &HashMap<usize, &Vec<usize>>, preprocessing_steps: usize) -> Vec<usize> {
+pub fn dfs_merge_in_dag_with_bfs_preprocessing(parent: &usize, child: &usize, adjacencies: &HashMap<usize, &Vec<usize>>, preprocessing_steps: usize) -> HashSet<usize> {
     let mut can_reach_t: HashMap<&usize, bool> = HashMap::from([(child, true)]);
     let mut current_iteration: HashSet<&usize> = HashSet::from([child]);
 
@@ -101,7 +75,7 @@ pub fn dfs_merge_in_dag_with_bfs_preprocessing(parent: &usize, child: &usize, ad
     dfs_merge_in_dag(parent, child, adjacencies, Some(can_reach_t))
 }
 
-pub fn dfs_merge_in_dag(parent: &usize, child: &usize, adjacencies: &HashMap<usize, &Vec<usize>>, can_reach_t: Option<HashMap<&usize, bool>>) -> Vec<usize> {
+pub fn dfs_merge_in_dag(parent: &usize, child: &usize, adjacencies: &HashMap<usize, &Vec<usize>>, can_reach_t: Option<HashMap<&usize, bool>>) -> HashSet<usize> {
 
     let mut can_reach_t: HashMap<&usize, bool> = can_reach_t.unwrap_or(HashMap::from([(child, true)]));
     let mut stack: Vec<&usize> = vec![parent];
