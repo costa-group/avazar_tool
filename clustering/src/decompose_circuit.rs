@@ -14,7 +14,7 @@ use circuit_graphing::directed_acyclic_graph::equivalence_classes::{subcircuit_f
 use circuit_graphing::graphing_circuits::{shared_signal_graph};
 use circuit_graphing::leiden_clustering::{CanLeiden};
 use circuit_graphing::bridge_partitioning::{bridge_partitioning};
-use utils::small_utilities::{GraphBackend, EquivalenceMode, ClusteringPreprocessing, DecomposeOptions};
+use utils::small_utilities::{EquivalenceMode, ClusteringPreprocessing, DecomposeOptions};
 
 pub fn decompose_node<C: Constraint>(
     prime: &BigInt,

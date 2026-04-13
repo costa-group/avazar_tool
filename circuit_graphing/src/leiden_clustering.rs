@@ -1,4 +1,4 @@
-use std::collections::{HashSet, HashMap, BTreeSet};
+use std::collections::{HashMap, BTreeSet};
 
 use graphrs::Graph as RSGraph;
 use graphrs::IdentityIndexer;

@@ -2,7 +2,6 @@ use combinatorial::Combinations;
 use std::collections::BTreeMap;
 use std::time::{Instant};
 
-use graphrs::Edge as RSEdge;
 use graphrs::IdentityIndexer;
 use graphrs::{Graph as RSGraph, GraphSpecs};
 use xgraph::{Graph as XGraph};
