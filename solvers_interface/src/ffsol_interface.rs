@@ -80,7 +80,8 @@ pub fn handling_ffsol_call(smt2_problem: &LinkedList<String>,timeout:u64,filenam
     //produce a random number for the file name
     let mut rng = rand::thread_rng();
     let random_number: u32 = rng.gen();
-    let new_file_name = format!("{}_{}.smt2", filename,random_number);
+    let short_filename = filename.split("(").next().unwrap();
+    let new_file_name = format!("{}_{}.smt2", short_filename,random_number);
 
     // Ensure the SMT2 text is fully written and flushed to disk before continuing.
     {

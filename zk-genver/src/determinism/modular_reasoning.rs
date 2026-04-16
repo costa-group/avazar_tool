@@ -43,7 +43,7 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
 
 
         let mut verification = SafetyVerification::new(
-            &node_info.node_id.to_string(), 
+            &node_info.node_name.to_string(), 
             signals, 
             node_info.input_signals.clone(),
             node_info.output_signals.clone(),
