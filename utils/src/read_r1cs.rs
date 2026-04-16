@@ -79,6 +79,14 @@ where
         let mut id = vec![0; 4];
         reader.read_exact(&mut id)?;
         let factor = read_bigint(reader, field_size)?;
+
+        /* 
+         let factor_aux = if factor > BigInt::from(65521) {
+             BigInt::from(65521)-"18446744069414584321".parse::<BigInt>().unwrap()+factor
+         } else{
+              factor
+         };
+        */
         linear_combination.insert(T::from(id), factor);
     }
     Ok(linear_combination)

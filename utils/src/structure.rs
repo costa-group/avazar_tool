@@ -29,6 +29,7 @@ impl AddAssign for TimingInfo {
 #[derive(Deserialize,Serialize, Debug, Clone)]
 pub struct NodeInfo{
     pub node_id: usize,
+    pub node_name:String,
     pub constraints: Vec<usize>, //ids of the constraints
     pub input_signals: Vec<usize>,
     pub output_signals: Vec<usize>,
@@ -127,6 +128,7 @@ pub fn generate_empty_structure(
     };
 
     let node = NodeInfo{
+        node_name: "main".to_string(),
         node_id: 0,
         constraints: (0..n_constraints).collect(),
         output_signals: (1.. n_outputs + 1).collect(),

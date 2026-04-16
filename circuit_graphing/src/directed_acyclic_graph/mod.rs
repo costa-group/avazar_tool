@@ -87,6 +87,7 @@ impl<'a, C: Constraint + 'a, S: Circuit<C> + 'a> DAGNode<'a, C, S> {
         let signals: Vec<usize> = self.constraints.iter().flat_map(|x| self.circ.get_constraints()[*x].borrow().signals()).collect::<HashSet<usize>>().into_iter().map(signal_mapping).collect();
 
         NodeInfo {
+            node_name: format!("node_{}",self.id),
             node_id: self.id, 
             constraints: self.constraints.into_iter().map(constraint_mapping).collect(), 
             input_signals: self.input_signals.into_iter().map(signal_mapping).collect(), 

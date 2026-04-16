@@ -22,7 +22,7 @@ pub fn study_equivalence(problem: &EquivalenceVerification)-> (PossibleResult, V
     
     let smt2_problem: LinkedList<String> = equivalence_problem_to_smt2(problem,false);
 
-    let result_solver = handling_ffsol_call(&smt2_problem, problem.verification_timeout,problem.verbose);
+    let result_solver = handling_ffsol_call(&smt2_problem, problem.verification_timeout,&problem.template_name,problem.verbose);
 
     match result_solver{
         PossibleResult::VERIFIED=>{
@@ -52,7 +52,7 @@ pub fn study_safety(problem: &SafetyVerification)-> (PossibleResult, Vec<String>
     
     let smt2_problem: LinkedList<String> = safety_problem_to_smt2(problem);
 
-    let result_solver = handling_ffsol_call(&smt2_problem, problem.verification_timeout,problem.verbose);
+    let result_solver = handling_ffsol_call(&smt2_problem, problem.verification_timeout,&problem.template_name,problem.verbose);
 
     match result_solver{
         PossibleResult::VERIFIED=>{
@@ -75,12 +75,12 @@ pub fn study_safety(problem: &SafetyVerification)-> (PossibleResult, Vec<String>
 
 
 
-pub fn handling_ffsol_call(smt2_problem: &LinkedList<String>,timeout:u64,verbose:bool)-> PossibleResult{
+pub fn handling_ffsol_call(smt2_problem: &LinkedList<String>,timeout:u64,filename: &String,verbose:bool)-> PossibleResult{
 
     //produce a random number for the file name
     let mut rng = rand::thread_rng();
     let random_number: u32 = rng.gen();
-    let new_file_name = format!("output_{}.smt2", random_number);
+    let new_file_name = format!("{}_{}.smt2", filename,random_number);
 
     // Ensure the SMT2 text is fully written and flushed to disk before continuing.
     {
