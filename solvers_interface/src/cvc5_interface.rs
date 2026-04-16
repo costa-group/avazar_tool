@@ -1,5 +1,5 @@
 use crate::EquivalenceVerification;
-use crate::{PossibleResult,SafetyVerification};
+use crate::{PossibleResult,SafetyVerification,CorrectnessVerification};
 use std::process::Command;
 use std::process::Stdio;
 use std::time::Duration;
@@ -15,7 +15,36 @@ use nix::unistd::Pid;
 use nix::sys::signal::Signal;
 use nix::sys::signal::killpg;
 use std::fs;
-use crate::smt2_utils::{safety_problem_to_smt2,equivalence_problem_to_smt2};
+use crate::smt2_utils::{safety_problem_to_smt2,equivalence_problem_to_smt2,correctness_problem_to_smt2};
+
+
+pub fn study_correctness(problem: &CorrectnessVerification)-> (PossibleResult, Vec<String>){
+    let mut logs = Vec::new();
+    
+    let smt2_problem: LinkedList<String> = correctness_problem_to_smt2(problem);
+
+    let result_solver = handling_cvc5_call(&smt2_problem, problem.verification_timeout,problem.verbose);
+
+    match result_solver{
+        PossibleResult::VERIFIED=>{
+            logs.push(format!("### THE CONSTRAINT SYSTEMS AND THE FORMULA ARE NOT EQUIVALENT. FOUND COUNTEREXAMPLE USING SMT:\n"));
+        },
+        PossibleResult::FAILED=>{
+            logs.push(format!("### THE CONSTRAINT SYSTEM AND THE FORMULA ARE EQUIVALENT\n"));
+        },
+        PossibleResult::UNKNOWN=>{
+            logs.push("### UNKNOWN: VERIFICATION OF CORRECTNESS TIMEOUT\n".to_string());
+        },
+        _=>{
+            unreachable!()
+        }
+
+    }
+
+    (result_solver, logs)
+
+}
+
 
 pub fn study_equivalence(problem: &EquivalenceVerification)-> (PossibleResult, Vec<String>){
     let mut logs = Vec::new();

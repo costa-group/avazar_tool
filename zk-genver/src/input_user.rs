@@ -19,7 +19,8 @@ pub struct Input {
     pub equivalence_mode: usize,
     pub target_size: usize,
     pub extra_rounds: usize,
-    pub check_equivalence: Option<PathBuf>
+    pub check_equivalence: Option<PathBuf>,
+    pub check_correctness: Option<PathBuf>
 }
 
 
@@ -42,7 +43,7 @@ impl Input {
         let target_size = input_processing::get_target_size(&matches)?;
         let extra_rounds = input_processing::get_extra_rounds(&matches)?;
         let check_equivalence = input_processing::get_check_equivalence(&matches)?;
-       
+        let check_correctness = input_processing::get_check_correctness(&matches)?;
 
 
         Result::Ok(Input {
@@ -60,7 +61,8 @@ impl Input {
             equivalence_mode,
             target_size,
             extra_rounds,
-            check_equivalence
+            check_equivalence,
+            check_correctness
         })
     }
 }
@@ -103,6 +105,19 @@ mod input_processing {
                 Result::Ok(Some(route))
             } else {
                 Result::Err(eprintln!("{}", Colour::Red.paint("invalid file to check equivalence")))
+            }
+        } else{
+            Ok(None)
+        }
+    }
+
+    pub fn get_check_correctness(matches: &ArgMatches) -> Result<Option<PathBuf>, ()> {
+        if matches.is_present("check_correctness"){
+            let route = Path::new(matches.value_of("check_correctness").unwrap()).to_path_buf();
+            if route.is_file() {
+                Result::Ok(Some(route))
+            } else {
+                Result::Err(eprintln!("{}", Colour::Red.paint("invalid file to check correctness")))
             }
         } else{
             Ok(None)
@@ -270,6 +285,14 @@ mod input_processing {
                     .hidden(false)
                     .takes_value(true)
                     .help("Argument to activate the equivalence check mode. It check the equivalence between the input and the given file")
+                    .display_order(130)
+            )
+            .arg(
+                Arg::with_name("check_correctness")
+                    .long("check_correctness")
+                    .hidden(false)
+                    .takes_value(true)
+                    .help("Argument to activate the correctness check mode. It checks if the input is correct with respect to the given SMT2 formula")
                     .display_order(130)
             )
             .arg(

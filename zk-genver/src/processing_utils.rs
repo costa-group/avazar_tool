@@ -1,6 +1,8 @@
 use std::collections::{HashMap, BTreeMap};
 use circom_algebra::algebra::Constraint;
 use utils::read_r1cs::read_r1cs;
+use utils::read_specification::read_smt_specification;
+
 use utils::structure::*;
 use std::path::PathBuf;
 
@@ -11,7 +13,7 @@ pub fn process_constraints(input: &PathBuf) -> (
     usize,
     usize
  ) {
-    let input = &format!("{}", input.display());
+    let input: &String = &format!("{}", input.display());
     let result = read_r1cs(input).unwrap();
     let constraint_list = result.constraints;
     let mut formatted_list = Vec::new();
@@ -26,15 +28,22 @@ pub fn process_constraints(input: &PathBuf) -> (
     )
 }
 
-/* 
-pub fn process_smt_formula(input: &PathBuf) ->(
-    String,
-    Vec<usize>,
-    Vec<usize>,
-    Vec<usize>
-){
 
-}*/
+pub fn process_smt_formula(input: &PathBuf) ->(
+    Vec<String>,
+    Vec<String>,
+    Vec<String>,
+    Vec<String>
+){
+    let input: &String = &format!("{}", input.display());
+    let result = read_smt_specification(input).unwrap();
+    (
+        result.constraints,
+        result.signals,
+        result.output_signals,
+        result.input_signals
+    )
+}
 
 pub fn process_structure(structure: &StructureInfo) -> (HashMap<usize, usize>, HashMap<usize, usize>, HashMap<usize, usize>, usize){
     

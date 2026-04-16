@@ -159,3 +159,65 @@ impl EquivalenceVerification{
 
 
 
+
+
+pub struct CorrectnessVerification {
+    pub template_name: String,
+    pub signals_1: Vec<usize>,
+    pub signals_2: Vec<String>,
+    pub inputs_1: Vec<usize>,
+    pub outputs_1: Vec<usize>,
+    pub inputs_2: Vec<String>,
+    pub outputs_2: Vec<String>,
+    pub constraints_1: Vec<Constraint<usize>>,
+    pub constraints_2: Vec<String>,
+    pub implications_equivalence: Vec<(Vec<usize>, Vec<String>)>,
+    pub field: BigInt,
+    pub verification_timeout: u64,
+    pub added_nodes: HashSet<usize>,
+    pub verbose: bool,
+}
+
+impl CorrectnessVerification{
+
+    pub fn new(
+        template_name: &String,
+        signals_1: Vec<usize>,
+        signals_2: Vec<String>,
+        inputs_1: Vec<usize>,
+        inputs_2:Vec<String>,
+        outputs_1: Vec<usize>,
+        outputs_2:Vec<String>,
+        constraints_1: Vec<Constraint<usize>>,
+        constraints_2: Vec<String>,
+        implications_equivalence: Vec<(Vec<usize>, Vec<String>)>,
+        field: &BigInt,
+        verification_timeout: u64, 
+        verbose: bool
+    ) -> CorrectnessVerification {
+        let mut fixed_constraints_1 = Vec::new();
+        for mut c in constraints_1{
+            Constraint::fix_constraint(&mut c, field);
+            fixed_constraints_1.push(c);
+        }
+
+
+        CorrectnessVerification {
+            template_name: template_name.clone(),
+            signals_1,
+            signals_2,
+            inputs_1,
+            inputs_2,
+            outputs_1,
+            outputs_2, 
+            implications_equivalence,
+            constraints_1: fixed_constraints_1,
+            constraints_2: constraints_2,
+            field: field.clone(),
+            verification_timeout, 
+            added_nodes: HashSet::new(),
+            verbose
+        }
+    }
+    
+}

@@ -5,3 +5,4 @@ pub mod write_r1cs;
 pub mod small_utilities;
 pub mod union_find;
 pub mod assignment;
+pub mod read_specification;

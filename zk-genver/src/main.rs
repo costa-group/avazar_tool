@@ -2,11 +2,14 @@ mod input_user;
 mod determinism;
 mod processing_utils;
 mod equivalence;
+mod correctness;
 
 use num_bigint_dig::BigInt;
 use input_user::Input;
 use determinism::determinism_check::prove_safety;
 use crate::equivalence::equivalence_check::prove_equivalence;
+use crate::correctness::correctness_check::prove_correctness;
+
 
 
 use ansi_term::Colour;
@@ -25,6 +28,8 @@ fn main() {
     let result: Result<(), ()> = if user_input.check_equivalence.is_some(){
 
         prove_equivalence(user_input)
+    } else if user_input.check_correctness.is_some(){
+        prove_correctness(user_input)
     } else{
         prove_safety(user_input)
     };
