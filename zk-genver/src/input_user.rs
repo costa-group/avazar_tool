@@ -191,7 +191,7 @@ mod input_processing {
         match matches.is_present("solver"){
             true => 
                {
-                   let solver = matches.value_of("solver").unwrap();
+                   let solver = matches.value_of("solver").unwrap().to_ascii_lowercase();
                    if solver == "civer"{
                         Ok(CIVER)
                     } else if solver == "picus"{
@@ -202,6 +202,8 @@ mod input_processing {
                         Ok(CVC5)
                     } else if solver == "z3"{
                         Ok(Z3)
+                    } else if solver == "all"{
+                        Ok(ALL)
                     }else{
                         Result::Err(eprintln!("{}", Colour::Red.paint("invalid solver")))
                     }
@@ -341,7 +343,7 @@ mod input_processing {
                     .long("solver")
                     .takes_value(true)
                     .hidden(false)
-                    .help("Solver to be used for the verification of the circuit. ZK-GENVER allows ffsol, cvc5, picus and civer (default)")
+                        .help("Solver to be used for the verification of the circuit. ZK-GENVER allows ffsol, cvc5, z3, picus, civer (default), and ALL")
                     .display_order(480)
             )
             .arg(

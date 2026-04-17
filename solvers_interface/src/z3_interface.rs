@@ -13,6 +13,9 @@ use num_bigint_dig::BigInt;
 
 use std::collections::HashMap;
 use circom_algebra::algebra::Constraint;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::thread;
+use std::time::Duration;
 
 pub fn study_equivalence(problem: &EquivalenceVerification)-> (PossibleResult, Vec<String>){
     
@@ -64,6 +67,131 @@ pub fn study_safety(problem: &SafetyVerification)-> (PossibleResult, Vec<String>
     (result_solver, logs)
 }
 
+pub fn study_safety_with_cancel(problem: &SafetyVerification, cancel_flag: &AtomicBool)-> (PossibleResult, Vec<String>){
+    if cancel_flag.load(Ordering::Relaxed) {
+        return (PossibleResult::UNKNOWN, vec!["### CANCELLED BEFORE STARTING Z3\n".to_string()]);
+    }
+
+    let (result_solver, mut logs) = try_prove_safety_with_z3_cancel(problem, cancel_flag);
+
+    match result_solver{
+        PossibleResult::VERIFIED=>{
+            logs.push(format!("### THE TEMPLATE DOES NOT ENSURE SAFETY. FOUND COUNTEREXAMPLE USING SMT:\n"));
+        },
+        PossibleResult::FAILED=>{
+            logs.push(format!("### WEAK SAFETY ENSURED BY THE TEMPLATE\n"));
+        },
+        PossibleResult::UNKNOWN=>{
+            logs.push("### UNKNOWN: VERIFICATION OF WEAK SAFETY USING THE SPECIFICATION TIMEOUT\n".to_string());
+        },
+        _=>{
+            unreachable!()
+        }
+
+    }
+
+    (result_solver, logs)
+}
+
+pub fn try_prove_safety_with_z3_cancel(
+    problem: &SafetyVerification,
+    cancel_flag: &AtomicBool,
+) -> (PossibleResult,Vec<String>) {
+
+    try_prove_safety_with_z3_internal(problem, Some(cancel_flag))
+}
+
+fn try_prove_safety_with_z3_internal(
+    problem: &SafetyVerification,
+    cancel_flag: Option<&AtomicBool>,
+) -> (PossibleResult,Vec<String>) {
+
+    let logs = Vec::new();
+    let mut cfg = Config::new();
+    cfg.set_timeout_msec(problem.verification_timeout);
+    let ctx = Context::new(&cfg);
+    let mut solver = Solver::new(&ctx);
+    let mut signals_1_to_smt_rep = HashMap::new();
+    let mut signals_2_to_smt_rep = HashMap::new();
+
+    for s in &problem.signals {
+        let z3_s = declare_signal(&mut solver,format!("s1_{}",s),&problem.field);
+        signals_1_to_smt_rep.insert(*s, z3_s);
+
+        let z3_s2 = declare_signal(&mut solver,format!("s2_{}",s),&problem.field);
+        signals_2_to_smt_rep.insert(*s, z3_s2);
+    }
+
+    for constraint in &problem.constraints {
+        declare_constraint(&constraint, &solver, &signals_1_to_smt_rep, &problem.field);
+        declare_constraint(&constraint, &solver, &signals_2_to_smt_rep, &problem.field);
+        if problem.apply_deduction_assigned{
+            apply_deduction_assigned(&constraint, &solver, &signals_1_to_smt_rep, &signals_2_to_smt_rep);
+        }
+    }
+
+    let equal_inputs = declare_all_signals_equal(
+        &solver,
+        &problem.inputs,
+        &signals_1_to_smt_rep,
+        &problem.inputs,
+        &signals_2_to_smt_rep
+    );
+    solver.assert(&equal_inputs);
+
+    let equal_outputs = declare_all_signals_equal(
+        &solver,
+        &problem.outputs,
+        &signals_1_to_smt_rep,
+        &problem.outputs,
+        &signals_2_to_smt_rep
+    );
+    solver.assert(&!equal_outputs);
+
+    if problem.verbose{
+        let mut rng = rand::thread_rng();
+        let random_number: u32 = rng.gen();
+        let new_file_name = format!("output_{}.smt2", random_number);
+
+        let mut file: File = File::create(&new_file_name).expect("Unable to create SMT2 file");
+        file.write_all(format!("{}",solver).as_bytes()).expect("Unable to write SMT2 file");
+        file.sync_all().expect("Failed to sync SMT2 file to disk");
+        file.flush().expect("Failed to flush SMT2 file");
+    }
+
+    if cancel_flag.map_or(false, |flag| flag.load(Ordering::Relaxed)) {
+        return (PossibleResult::UNKNOWN, vec!["### CANCELLED BEFORE CHECKING Z3\n".to_string()]);
+    }
+
+    let finished = AtomicBool::new(false);
+    let result = thread::scope(|scope| {
+        let handle = ctx.handle();
+        let finished_ref = &finished;
+        if let Some(cancel_flag_ref) = cancel_flag {
+            scope.spawn(move || {
+                while !finished_ref.load(Ordering::Relaxed) {
+                    if cancel_flag_ref.load(Ordering::Relaxed) {
+                        handle.interrupt();
+                        break;
+                    }
+                    thread::sleep(Duration::from_millis(10));
+                }
+            });
+        }
+
+        let result = match solver.check() {
+            SatResult::Sat => PossibleResult::FAILED,
+            SatResult::Unsat => PossibleResult::VERIFIED,
+            _ => PossibleResult::UNKNOWN,
+        };
+
+        finished.store(true, Ordering::SeqCst);
+        result
+    });
+
+    (result, logs)
+}
+
 
 
 
@@ -71,7 +199,7 @@ pub fn try_prove_equivalence_with_z3(
     problem: &EquivalenceVerification
 ) -> (PossibleResult,Vec<String>) {
 
-    let mut logs = Vec::new();
+    let logs = Vec::new();
     let mut cfg = Config::new();
     cfg.set_timeout_msec(problem.verification_timeout);
     let ctx = Context::new(&cfg);
@@ -181,110 +309,7 @@ pub fn try_prove_equivalence_with_z3(
 pub fn try_prove_safety_with_z3(
     problem: &SafetyVerification
 ) -> (PossibleResult,Vec<String>) {
-
-    let mut logs = Vec::new();
-    let mut cfg = Config::new();
-    cfg.set_timeout_msec(problem.verification_timeout);
-    let ctx = Context::new(&cfg);
-    let mut solver = Solver::new(&ctx);
-    let mut signals_1_to_smt_rep = HashMap::new();
-    let mut signals_2_to_smt_rep = HashMap::new();
-
-    for s in &problem.signals {
-        let z3_s = declare_signal(&mut solver,format!("s1_{}",s),&problem.field);
-        signals_1_to_smt_rep.insert(*s, z3_s);
-
-        let z3_s2 = declare_signal(&mut solver,format!("s2_{}",s),&problem.field);
-        signals_2_to_smt_rep.insert(*s, z3_s2);
-        
-    }
-
-    for constraint in &problem.constraints {
-        declare_constraint(&constraint, &solver, &signals_1_to_smt_rep, &problem.field);
-        declare_constraint(&constraint, &solver, &signals_2_to_smt_rep, &problem.field);
-        if problem.apply_deduction_assigned{
-            apply_deduction_assigned(&constraint, &solver, &signals_1_to_smt_rep, &signals_2_to_smt_rep);
-        }
-        
-    }
-
-
-    let equal_inputs = declare_all_signals_equal(
-        &solver, 
-        &problem.inputs, 
-        &signals_1_to_smt_rep, 
-        &problem.inputs,
-        &signals_2_to_smt_rep
-    );
-    solver.assert(&equal_inputs);
-
-    let equal_outputs = declare_all_signals_equal(
-        &solver, 
-        &problem.outputs, 
-        &signals_1_to_smt_rep, 
-        &problem.outputs,
-        &signals_2_to_smt_rep
-    );
-    solver.assert(&!equal_outputs);
-
-    if problem.verbose{
-        //produce a random number for the file name
-        let mut rng = rand::thread_rng();
-        let random_number: u32 = rng.gen();
-        let new_file_name = format!("output_{}.smt2", random_number);
-
-        // Ensure the SMT2 text is fully written and flushed to disk before continuing.
-        let mut file: File = File::create(&new_file_name).expect("Unable to create SMT2 file");
-        file.write_all(format!("{}",solver).as_bytes()).expect("Unable to write SMT2 file");
-        file.sync_all().expect("Failed to sync SMT2 file to disk");
-        file.flush().expect("Failed to flush SMT2 file");
-    }
-
-
-    let result = match solver.check() {
-        SatResult::Sat => {
-            // logs.push(format!(
-            //     "### THE TEMPLATE DOES NOT ENSURE SAFETY. FOUND COUNTEREXAMPLE USING SMT:\n"
-            // ));
-
-            // let model = solver.get_model().unwrap();
-            // for s in &problem.inputs_1 {
-            //     let v = model
-            //         .eval(signals_1_to_smt_rep.get(s).unwrap(), true)
-            //         .unwrap();
-            //     logs.push(format!("Input signal {}: {}\n", s, v.to_string()));
-            // }
-            // for s in &problem.outputs_1 {
-            //     let v = model
-            //         .eval(signals_1_to_smt_rep.get(s).unwrap(), true)
-            //         .unwrap();
-            //     let v1 = model
-            //         .eval(signals_2_to_smt_rep.get(s).unwrap(), true)
-            //         .unwrap();
-
-            //     logs.push(format!(
-            //         "Output signal {}: values {} | {}\n",
-            //         s,
-            //         v.to_string(),
-            //         v1.to_string()
-            //     ));
-            // }
-
-            PossibleResult::FAILED
-        }
-        SatResult::Unsat => {
-            //logs.push(format!("### WEAK SAFETY ENSURED BY THE TEMPLATE\n"));
-            PossibleResult::VERIFIED
-        }
-        _ => {
-            //logs.push(format!(
-            //    "### UNKNOWN: VERIFICATION OF WEAK SAFETY USING THE SPECIFICATION TIMEOUT\n"
-            //));
-            PossibleResult::UNKNOWN
-        }
-    };
-    
-    (result, logs)
+    try_prove_safety_with_z3_internal(problem, None)
 }
 
 

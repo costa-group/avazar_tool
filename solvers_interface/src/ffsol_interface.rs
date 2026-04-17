@@ -16,6 +16,8 @@ use nix::unistd::Pid;
 use nix::sys::signal::Signal;
 use nix::sys::signal::killpg;
 use std::fs;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Instant;
 
 
 pub fn study_correctness(problem: &CorrectnessVerification)-> (PossibleResult, Vec<String>){
@@ -23,7 +25,7 @@ pub fn study_correctness(problem: &CorrectnessVerification)-> (PossibleResult, V
     
     let smt2_problem: LinkedList<String> = correctness_problem_to_smt2(problem);
 
-    let result_solver = handling_ffsol_call(&smt2_problem, problem.verification_timeout,&problem.template_name,problem.verbose);
+    let result_solver = handling_ffsol_call(&smt2_problem, problem.verification_timeout,&problem.template_name,problem.verbose, None);
 
     match result_solver{
         PossibleResult::VERIFIED=>{
@@ -50,7 +52,7 @@ pub fn study_equivalence(problem: &EquivalenceVerification)-> (PossibleResult, V
     
     let smt2_problem: LinkedList<String> = equivalence_problem_to_smt2(problem,false);
 
-    let result_solver = handling_ffsol_call(&smt2_problem, problem.verification_timeout,&problem.template_name,problem.verbose);
+    let result_solver = handling_ffsol_call(&smt2_problem, problem.verification_timeout,&problem.template_name,problem.verbose, None);
 
     match result_solver{
         PossibleResult::VERIFIED=>{
@@ -80,7 +82,43 @@ pub fn study_safety(problem: &SafetyVerification)-> (PossibleResult, Vec<String>
     
     let smt2_problem: LinkedList<String> = safety_problem_to_smt2(problem);
 
-    let result_solver = handling_ffsol_call(&smt2_problem, problem.verification_timeout,&problem.template_name,problem.verbose);
+    let result_solver = handling_ffsol_call(&smt2_problem, problem.verification_timeout,&problem.template_name,problem.verbose, None);
+
+    match result_solver{
+        PossibleResult::VERIFIED=>{
+            logs.push(format!("### THE TEMPLATE DOES NOT ENSURE SAFETY. FOUND COUNTEREXAMPLE USING SMT:\n"));
+        },
+        PossibleResult::FAILED=>{
+            logs.push(format!("### WEAK SAFETY ENSURED BY THE TEMPLATE\n"));
+        },
+        PossibleResult::UNKNOWN=>{
+            logs.push("### UNKNOWN: VERIFICATION OF WEAK SAFETY USING THE SPECIFICATION TIMEOUT\n".to_string());
+        },
+        _=>{
+            unreachable!()
+        }
+
+    }
+
+    (result_solver, logs)
+}
+
+pub fn study_safety_with_cancel(problem: &SafetyVerification, cancel_flag: &AtomicBool)-> (PossibleResult, Vec<String>){
+    let mut logs = Vec::new();
+
+    if cancel_flag.load(Ordering::Relaxed) {
+        logs.push("### CANCELLED BEFORE STARTING FFSOL\n".to_string());
+        return (PossibleResult::UNKNOWN, logs);
+    }
+
+    let smt2_problem: LinkedList<String> = safety_problem_to_smt2(problem);
+    let result_solver = handling_ffsol_call(
+        &smt2_problem,
+        problem.verification_timeout,
+        &problem.template_name,
+        problem.verbose,
+        Some(cancel_flag),
+    );
 
     match result_solver{
         PossibleResult::VERIFIED=>{
@@ -103,7 +141,13 @@ pub fn study_safety(problem: &SafetyVerification)-> (PossibleResult, Vec<String>
 
 
 
-pub fn handling_ffsol_call(smt2_problem: &LinkedList<String>,timeout:u64,filename: &String,verbose:bool)-> PossibleResult{
+pub fn handling_ffsol_call(
+    smt2_problem: &LinkedList<String>,
+    timeout:u64,
+    filename: &String,
+    verbose:bool,
+    cancel_flag: Option<&AtomicBool>
+)-> PossibleResult{
 
     //produce a random number for the file name
     let mut rng = rand::thread_rng();
@@ -161,20 +205,35 @@ pub fn handling_ffsol_call(smt2_problem: &LinkedList<String>,timeout:u64,filenam
         buf
     });
 
-// -------------------- timeout --------------------
+// -------------------- timeout/cancel --------------------
     let timeout = Duration::from_millis(timeout);
+    let check_step = Duration::from_millis(50);
+    let start = Instant::now();
 
-    let _timed_out = match child.wait_timeout(timeout)
-        .expect("Failed while waiting for the process")
-    {
-        Some(_status) => false, // terminó a tiempo
-        None => {
-            // Timeout: matar TODO el grupo de procesos
+    loop {
+        if cancel_flag.map_or(false, |flag| flag.load(Ordering::Relaxed)) {
             let pgid = Pid::from_raw(child.id() as i32);
             let _ = killpg(pgid, Signal::SIGKILL);
-            true
+            break;
         }
-    };
+
+        let elapsed = start.elapsed();
+        if elapsed >= timeout {
+            let pgid = Pid::from_raw(child.id() as i32);
+            let _ = killpg(pgid, Signal::SIGKILL);
+            break;
+        }
+
+        let remaining = timeout - elapsed;
+        let step = if remaining < check_step { remaining } else { check_step };
+
+        match child.wait_timeout(step)
+            .expect("Failed while waiting for the process")
+        {
+            Some(_) => break,
+            None => {}
+        };
+    }
 
     // Esperar al proceso principal (NO wait_with_output)
     let status = child.wait().expect("Failed to wait on child");

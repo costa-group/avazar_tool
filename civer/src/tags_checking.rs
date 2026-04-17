@@ -1,4 +1,5 @@
 use std::{cmp::max, collections::{HashMap, LinkedList}};
+use std::sync::atomic::AtomicBool;
 use num_bigint_dig::BigInt;
 use solvers_interface::{PossibleResult, SafetyVerification};
 
@@ -6,6 +7,7 @@ use circom_algebra::{modular_arithmetic, algebra::{
     Constraint, ExecutedInequation}};
 
 use crate::safety_z3::try_prove_safety_with_z3;
+use crate::safety_z3::try_prove_safety_with_z3_cancel;
 
 
 
@@ -75,6 +77,14 @@ impl TemplateVerification{
         (result_safety, logs)
     }
 
+    pub fn deduce_with_cancel(&mut self, cancel_flag: &AtomicBool)-> (PossibleResult, Vec<String>) {
+        let mut logs = Vec::new();
+
+        let result_safety = self.try_prove_safety_with_cancel(&mut logs, cancel_flag);
+
+        (result_safety, logs)
+    }
+
     // returns the signals where it was able to find new bounds
     pub fn deduce_round(&mut self)-> Vec<usize>{
         let mut new_signal_bounds:Vec<usize> = Vec::new();
@@ -131,6 +141,25 @@ impl TemplateVerification{
                 self.verification_timeout,
                 self.apply_deduction_assigned,
                 logs,
+        )
+    }
+
+    pub fn try_prove_safety_with_cancel(&mut self, logs: &mut Vec<String>, cancel_flag: &AtomicBool) -> PossibleResult{
+        let signals_vec = self.signals.iter().cloned().collect::<Vec<_>>();
+
+        self.deduce_round();
+        try_prove_safety_with_z3_cancel(
+                &self.inputs,
+                &self.outputs,
+                &signals_vec,
+                &self.constraints,
+                &self.implications_safety,
+                &self.deductions,
+                &self.field,
+                self.verification_timeout,
+                self.apply_deduction_assigned,
+                logs,
+                cancel_flag,
         )
     }
 }

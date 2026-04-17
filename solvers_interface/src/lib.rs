@@ -2,6 +2,7 @@ pub mod picus_interface;
 pub mod ffsol_interface;
 pub mod cvc5_interface;
 pub mod z3_interface;
+pub mod parallel_interface;
 mod smt2_utils;
 
 use std::collections::{HashSet, LinkedList};
@@ -11,7 +12,7 @@ use circom_algebra::algebra::Constraint;
 
 #[derive(PartialEq, Eq, Clone, Copy)] 
 pub enum PossibleSolver{
-    PICUS, CIVER, FFSOL, CVC5,Z3
+    PICUS, CIVER, FFSOL, CVC5, Z3, ALL
 }
 
 
@@ -36,6 +37,7 @@ pub enum PossibleResult{
 }
 
 
+#[derive(Clone)]
 pub struct SafetyVerification {
     pub template_name: String,
     pub signals: LinkedList<usize>,

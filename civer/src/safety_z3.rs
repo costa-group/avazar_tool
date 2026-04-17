@@ -1,4 +1,7 @@
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::thread;
+use std::time::Duration;
 use num_bigint_dig::BigInt;
 use solvers_interface::PossibleResult;
 use circom_algebra::algebra::{Constraint, ExecutedInequation};
@@ -38,6 +41,62 @@ pub fn try_prove_safety_with_z3(
     verification_timeout: u64,
     opt_apply_deduction_assigned: bool,
     logs: &mut Vec<String>,
+) -> PossibleResult {
+    try_prove_safety_with_z3_internal(
+        inputs,
+        outputs,
+        signals,
+        constraints,
+        implications_safety,
+        deductions,
+        field,
+        verification_timeout,
+        opt_apply_deduction_assigned,
+        logs,
+        None,
+    )
+}
+
+pub fn try_prove_safety_with_z3_cancel(
+    inputs: &Vec<usize>,
+    outputs: &Vec<usize>,
+    signals: &Vec<usize>,
+    constraints: &Vec<Constraint<usize>>,
+    implications_safety: &Vec<(Vec<usize>, Vec<usize>)>,
+    deductions: &Signal2Bounds,
+    field: &BigInt,
+    verification_timeout: u64,
+    opt_apply_deduction_assigned: bool,
+    logs: &mut Vec<String>,
+    cancel_flag: &AtomicBool,
+) -> PossibleResult {
+    try_prove_safety_with_z3_internal(
+        inputs,
+        outputs,
+        signals,
+        constraints,
+        implications_safety,
+        deductions,
+        field,
+        verification_timeout,
+        opt_apply_deduction_assigned,
+        logs,
+        Some(cancel_flag),
+    )
+}
+
+fn try_prove_safety_with_z3_internal(
+    inputs: &Vec<usize>,
+    outputs: &Vec<usize>,
+    signals: &Vec<usize>,
+    constraints: &Vec<Constraint<usize>>,
+    implications_safety: &Vec<(Vec<usize>, Vec<usize>)>,
+    deductions: &Signal2Bounds,
+    field: &BigInt,
+    verification_timeout: u64,
+    opt_apply_deduction_assigned: bool,
+    logs: &mut Vec<String>,
+    cancel_flag: Option<&AtomicBool>,
 ) -> PossibleResult {
     let mut cfg = Config::new();
     cfg.set_timeout_msec(verification_timeout);
@@ -164,7 +223,33 @@ pub fn try_prove_safety_with_z3(
 
     solver.assert(&!all_outputs_equal);
 
-    match solver.check() {
+    if cancel_flag.map_or(false, |flag| flag.load(Ordering::Relaxed)) {
+        logs.push(format!("### CANCELLED BEFORE CHECKING CIVER Z3 MODEL\n"));
+        return PossibleResult::UNKNOWN;
+    }
+
+    let finished = AtomicBool::new(false);
+    let check_result = thread::scope(|scope| {
+        let handle = ctx.handle();
+        let finished_ref = &finished;
+        if let Some(cancel_flag_ref) = cancel_flag {
+            scope.spawn(move || {
+                while !finished_ref.load(Ordering::Relaxed) {
+                    if cancel_flag_ref.load(Ordering::Relaxed) {
+                        handle.interrupt();
+                        break;
+                    }
+                    thread::sleep(Duration::from_millis(10));
+                }
+            });
+        }
+
+        let result = solver.check();
+        finished.store(true, Ordering::SeqCst);
+        result
+    });
+
+    match check_result {
         SatResult::Sat => {
             logs.push(format!(
                 "### THE TEMPLATE DOES NOT ENSURE SAFETY. FOUND COUNTEREXAMPLE USING SMT:\n"
