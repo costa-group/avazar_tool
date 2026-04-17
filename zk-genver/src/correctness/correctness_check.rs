@@ -56,8 +56,8 @@ pub fn prove_correctness(user_input: Input) -> Result<(), ()> {
 
     let field = user_input.prime;
 
-    if user_input.solver_option==PossibleSolver::CIVER||user_input.solver_option==PossibleSolver::PICUS{
-        println!("CIVER and PICUS cannot be used to check equivalence. Use Z3,FFSOL or CVC5 instead");
+    if !(user_input.solver_option==PossibleSolver::FFSOL||user_input.solver_option==PossibleSolver::CVC5){
+        println!("Z3, CIVER and PICUS cannot be used to check correctness. Use FFSOL or CVC5 instead");
         return Err(());
     };
 

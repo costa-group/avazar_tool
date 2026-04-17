@@ -202,7 +202,12 @@ pub fn try_prove_safety_with_z3(
     for constraint in &problem.constraints {
         declare_constraint(&constraint, &solver, &signals_1_to_smt_rep, &problem.field);
         declare_constraint(&constraint, &solver, &signals_2_to_smt_rep, &problem.field);
+        if problem.apply_deduction_assigned{
+            apply_deduction_assigned(&constraint, &solver, &signals_1_to_smt_rep, &signals_2_to_smt_rep);
+        }
+        
     }
+
 
     let equal_inputs = declare_all_signals_equal(
         &solver, 
@@ -362,4 +367,45 @@ pub fn declare_all_signals_equal<'a>(
     }
 
     all_equal
+}
+
+
+
+pub fn apply_deduction_assigned(
+    c: &Constraint<usize>,
+    solver: &Solver,
+    signals_to_smt_symbols_1: &HashMap<usize, z3::ast::Int>,
+    signals_to_smt_symbols_2: &HashMap<usize, z3::ast::Int>,
+) {
+        let ctx: &Context = solver.get_context();
+
+        let all_signals = c.take_signals();
+        let only_linear_signals = c.take_only_linear_signals();
+
+        // in case there are signals that are only_linear
+        for s_deduced in only_linear_signals {
+            // Generate the implication all signals in C are deterministic
+            //  => s_deduced is deterministic
+
+            let value_right_1 = signals_to_smt_symbols_1.get(s_deduced).unwrap();
+            let value_right_2 = signals_to_smt_symbols_2.get(s_deduced).unwrap();
+            let right_side = value_right_1._eq(&value_right_2);
+
+            let mut left_side = z3::ast::Bool::from_bool(&ctx, true);
+
+            for s in &all_signals {
+                if *s != s_deduced {
+                    let value_s_1 = signals_to_smt_symbols_1.get(s).unwrap();
+                    let value_s_2 = signals_to_smt_symbols_2.get(s).unwrap();
+                    let new_left_side = value_s_1._eq(&value_s_2);
+
+                    left_side &= new_left_side;
+                }
+            }
+
+            let mut value_cond = !left_side;
+            value_cond |= &right_side;
+            solver.assert(&value_cond);
+        }
+    
 }

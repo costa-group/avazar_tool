@@ -35,7 +35,7 @@ impl Input {
         let flag_verbose =  input_processing::get_flag_verbose(&matches);
         let prime = input_processing::get_prime(&matches)?;
         let clustering_size = input_processing::get_clustering_size(&matches)?;
-        let apply_deduction_assigned = input_processing::get_apply_deduction_assigned(&matches);
+        let desactivate_deduction_assigned = input_processing::get_apply_deduction_assigned(&matches);
         let apply_predecessors = input_processing::get_apply_predecessors(&matches);
         let apply_bidirectional = input_processing::get_apply_bidirectional(&matches);
 
@@ -55,7 +55,7 @@ impl Input {
             flag_verbose,
             prime,
             clustering_size,
-            apply_deduction_assigned,
+            apply_deduction_assigned: !desactivate_deduction_assigned,
             apply_predecessors,
             apply_bidirectional,
             equivalence_mode,
@@ -153,7 +153,7 @@ mod input_processing {
     }
 
     pub fn get_apply_deduction_assigned(matches: &ArgMatches) -> bool {
-        matches.is_present("apply_deduction_assigned")
+        matches.is_present("desactivate_deduction_assigned")
     }
     
     pub fn get_apply_predecessors(matches: &ArgMatches) -> bool {
@@ -305,11 +305,11 @@ mod input_processing {
                     .display_order(500)
             )
             .arg(
-                Arg::with_name("apply_deduction_assigned")
-                    .long("apply_deduction_assigned")
+                Arg::with_name("desactivate_deduction_assigned")
+                    .long("desactivate_deduction_assigned")
                     .takes_value(false)
                     .hidden(false)
-                    .help("Activate to apply the deduction rule for linear constraints")
+                    .help("Desactivate to apply the deduction rule for linear constraints")
                     .display_order(600)
             )
             .arg(
