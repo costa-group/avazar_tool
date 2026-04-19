@@ -41,7 +41,11 @@ pub fn study_safety(problem: &SafetyVerification) -> (PossibleResult, Vec<String
 
                 println!("ALL: launching solver {}", name);
                 let result = match name {
-                    "ffsol" => ffsol_interface::study_safety_with_cancel(&problem_clone, &cancel_token),
+                    "ffsol" => ffsol_interface::study_safety_with_cancel(
+                        &problem_clone,
+                        &cancel_token,
+                        &ffsol_interface::FfsolConfig::default(problem_clone.verification_timeout, problem_clone.verbose),
+                    ),
                     "cvc5" => cvc5_interface::study_safety_with_cancel(&problem_clone, &cancel_token),
                     "z3" => z3_interface::study_safety_with_cancel(&problem_clone, &cancel_token),
                     _ => (PossibleResult::UNKNOWN, vec!["UNKNOWN SOLVER IN ALL MODE\n".to_string()]),

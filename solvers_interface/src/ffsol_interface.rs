@@ -19,13 +19,109 @@ use std::fs;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
+#[derive(Clone)]
+pub struct FfsolConfig {
+    pub timeout: u64,
+    pub use_cocoa: bool,
+    pub model: Option<String>,
+    pub success: bool,
+    pub prime: Option<String>,
+    pub apply_la_incremental: bool,
+    pub apply_nra: bool,
+    pub light_check_determinism: bool,
+    pub apply_la: bool,
+    pub la_with_overflowing_constraints: bool,
+    pub linear_solver: bool,
+    pub grobner_basis: bool,
+    pub simple_deductions: bool,
+    pub complete_deductions: bool,
+    pub complete_non_overflowing_deductions: bool,
+    pub verbose: bool,
+}
 
-pub fn study_correctness(problem: &CorrectnessVerification)-> (PossibleResult, Vec<String>){
+impl FfsolConfig {
+    pub fn default(timeout: u64, verbose: bool) -> Self {
+        Self {
+            timeout,
+            use_cocoa: true,
+            model: None,
+            success: true,
+            prime: None,
+            apply_la_incremental: false,
+            apply_nra: false,
+            light_check_determinism: true,
+            apply_la: true,
+            la_with_overflowing_constraints: false,
+            linear_solver: true,
+            grobner_basis: true,
+            simple_deductions: true,
+            complete_deductions: false,
+            complete_non_overflowing_deductions: true,
+            verbose,
+        }
+    }
+
+    pub fn linear_diactivated(timeout: u64, verbose: bool) -> Self {
+        let mut config = Self::default(timeout, verbose);
+        config.linear_solver = false;
+        config
+    }
+
+    pub fn build_args(&self, file_path: &str) -> Vec<String> {
+        fn push_bool_arg(args: &mut Vec<String>, flag: &str, value: bool) {
+            args.push(flag.to_string());
+            args.push(value.to_string());
+        }
+
+        fn push_binary_arg(args: &mut Vec<String>, flag: &str, value: bool) {
+            args.push(flag.to_string());
+            args.push(if value { "1".to_string() } else { "0".to_string() });
+        }
+
+        let mut args = Vec::new();
+        args.push("-tlimit".to_string());
+        args.push(self.timeout.to_string());
+
+        if self.use_cocoa {
+            args.push("-using_cocoa".to_string());
+        }
+
+        if let Some(model) = &self.model {
+            args.push("-model".to_string());
+            args.push(model.clone());
+        }
+
+        push_bool_arg(&mut args, "-success", self.success);
+
+        if let Some(prime) = &self.prime {
+            args.push("-prime".to_string());
+            args.push(prime.clone());
+        }
+
+        push_bool_arg(&mut args, "-apply_la_incremental", self.apply_la_incremental);
+        push_bool_arg(&mut args, "-apply_nra", self.apply_nra);
+        push_binary_arg(&mut args, "-light_check_determinism", self.light_check_determinism);
+        push_binary_arg(&mut args, "-apply_la", self.apply_la);
+        push_binary_arg(&mut args, "-la_with_overflowing_constraints", self.la_with_overflowing_constraints);
+        push_binary_arg(&mut args, "-linear_solver", self.linear_solver);
+        push_binary_arg(&mut args, "-grobner_basis", self.grobner_basis);
+        push_binary_arg(&mut args, "-simple_deductions", self.simple_deductions);
+        push_binary_arg(&mut args, "-complete_deductions", self.complete_deductions);
+        push_binary_arg(&mut args, "-complete_non_overflowing_deductions", self.complete_non_overflowing_deductions);
+
+        args.push("-file".to_string());
+        args.push(file_path.to_string());
+        args
+    }
+}
+
+
+pub fn study_correctness(problem: &CorrectnessVerification, config: &FfsolConfig)-> (PossibleResult, Vec<String>){
     let mut logs = Vec::new();
     
     let smt2_problem: LinkedList<String> = correctness_problem_to_smt2(problem);
 
-    let result_solver = handling_ffsol_call(&smt2_problem, problem.verification_timeout,&problem.template_name,problem.verbose, None);
+    let result_solver = handling_ffsol_call(&smt2_problem, &problem.template_name, config, None);
 
     match result_solver{
         PossibleResult::VERIFIED=>{
@@ -47,12 +143,12 @@ pub fn study_correctness(problem: &CorrectnessVerification)-> (PossibleResult, V
 
 }
 
-pub fn study_equivalence(problem: &EquivalenceVerification)-> (PossibleResult, Vec<String>){
+pub fn study_equivalence(problem: &EquivalenceVerification, config: &FfsolConfig)-> (PossibleResult, Vec<String>){
     let mut logs = Vec::new();
     
     let smt2_problem: LinkedList<String> = equivalence_problem_to_smt2(problem,false);
 
-    let result_solver = handling_ffsol_call(&smt2_problem, problem.verification_timeout,&problem.template_name,problem.verbose, None);
+    let result_solver = handling_ffsol_call(&smt2_problem, &problem.template_name, config, None);
 
     match result_solver{
         PossibleResult::VERIFIED=>{
@@ -76,13 +172,13 @@ pub fn study_equivalence(problem: &EquivalenceVerification)-> (PossibleResult, V
 
 
 
-pub fn study_safety(problem: &SafetyVerification)-> (PossibleResult, Vec<String>){
+pub fn study_safety(problem: &SafetyVerification, config: &FfsolConfig)-> (PossibleResult, Vec<String>){
     
     let mut logs = Vec::new();
     
     let smt2_problem: LinkedList<String> = safety_problem_to_smt2(problem);
 
-    let result_solver = handling_ffsol_call(&smt2_problem, problem.verification_timeout,&problem.template_name,problem.verbose, None);
+    let result_solver = handling_ffsol_call(&smt2_problem, &problem.template_name, config, None);
 
     match result_solver{
         PossibleResult::VERIFIED=>{
@@ -103,7 +199,7 @@ pub fn study_safety(problem: &SafetyVerification)-> (PossibleResult, Vec<String>
     (result_solver, logs)
 }
 
-pub fn study_safety_with_cancel(problem: &SafetyVerification, cancel_flag: &AtomicBool)-> (PossibleResult, Vec<String>){
+pub fn study_safety_with_cancel(problem: &SafetyVerification, cancel_flag: &AtomicBool, config: &FfsolConfig)-> (PossibleResult, Vec<String>){
     let mut logs = Vec::new();
 
     if cancel_flag.load(Ordering::Relaxed) {
@@ -114,9 +210,8 @@ pub fn study_safety_with_cancel(problem: &SafetyVerification, cancel_flag: &Atom
     let smt2_problem: LinkedList<String> = safety_problem_to_smt2(problem);
     let result_solver = handling_ffsol_call(
         &smt2_problem,
-        problem.verification_timeout,
         &problem.template_name,
-        problem.verbose,
+        config,
         Some(cancel_flag),
     );
 
@@ -143,9 +238,8 @@ pub fn study_safety_with_cancel(problem: &SafetyVerification, cancel_flag: &Atom
 
 pub fn handling_ffsol_call(
     smt2_problem: &LinkedList<String>,
-    timeout:u64,
     filename: &String,
-    verbose:bool,
+    config: &FfsolConfig,
     cancel_flag: Option<&AtomicBool>
 )-> PossibleResult{
 
@@ -168,13 +262,7 @@ pub fn handling_ffsol_call(
     }
     
 
-    let mut command_args = Vec::new();
-    command_args.push("-tlimit");
-    let timeout_str = format!("{}",timeout);
-    command_args.push(timeout_str.as_str());
-    command_args.push("-using_cocoa");
-    command_args.push("-file");
-    command_args.push(&new_file_name);
+    let command_args = config.build_args(&new_file_name);
     let mut child = unsafe { Command::new("/home/clara/circom/proving_unsat/copy_clean/src/ffsol")
         .args(command_args)
         .stdout(Stdio::piped())
@@ -206,7 +294,7 @@ pub fn handling_ffsol_call(
     });
 
 // -------------------- timeout/cancel --------------------
-    let timeout = Duration::from_millis(timeout);
+    let timeout = Duration::from_millis(config.timeout);
     let check_step = Duration::from_millis(50);
     let start = Instant::now();
 
@@ -250,7 +338,7 @@ pub fn handling_ffsol_call(
     };
     let stdout = String::from_utf8_lossy(&output.stdout);
 
-    if !verbose{
+    if !config.verbose{
         match fs::remove_file(&new_file_name) {
             Ok(_) => {},
             Err(e) => eprintln!("Error al eliminar el archivo: {}", e),

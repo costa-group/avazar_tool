@@ -112,7 +112,10 @@ fn call_prove_correctness(
     )-> (PossibleResult, Vec<String>) {
         match solver{
             PossibleSolver::FFSOL=>{
-                ffsol_interface::study_correctness(problem)
+                ffsol_interface::study_correctness(
+                    problem,
+                    &ffsol_interface::FfsolConfig::default(problem.verification_timeout, problem.verbose),
+                )
             },
             PossibleSolver::CVC5=>{
                 cvc5_interface::study_correctness(problem)

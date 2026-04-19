@@ -262,7 +262,10 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
                 picus_interface::deduce(problem)
             },
             PossibleSolver::FFSOL=>{
-                ffsol_interface::study_safety(problem)
+                ffsol_interface::study_safety(
+                    problem,
+                    &ffsol_interface::FfsolConfig::default(problem.verification_timeout, problem.verbose),
+)
             },
             PossibleSolver::CVC5=>{
                 cvc5_interface::study_safety(problem)
