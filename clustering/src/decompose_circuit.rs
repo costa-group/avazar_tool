@@ -54,7 +54,7 @@ fn decompose_circuit_and_return_dagnodes<'a, C: Constraint, S: Circuit<C>>(
         let partition_timer = Instant::now();
 
         let resolution = match decompose_options.resolution { Some(r) => r, None => ((graph.num_edges() << 1) as f64)/(decompose_options.target_size.unwrap_or(f64::log2(graph.num_edges() as f64)).powi(2)) };
-        partition = graph.get_partition(resolution, decompose_options.leiden_max_iterations.unwrap_or(5), 25565);
+        partition = graph.get_partition(resolution, decompose_options.leiden_max_iterations.unwrap_or(5), decompose_options.seed);
         
         //insert_and_print_timing(debug, &mut timing, "clustering", partition_timer.elapsed());
         timing_info.clustering = partition_timer.elapsed().as_secs_f32();

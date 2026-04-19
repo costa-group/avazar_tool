@@ -61,6 +61,7 @@ pub struct DecomposeOptions<'a> {
     pub minimum_equivalence_size: Option<usize>,
     pub equivalence_comparison_budget: Option<usize>,
     pub existing_partition: Option<Vec<Vec<usize>>>,
+    pub seed: Option<u64>,
     pub debug: usize
 }
 
