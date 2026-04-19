@@ -11,12 +11,13 @@ use std::time::Instant;
 /// returns UNKNOWN together with the merged logs.
 pub fn study_safety(problem: &SafetyVerification) -> (PossibleResult, Vec<String>) {
     let start = Instant::now();
-    println!("ALL: Starting parallel safety verification with FFSOL, CVC5, and Z3...");
+    println!("ALL: Starting parallel safety verification with FFSOL, FFSOL-NOLINEAR, CVC5, and Z3...");
     let (tx, rx) = mpsc::channel::<(&'static str, PossibleResult, Vec<String>)>();
     let cancel_token = Arc::new(AtomicBool::new(false));
 
     let solvers: &[&str] = &[
         "ffsol",
+        "ffsol-nolinear",
         "cvc5",
         "z3",
     ];
@@ -41,10 +42,9 @@ pub fn study_safety(problem: &SafetyVerification) -> (PossibleResult, Vec<String
 
                 println!("ALL: launching solver {}", name);
                 let result = match name {
-                    "ffsol" => ffsol_interface::study_safety_with_cancel(
-                        &problem_clone,
-                        &cancel_token,
-                        &ffsol_interface::FfsolConfig::default(problem_clone.verification_timeout, problem_clone.verbose),
+                    "ffsol" => ffsol_interface::study_safety_with_cancel(&problem_clone, &cancel_token,&ffsol_interface::FfsolConfig::default(problem_clone.verification_timeout, problem_clone.verbose),
+                    ),
+                    "ffsol-nolinear" => ffsol_interface::study_safety_with_cancel(&problem_clone, &cancel_token,&ffsol_interface::FfsolConfig::linear_diactivated(problem_clone.verification_timeout, problem_clone.verbose),
                     ),
                     "cvc5" => cvc5_interface::study_safety_with_cancel(&problem_clone, &cancel_token),
                     "z3" => z3_interface::study_safety_with_cancel(&problem_clone, &cancel_token),
