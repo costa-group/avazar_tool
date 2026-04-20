@@ -117,7 +117,7 @@ impl<'a, C: Constraint + 'a, S: Circuit<C> + 'a> DAGNode<'a, C, S> {
 
         let circ: &'a S = nodes[&root].circ;        
 
-        let mut new_constraints: Vec<usize> = Vec::new();
+        let mut new_constraints: Vec<usize> = Vec::with_capacity(to_merge.iter().map(|nkey| nodes[nkey].constraints.len()).sum::<usize>());
         let mut new_input_signals: HashSet<usize> = HashSet::new();
         let mut new_output_signals: HashSet<usize> = HashSet::new();
 

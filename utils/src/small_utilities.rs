@@ -65,18 +65,40 @@ pub struct DecomposeOptions<'a> {
     pub debug: usize
 }
 
-pub fn distance_to_source_set<'a, T: Hash + Ord + Copy>(source_set: impl Iterator<Item = &'a T>, adjacencies: &'a HashMap<T, HashSet<T>>) -> HashMap<&'a T, usize> {
+// takes two sorted vecs and returns a sorted vec
+pub fn merge_sorted_vecs(left: &Vec<usize>, right: &Vec<usize>) -> Vec<usize> {
+        let (mut l_pointer, mut r_pointer) = (0, 0);
+        let mut out: Vec<usize> = Vec::new();
+        while l_pointer < left.len() && r_pointer < right.len() {
+            match left[l_pointer].cmp(&right[r_pointer]) {
+                std::cmp::Ordering::Equal => {
+                    out.push(left[l_pointer]); l_pointer += 1; r_pointer += 1;
+                },
+                std::cmp::Ordering::Less => {
+                    l_pointer += 1;
+                },
+                std::cmp::Ordering::Greater => {
+                    r_pointer += 1;
+                }
+            }
+        }
 
-    let mut distance: HashMap<&T, usize> = source_set.map(|idx| (idx, 0)).collect();
-    let mut queue: VecDeque<&T> = distance.keys().copied().collect();
+        out
+    }
+
+pub fn distance_to_source_set(source_set: impl Iterator<Item = usize>, adjacencies: &Vec<Vec<usize>>) -> Vec<usize> {
+
+    let mut distance: Vec<usize> = vec![usize::MAX; adjacencies.len()];
+    let mut queue: VecDeque<usize> = source_set.collect();
+    for idx in queue.iter() {distance[*idx] = 0;}
 
     while queue.len() > 0 {
         let curr = queue.pop_front().unwrap();
         let next_distance = distance[curr] + 1;
-        for adj in adjacencies.get(curr).unwrap().into_iter() {
-            if let std::collections::hash_map::Entry::Vacant(entry) = distance.entry(adj) {
+        for adj in adjacencies[curr].iter().copied() {
+            if distance[adj] == usize::MAX {
                 queue.push_back(adj);
-                entry.insert(next_distance);
+                distance[adj] = next_distance;
             }
         }
     }
