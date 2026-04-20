@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::Duration;
 use num_bigint_dig::BigInt;
-use solvers_interface::PossibleResult;
+use crate::PossibleResult;
 use circom_algebra::algebra::{Constraint, ExecutedInequation};
 
 use z3::Config;
@@ -12,7 +12,7 @@ use z3::Solver;
 use z3::ast::Ast;
 use z3::*;
 
-use crate::tags_checking::{
+use super::tags_checking::{
     compute_bounds_linear_expression_strict,
     compute_bounds_product,
     Signal2Bounds,

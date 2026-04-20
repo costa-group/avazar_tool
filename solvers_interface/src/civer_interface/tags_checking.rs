@@ -1,13 +1,13 @@
 use std::{cmp::max, collections::{HashMap, LinkedList}};
 use std::sync::atomic::AtomicBool;
 use num_bigint_dig::BigInt;
-use solvers_interface::{PossibleResult, SafetyVerification};
+use crate::{PossibleResult, SafetyVerification};
 
 use circom_algebra::{modular_arithmetic, algebra::{
     Constraint, ExecutedInequation}};
 
-use crate::safety_z3::try_prove_safety_with_z3;
-use crate::safety_z3::try_prove_safety_with_z3_cancel;
+use super::safety_z3::try_prove_safety_with_z3;
+use super::safety_z3::try_prove_safety_with_z3_cancel;
 
 
 

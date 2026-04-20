@@ -1,5 +1,4 @@
-use civer::tags_checking::TemplateVerification;
-use solvers_interface::{PossibleResult, PossibleSolver, SafetyVerification, cvc5_interface, ffsol_interface, parallel_interface, picus_interface, z3_interface};
+use solvers_interface::{PossibleResult, PossibleSolver, SafetyVerification, civer_interface, cvc5_interface, ffsol_interface, parallel_interface, picus_interface, z3_interface};
 type Constraint = circom_algebra::algebra::Constraint<usize>;
 use circom_algebra::num_bigint::BigInt;
 use std::collections::LinkedList;
@@ -255,8 +254,7 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
     )-> (PossibleResult, Vec<String>) {
         match solver{
             PossibleSolver::CIVER =>{
-                let mut civer_template_verification = TemplateVerification::new(problem);
-                civer_template_verification.deduce()
+                civer_interface::study_safety(problem)
             },
             PossibleSolver::PICUS =>{
                 picus_interface::deduce(problem)

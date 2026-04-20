@@ -1,17 +1,17 @@
 use crate::{PossibleResult, SafetyVerification};
-use crate::{ffsol_interface, cvc5_interface, z3_interface};
+use crate::{civer_interface, ffsol_interface, cvc5_interface, z3_interface};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::Arc;
 use std::thread;
 use std::time::Instant;
 
-/// Runs FFSOL, CVC5, and Z3 simultaneously and returns the first decisive
+/// Runs FFSOL, CVC5, Z3, and CIVER simultaneously and returns the first decisive
 /// result (VERIFIED or FAILED). If all solvers return UNKNOWN the function
 /// returns UNKNOWN together with the merged logs.
 pub fn study_safety(problem: &SafetyVerification) -> (PossibleResult, Vec<String>) {
     let start = Instant::now();
-    println!("ALL: Starting parallel safety verification with FFSOL, FFSOL-NOLINEAR, CVC5, and Z3...");
+    println!("ALL: Starting parallel safety verification with FFSOL, FFSOL-NOLINEAR, CVC5, Z3, and CIVER...");
     let (tx, rx) = mpsc::channel::<(&'static str, PossibleResult, Vec<String>)>();
     let cancel_token = Arc::new(AtomicBool::new(false));
 
@@ -20,6 +20,7 @@ pub fn study_safety(problem: &SafetyVerification) -> (PossibleResult, Vec<String
         "ffsol-nolinear",
         "cvc5",
         "z3",
+        "civer",
     ];
 
     let n_solvers = solvers.len();
@@ -48,6 +49,7 @@ pub fn study_safety(problem: &SafetyVerification) -> (PossibleResult, Vec<String
                     ),
                     "cvc5" => cvc5_interface::study_safety_with_cancel(&problem_clone, &cancel_token),
                     "z3" => z3_interface::study_safety_with_cancel(&problem_clone, &cancel_token),
+                    "civer" => civer_interface::study_safety_with_cancel(&problem_clone, &cancel_token),
                     _ => (PossibleResult::UNKNOWN, vec!["UNKNOWN SOLVER IN ALL MODE\n".to_string()]),
                 };
 

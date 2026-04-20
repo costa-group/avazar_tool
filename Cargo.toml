@@ -2,7 +2,6 @@
 members = [
     "circom_algebra",
     "constant_tracking",
-    "civer",
     "utils",
     "zk-genver",
     "circuits_and_constraints",

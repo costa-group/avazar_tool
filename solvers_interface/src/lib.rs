@@ -1,3 +1,4 @@
+pub mod civer_interface;
 pub mod picus_interface;
 pub mod ffsol_interface;
 pub mod cvc5_interface;
