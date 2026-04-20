@@ -48,6 +48,8 @@ fn decompose_circuit_and_return_dagnodes<'a, C: Constraint, S: Circuit<C>>(
         let graph: Box<dyn CanLeiden> = shared_signal_graph(circuit, decompose_options.graph_backend, decompose_options.debug);
         
         timing_info.graph_construction = Some(graph_construction_timer.elapsed().as_secs_f32());
+        timing_info.total += timing_info.graph_construction.unwrap();
+
         if decompose_options.debug > 0 {println!("LOG: Finished graph construction in {:?}s", timing_info.graph_construction.unwrap());}
 
         // Partition Graph
