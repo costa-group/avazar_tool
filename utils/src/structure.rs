@@ -53,8 +53,12 @@ pub struct StructureReader {
     pub nodes: Vec<NodeInfo>, //all the nodes of the circuit, position of the node is not the position.
     pub equivalency_local: Option<Vec<Vec<usize>>>, //equivalence classes, each inner vector is a class
     pub equivalency_structural: Option<Vec<Vec<usize>>>, //equivalence classes, each inner vector is a class
+}
 
- }
+pub struct WeightedArcs<T> {
+    pub original_nodes: Vec<T>,
+    pub arcs: Vec<(T, T, f64)>
+}
 
 pub fn print_node_info(node: &NodeInfo, constraints: &Vec<Constraint<usize>>){
     println!("Input signals: {:?}", node.input_signals);

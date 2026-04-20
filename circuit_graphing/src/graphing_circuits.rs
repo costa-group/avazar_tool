@@ -1,5 +1,5 @@
 use combinatorial::Combinations;
-use std::collections::BTreeMap;
+use rustc_hash::FxHashMap;
 use std::time::{Instant};
 
 use graphrs::IdentityIndexer;
@@ -10,16 +10,17 @@ use circuits_and_constraints::circuit::Circuit;
 use circuits_and_constraints::constraint::Constraint;
 use circuits_and_constraints::utils::signals_to_constraints_with_them;
 use utils::small_utilities::GraphBackend;
+use utils::structure::WeightedArcs;
 
 use crate::leiden_clustering::CanLeiden;
 
 
-fn get_weighted_arcs<C: Constraint>(circ: &impl Circuit<C>, debug: usize) -> BTreeMap<[usize;2], usize> {
+fn get_weighted_arcs<C: Constraint>(circ: &impl Circuit<C>, debug: usize) -> FxHashMap<[usize;2], usize> {
 
     let signal_to_coni_timer = Instant::now();
     let signal_to_coni = signals_to_constraints_with_them(&circ.get_constraints(), None, None);
     if debug > 1 {println!("LOG: finished signal_to_coni calculation in {:?}s", signal_to_coni_timer.elapsed().as_secs_f32());}
-    let mut weights: BTreeMap<[usize;2], usize> = BTreeMap::new();
+    let mut weights: FxHashMap<[usize;2], usize> = FxHashMap::default();
 
     let weights_timer = Instant::now();
     for pair in signal_to_coni.into_values().flat_map(|conis| Combinations::of_size(conis, 2)) {
@@ -39,26 +40,10 @@ fn shared_signal_graph_xgraph<C: Constraint>(circ: &impl Circuit<C>, debug: usiz
     graph
 }
 
-fn shared_signal_graph_graphrs<C: Constraint>(circ: &impl Circuit<C>, debug: usize) -> RSGraph<usize, IdentityIndexer> {
+fn shared_signal_graph_graphrs<C: Constraint>(circ: &impl Circuit<C>, debug: usize) -> WeightedArcs<usize> {
 
     let weights = get_weighted_arcs(circ, debug);
-    let mut graph = RSGraph::new(GraphSpecs::undirected_create_missing(), IdentityIndexer);
-    if debug > 1 {println!("LOG: now adding {:?} edges into graph", weights.len())};
-    let mut i = 0;
-    let mut j = 0;
-    let adding_edges_timer = Instant::now();
-    for (pair, val) in weights.into_iter() {
-        let _ = graph.add_edge((pair[0], pair[1], val as f64));
-        if debug > 1 {
-            if i >= 1000000 {
-                j += 1; i = 0;
-                println!("LOG: Added {:?} million edges in {:?}s", j, adding_edges_timer.elapsed().as_secs_f32());
-            }
-            i += 1;
-        }
-    }
-
-    graph
+    WeightedArcs {original_nodes: (0..circ.n_constraints()).collect(), arcs: weights.into_iter().map(|([k0, k1], w)| (k0, k1, w as f64)).collect()}
 }
 
 pub fn shared_signal_graph<C: Constraint>(circ: &impl Circuit<C>, backend: GraphBackend, debug: usize) -> Box<dyn CanLeiden> {
