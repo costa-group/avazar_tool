@@ -263,7 +263,7 @@ pub fn handling_ffsol_call(
     
 
     let command_args = config.build_args(&new_file_name);
-    let mut child = unsafe { Command::new("/home/clara/circom/proving_unsat/copy_clean/src/ffsol")
+    let mut child = unsafe { Command::new("ffsol")
         .args(command_args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

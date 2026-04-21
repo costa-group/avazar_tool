@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet, BTreeMap};
+use std::collections::HashSet;
 use solvers_interface::{CorrectnessVerification, PossibleResult, PossibleSolver};
 use crate::Input;
 use crate::processing_utils::*;
