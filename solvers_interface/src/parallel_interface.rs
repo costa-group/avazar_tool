@@ -2,9 +2,10 @@ use crate::{PossibleResult, SafetyVerification};
 use crate::{civer_interface, ffsol_interface, cvc5_interface, z3_interface};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
+use std::sync::mpsc::RecvTimeoutError;
 use std::sync::Arc;
 use std::thread;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 /// Runs FFSOL, CVC5, Z3, and CIVER simultaneously and returns the first decisive
 /// result (VERIFIED or FAILED). If all solvers return UNKNOWN the function
@@ -61,21 +62,46 @@ pub fn study_safety(problem: &SafetyVerification) -> (PossibleResult, Vec<String
         // Close channel when all worker tx clones are dropped.
         drop(tx);
 
-        while let Ok((name, result, logs)) = rx.recv() {
-            match result {
-                PossibleResult::VERIFIED | PossibleResult::FAILED => {
+        let global_timeout = Duration::from_millis(problem.verification_timeout);
+
+        loop {
+            let elapsed = start.elapsed();
+            if elapsed >= global_timeout {
+                cancel_token.store(true, Ordering::SeqCst);
+                fallback_logs.push(format!(
+                    "### ALL: GLOBAL TIMEOUT REACHED AFTER {:.6} seconds\n",
+                    elapsed.as_secs_f64()
+                ));
+                break;
+            }
+
+            let remaining = global_timeout - elapsed;
+            match rx.recv_timeout(remaining) {
+                Ok((name, result, logs)) => {
+                    match result {
+                        PossibleResult::VERIFIED | PossibleResult::FAILED => {
+                            cancel_token.store(true, Ordering::SeqCst);
+                            winner = Some((name, result, logs));
+                            winner_elapsed_secs = Some(start.elapsed().as_secs_f64());
+                            break;
+                        }
+                        _ => {
+                            unknown_count += 1;
+                            fallback_logs.push(format!("### ALL: {} returned UNKNOWN\n", name));
+                            fallback_logs.extend(logs);
+                            if unknown_count == n_solvers {
+                                break;
+                            }
+                        }
+                    }
+                }
+                Err(RecvTimeoutError::Timeout) => {
                     cancel_token.store(true, Ordering::SeqCst);
-                    winner = Some((name, result, logs));
-                    winner_elapsed_secs = Some(start.elapsed().as_secs_f64());
+                    fallback_logs.push("### ALL: GLOBAL TIMEOUT WAITING FOR SOLVER RESPONSES\n".to_string());
                     break;
                 }
-                _ => {
-                    unknown_count += 1;
-                    fallback_logs.push(format!("### ALL: {} returned UNKNOWN\n", name));
-                    fallback_logs.extend(logs);
-                    if unknown_count == n_solvers {
-                        break;
-                    }
+                Err(RecvTimeoutError::Disconnected) => {
+                    break;
                 }
             }
         }
