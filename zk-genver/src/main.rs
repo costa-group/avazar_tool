@@ -9,6 +9,7 @@ use utils::structure::*;
 use solvers_interface::{PossibleResult, PossibleSolver};
 use input_user::Input;
 use std::path::PathBuf;
+use std::time::Instant;
 use crate::modular_reasoning::check_tags;
 use clustering::decompose_circuit::decompose_node;
 use utils::small_utilities::{EquivalenceMode, DecomposeOptions};
@@ -17,11 +18,34 @@ use crate::PossibleResult::VERIFIED;
 
 use ansi_term::Colour;
 
+struct VerificationStats {
+    all_times: Vec<std::time::Duration>,
+    verified_times: Vec<std::time::Duration>,
+    failed_times: Vec<std::time::Duration>,
+    unknown_times: Vec<std::time::Duration>,
+    fully_verified_decompositions: HashSet<usize>,
+    nodes_verified_with_extra_rounds: HashSet<usize>,
+}
+
+impl VerificationStats {
+    fn new() -> Self {
+        Self {
+            all_times: Vec::new(),
+            verified_times: Vec::new(),
+            failed_times: Vec::new(),
+            unknown_times: Vec::new(),
+            fully_verified_decompositions: HashSet::new(),
+            nodes_verified_with_extra_rounds: HashSet::new(),
+        }
+    }
+}
+
 struct ResultInfo{
     verified_nodes: HashSet<usize>,
     failed_nodes: HashSet<usize>,
     unknown_nodes: HashSet<usize>,
     unknown_undivisible_nodes: HashSet<usize>,
+    stats: VerificationStats,
     studied_nodes: HashMap<usize, PossibleResult>,
     total_constraints: usize,
     verified_constraints: usize,
@@ -188,6 +212,7 @@ fn start() -> Result<(), ()> {
         failed_nodes: HashSet::new(),
         unknown_nodes: HashSet::new(),
         unknown_undivisible_nodes: HashSet::new(),
+        stats: VerificationStats::new(),
         studied_nodes: HashMap::new(),
         total_constraints: 0,
         verified_constraints: 0,
@@ -300,7 +325,8 @@ fn process_node(
     let no_abstract_fails = false;
             
     // If the equivalence class of the node has not been studied, we process it.
-    let (result, _, n_rounds, logs, included_nodes) = check_tags(
+    let start = Instant::now();
+    let (result, _, n_rounds, extra_rounds_helped, logs, included_nodes) = check_tags(
         node,
         &field,
         timeout,
@@ -316,6 +342,20 @@ fn process_node(
         internal_solver,
         extra_rounds
     );
+    let elapsed = start.elapsed();
+    results.stats.all_times.push(elapsed);
+    match result {
+        PossibleResult::VERIFIED => results.stats.verified_times.push(elapsed),
+        PossibleResult::FAILED => results.stats.failed_times.push(elapsed),
+        PossibleResult::UNKNOWN => results.stats.unknown_times.push(elapsed),
+        _ => {}
+    }
+    if extra_rounds_helped {
+        results
+            .stats
+            .nodes_verified_with_extra_rounds
+            .insert(node.node_id);
+    }
         
         //for log in logs{
         //    println!("{}", log);
@@ -441,6 +481,7 @@ fn decompose_and_study(
         failed_nodes: HashSet::new(),
         unknown_nodes: HashSet::new(),
         unknown_undivisible_nodes: HashSet::new(),
+        stats: VerificationStats::new(),
         studied_nodes: HashMap::new(),
         total_constraints: 0,
         verified_constraints: 0,
@@ -484,7 +525,39 @@ fn decompose_and_study(
         );
     }
 
+    if new_structure.nodes.len() > 1
+        && new_results.verified_nodes.len() == new_structure.nodes.len()
+    {
+        results.stats.fully_verified_decompositions.insert(node_id);
+    }
+
     println!("LOG: studied the new nodes -> verified {}", new_results.verified_nodes.len());
+    results
+        .stats
+        .all_times
+        .extend(new_results.stats.all_times.iter().cloned());
+    results
+        .stats
+        .verified_times
+        .extend(new_results.stats.verified_times.iter().cloned());
+    results
+        .stats
+        .failed_times
+        .extend(new_results.stats.failed_times.iter().cloned());
+    results
+        .stats
+        .unknown_times
+        .extend(new_results.stats.unknown_times.iter().cloned());
+    results
+        .stats
+        .nodes_verified_with_extra_rounds
+        .extend(
+            new_results
+                .stats
+                .nodes_verified_with_extra_rounds
+                .iter()
+                .cloned(),
+        );
 
     let mut index = 0;
     for (node_id, result) in new_results.studied_nodes{
@@ -760,5 +833,127 @@ fn print_pretty_results(results: &ResultInfo){
 
     }
 
+    let total_verified = results.verified_nodes.len();
+    let total_failed = results.failed_nodes.len();
+    let total_timeouts = results.unknown_nodes.len() + results.unknown_undivisible_nodes.len();
 
+    println!("--------------------------------------------");
+    println!("--------------- FINAL METRICS --------------");
+    println!("--------------------------------------------");
+    println!("Total VERIFIED nodes: {}", total_verified);
+    println!("Total FAILED nodes: {}", total_failed);
+    println!("Total TIMEOUTS: {}", total_timeouts);
+
+    if results.stats.all_times.is_empty() {
+        println!("Verification time stats: no verifications were executed.");
+    } else {
+        let min_time = results
+            .stats
+            .all_times
+            .iter()
+            .min()
+            .cloned()
+            .unwrap();
+        let max_time = results
+            .stats
+            .all_times
+            .iter()
+            .max()
+            .cloned()
+            .unwrap();
+        let total_secs: f64 = results
+            .stats
+            .all_times
+            .iter()
+            .map(|d| d.as_secs_f64())
+            .sum();
+        let avg_time = std::time::Duration::from_secs_f64(
+            total_secs / results.stats.all_times.len() as f64,
+        );
+
+        println!(
+            "Verification time stats: avg={}, min={}, max={}",
+            format_duration(avg_time),
+            format_duration(min_time),
+            format_duration(max_time)
+        );
+    }
+
+    print_duration_stats(
+        "VERIFIED nodes time stats",
+        &results.stats.verified_times,
+    );
+    print_duration_stats(
+        "FAILED nodes time stats",
+        &results.stats.failed_times,
+    );
+    print_duration_stats(
+        "UNKNOWN nodes time stats",
+        &results.stats.unknown_times,
+    );
+
+    println!(
+        "Number of nodes proved thanks to decomposition: {}",
+        results.stats.fully_verified_decompositions.len()
+    );
+    if !results.stats.fully_verified_decompositions.is_empty() {
+        let mut nodes_decomposition_helped: Vec<usize> = results
+            .stats
+            .fully_verified_decompositions
+            .iter()
+            .copied()
+            .collect();
+        nodes_decomposition_helped.sort_unstable();
+        println!(
+            "Node ids verified thanks to decomposition: {:?}",
+            nodes_decomposition_helped
+        );
+    }
+    println!(
+        "Checks where extra rounds helped reach VERIFIED: {}",
+        results.stats.nodes_verified_with_extra_rounds.len()
+    );
+    if !results.stats.nodes_verified_with_extra_rounds.is_empty() {
+        let mut nodes_helped: Vec<usize> = results
+            .stats
+            .nodes_verified_with_extra_rounds
+            .iter()
+            .copied()
+            .collect();
+        nodes_helped.sort_unstable();
+        println!(
+            "Node ids verified thanks to extra rounds: {:?}",
+            nodes_helped
+        );
+    }
+
+
+}
+
+fn print_duration_stats(label: &str, durations: &[std::time::Duration]) {
+    if durations.is_empty() {
+        println!("{}: no verifications were executed.", label);
+        return;
+    }
+
+    let min_time = durations.iter().min().cloned().unwrap();
+    let max_time = durations.iter().max().cloned().unwrap();
+    let total_secs: f64 = durations.iter().map(|d| d.as_secs_f64()).sum();
+    let avg_time = std::time::Duration::from_secs_f64(total_secs / durations.len() as f64);
+
+    println!(
+        "{}: avg={}, min={}, max={}",
+        label,
+        format_duration(avg_time),
+        format_duration(min_time),
+        format_duration(max_time)
+    );
+}
+
+fn format_duration(duration: std::time::Duration) -> String {
+    if duration.as_secs_f64() >= 1.0 {
+        format!("{:.3}s", duration.as_secs_f64())
+    } else {
+        format!("{:.3}ms", duration.as_secs_f64() * 1_000.0)
+    }
 }

@@ -27,7 +27,7 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
         internal_solver: &str,
         extra_rounds: usize,
     ) 
-    -> (PossibleResult, f64, usize, Vec<String>, HashSet<usize>){
+    -> (PossibleResult, f64, usize, bool, Vec<String>, HashSet<usize>){
         
         let mut signals: LinkedList<usize> = node_info.signals.clone().into_iter().collect(); 
         
@@ -39,6 +39,7 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
         let mut logs =  Vec::new();
         let mut n_rounds = 0;
         let mut unknown_rounds = 0;
+        let mut used_extra_rounds = false;
         let mut implications_safety: Vec<SafetyImplication> = Vec::new();
 
 
@@ -71,6 +72,9 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
         let mut finished_verification = match result_safety{
             PossibleResult::UNKNOWN =>{
                 unknown_rounds += 1;
+                if unknown_rounds <= extra_rounds {
+                    used_extra_rounds = true;
+                }
                 unknown_rounds > extra_rounds
             },
             PossibleResult::FAILED =>{
@@ -101,6 +105,9 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
             finished_verification = match result_safety{
                 PossibleResult::UNKNOWN =>{
                     unknown_rounds += 1;
+                    if unknown_rounds <= extra_rounds {
+                        used_extra_rounds = true;
+                    }
                     unknown_rounds > extra_rounds
                 },
                 PossibleResult::FAILED =>{
@@ -113,7 +120,15 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
         } 
         let duration = inicio.elapsed();  
         pretty_print_result(&mut logs, duration, n_rounds, &result_safety);
-        (result_safety, duration.as_secs_f64(), n_rounds, logs,verification.added_nodes)
+        let extra_rounds_helped = used_extra_rounds && result_safety == PossibleResult::VERIFIED;
+        (
+            result_safety,
+            duration.as_secs_f64(),
+            n_rounds,
+            extra_rounds_helped,
+            logs,
+            verification.added_nodes,
+        )
         
     }
 
