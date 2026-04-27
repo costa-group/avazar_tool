@@ -1,4 +1,6 @@
 use std::collections::{HashMap, HashSet};
+use rustc_hash::FxHashSet;
+
 use std::borrow::Borrow;
 use itertools::Itertools;
 use std::time::{Instant};
@@ -28,7 +30,7 @@ pub fn dag_from_partition<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
     let input_parts: HashSet<usize> = (0..n_parts).filter(|key| part_to_signals_arr[*key].iter().any(|sig| circ.signal_is_input(sig))).collect();
     let output_parts: HashSet<usize> = (0..n_parts).filter(|key| part_to_signals_arr[*key].iter().any(|sig| circ.signal_is_output(sig))).collect();
 
-    let NO_PART = usize::MAX;
+    const NO_PART: usize = usize::MAX;
     let mut coni_to_part: Vec<usize> = vec![NO_PART; circ.n_constraints()];
     for (idx, part) in partition.iter().enumerate() {
         for coni in part.iter().copied() {
@@ -49,8 +51,8 @@ pub fn dag_from_partition<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
     let adjacencies: Vec<Vec<usize>> = (0..n_parts).map(|idx| 
         {let mut neighbours =  Vec::new();
         for part in part_to_signals_arr[idx].iter().copied().flat_map(|sig| sig_to_coni[&sig].iter().copied().map(|coni| coni_to_part[coni])).filter(|opart_id| *opart_id != idx) {
-            if last_seen_at[part] != idx {
-                last_seen_at[part] = idx;
+            if last_seen_at[part] != idx + 1 {
+                last_seen_at[part] = idx + 1;
                 neighbours.push(part);
             }
         }
@@ -93,13 +95,13 @@ pub fn dag_from_partition<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
     // TODO: rethink fuzzy adjacencies...
 
     let mut arcs : Vec<(usize, usize)> = Vec::new();
-    let mut fuzzy_adjacencies: HashMap<usize, HashSet<usize>> = HashMap::new();
+    let mut fuzzy_adjacencies: HashMap<usize, FxHashSet<usize>> = HashMap::new();
 
     fn lt(x: (usize, usize), y: (usize, usize)) -> bool {x.0 < y.0 && (y.1 <= x.1) || x.0 == y.0 && (y.1 < x.1)}
 
     for (idx, adjacent) in adjacencies.into_iter().enumerate() {for idy in adjacent.into_iter() {
         if lt(part_to_preorder[idx], part_to_preorder[idy]) {arcs.push((idx, idy));}
-        else if !lt(part_to_preorder[idy], part_to_preorder[idx]) {fuzzy_adjacencies.entry(idx).or_insert_with(|| HashSet::new()).insert(idy);}
+        else if !lt(part_to_preorder[idy], part_to_preorder[idx]) {fuzzy_adjacencies.entry(idx).or_insert_with(|| FxHashSet::default()).insert(idy);}
     }}
 
     if debug > 1 { println!("LOG: Total fuzzy edges {:?}, max-edges {:?}", fuzzy_adjacencies.values().map(|set| set.len()).sum::<usize>(), fuzzy_adjacencies.values().map(|set| set.len()).max()); }
