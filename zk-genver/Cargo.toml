@@ -11,8 +11,8 @@ categories = ["compilers"]
 [dependencies]
 circom_algebra = {path = "../circom_algebra"}
 solvers_interface = {path = "../solvers_interface"}
-civer = {path = "../civer"}
 utils = {path = "../utils"}
+clustering = {path = "../clustering"}
 clap = "2.33.0"
 ansi_term = "0.12.1"
 wast = "39.0.0"

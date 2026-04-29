@@ -1,30 +1,46 @@
-use serde::Deserialize;
+use serde::{Serialize,Deserialize};
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
 use std::error::Error;
+use std::ops::AddAssign;
+use circom_algebra::algebra::Constraint;
 
-
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize,Serialize, Debug)]
 pub struct TimingInfo{
+    pub graph_construction: Option<f32>,
     pub clustering: f32,
     pub dag_construction: f32,
     pub equivalency: f32,
     pub total: f32,
 }
 
-#[derive(Deserialize, Debug)]
+impl AddAssign for TimingInfo {
+    
+    fn add_assign(&mut self, other: Self) -> () {
+        self.graph_construction = self.graph_construction.map(|x| other.graph_construction.map(|y| x + y)).flatten();
+        self.clustering += other.clustering;
+        self.dag_construction += other.dag_construction;
+        self.equivalency += other.equivalency;
+        self.total += other.total;
+    }
+} 
+
+#[derive(Deserialize,Serialize, Debug, Clone)]
 pub struct NodeInfo{
     pub node_id: usize,
+    pub node_name:String,
     pub constraints: Vec<usize>, //ids of the constraints
     pub input_signals: Vec<usize>,
     pub output_signals: Vec<usize>,
     pub signals: Vec<usize>, 
+    pub is_custom: bool,
+    pub predecessors: Vec<usize>, //ids of the predecessors
     pub successors: Vec<usize> //ids of the successors 
 
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Serialize, Debug)]
 pub struct StructureInfo {
     pub timing: TimingInfo,
     pub nodes: Vec<NodeInfo>, //all the nodes of the circuit, position of the node is not the position.
@@ -32,16 +48,27 @@ pub struct StructureInfo {
     pub structural_equivalency: Vec<Vec<usize>>, //equivalence classes, each inner vector is a class
 }
 
-#[derive(Deserialize, Debug)]
-struct StructureReader {
-    timing: TimingInfo,
-    nodes: Vec<NodeInfo>, //all the nodes of the circuit, position of the node is not the position.
-    equivalency_local: Option<Vec<Vec<usize>>>, //equivalence classes, each inner vector is a class
-    equivalency_structural: Option<Vec<Vec<usize>>>, //equivalence classes, each inner vector is a class
+#[derive(Serialize, Deserialize, Debug)]
+pub struct StructureReader {
+    pub timing: TimingInfo,
+    pub nodes: Vec<NodeInfo>, //all the nodes of the circuit, position of the node is not the position.
+    pub equivalency_local: Option<Vec<Vec<usize>>>, //equivalence classes, each inner vector is a class
+    pub equivalency_structural: Option<Vec<Vec<usize>>>, //equivalence classes, each inner vector is a class
 
  }
 
+pub fn print_node_info(node: &NodeInfo, constraints: &Vec<Constraint<usize>>){
+    println!("Input signals: {:?}", node.input_signals);
+    println!("Output signals: {:?}", node.output_signals);
+    println!("Signals: {:?}", node.signals);
+    println!("Successors: {:?}", node.successors);
+    println!("Is custom: {}", node.is_custom);
 
+    for c in &node.constraints{
+        let c = &constraints[*c];
+        c.print_pretty_constraint();
+    }
+}
 
 pub fn read_structure<P: AsRef<Path>>(path: P) -> Result<StructureInfo, Box<dyn Error>> {
     // Open the file in read-only mode with buffer.
@@ -51,6 +78,12 @@ pub fn read_structure<P: AsRef<Path>>(path: P) -> Result<StructureInfo, Box<dyn 
     // Read the JSON contents of the file as an instance of `StructureInfo`.
     let u: StructureReader = serde_json::from_reader(reader)?;
 
+    Ok(transform_structure_reader(u))
+}
+
+pub fn transform_structure_reader(
+    u: StructureReader
+) -> StructureInfo{
     let mut local_equivalence = Vec::new();
     if u.equivalency_local.is_some() { 
     	local_equivalence = u.equivalency_local.unwrap(); 
@@ -68,13 +101,13 @@ pub fn read_structure<P: AsRef<Path>>(path: P) -> Result<StructureInfo, Box<dyn 
     	structural_equivalence = local_equivalence.clone();
     }
 
-    let structure_info = StructureInfo {
+    StructureInfo {
         timing: u.timing,
         nodes: u.nodes,
         local_equivalency: local_equivalence,
         structural_equivalency: structural_equivalence,
-    };
-    Ok(structure_info)
+    }
+
 }
 
 
@@ -88,17 +121,21 @@ pub fn generate_empty_structure(
 
     let aux_timing = TimingInfo{
         clustering: 0.0,
+        graph_construction: Some(0.0),
         dag_construction: 0.0,
         equivalency: 0.0,
         total: 0.0
     };
 
     let node = NodeInfo{
+        node_name: "main".to_string(),
         node_id: 0,
         constraints: (0..n_constraints).collect(),
         output_signals: (1.. n_outputs + 1).collect(),
         input_signals: (n_outputs + 1..n_outputs + n_inputs + 1).collect(),
         signals: (1..n_signals).collect(),
+        is_custom: false,
+        predecessors: vec![],
         successors: vec![]
     };
     StructureInfo{

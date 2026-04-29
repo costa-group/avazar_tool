@@ -1,0 +1,15 @@
+[package]
+name = "clustering"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+circuits_and_constraints = {path = "../circuits_and_constraints" }
+circuit_graphing = {path = "../circuit_graphing"}
+circom_algebra = {path = "../circom_algebra"}
+utils = {path = "../utils"}
+ansi_term = "0.12.1"
+serde = { version = "1.0.104", features = ["derive"] }
+serde_json = "1.0.48"
+clap = {version = "4.5.53", features = ["derive"] }
+strum_macros = {version = "0.27.2"}

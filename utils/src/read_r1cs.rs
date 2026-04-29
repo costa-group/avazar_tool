@@ -79,6 +79,14 @@ where
         let mut id = vec![0; 4];
         reader.read_exact(&mut id)?;
         let factor = read_bigint(reader, field_size)?;
+
+        /* 
+         let factor_aux = if factor > BigInt::from(65521) {
+             BigInt::from(65521)-"18446744069414584321".parse::<BigInt>().unwrap()+factor
+         } else{
+              factor
+         };
+        */
         linear_combination.insert(T::from(id), factor);
     }
     Ok(linear_combination)
@@ -126,9 +134,9 @@ pub struct HeaderData {
 }
 
 
-type Constraint = HashMap<usize, BigInt>;
-type ConstraintList = Vec<(Constraint, Constraint, Constraint)>;
-type SignalList = Vec<usize>;
+pub type Constraint = HashMap<usize, BigInt>;
+pub type ConstraintList = Vec<(Constraint, Constraint, Constraint)>;
+pub type SignalList = Vec<usize>;
 pub struct ConstraintSection {
     reader: BufReader<File>,
     number_of_constraints: usize,
@@ -445,6 +453,40 @@ impl R1CSData {
             signals: SignalList::new(),
             custom_gates_used_data: None,
             custom_gates_applied_data: None,
+        }
+    }
+
+    pub fn from(
+        field: BigInt,
+        field_size: usize,
+        total_wires: usize,
+        public_outputs: usize,
+        public_inputs: usize,
+        private_inputs: usize,
+        number_of_labels: usize,
+        number_of_constraints: usize,
+        constraints: ConstraintList,
+        signals: SignalList,
+        custom_gates: bool,
+        custom_gates_used_data: Option<CustomGatesUsedData>,
+        custom_gates_applied_data: Option<CustomGatesAppliedData>
+    ) -> Self {
+        R1CSData {
+            header_data: HeaderData {
+                field: field,
+                field_size: field_size,
+                total_wires: total_wires,
+                public_outputs: public_outputs,
+                public_inputs: public_inputs,
+                private_inputs: private_inputs,
+                number_of_labels: number_of_labels,
+                number_of_constraints: number_of_constraints,
+            },
+            custom_gates: custom_gates,
+            constraints: constraints,
+            signals: signals,
+            custom_gates_used_data: custom_gates_used_data,
+            custom_gates_applied_data: custom_gates_applied_data,
         }
     }
 }
