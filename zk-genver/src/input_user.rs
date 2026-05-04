@@ -200,6 +200,8 @@ mod input_processing {
                         Ok(FFSOL)
                     } else if solver == "cvc5"{
                         Ok(CVC5)
+                    } else if solver == "yices"{
+                        Ok(YICES)
                     } else if solver == "z3"{
                         Ok(Z3)
                     } else if solver == "all"{
@@ -343,7 +345,7 @@ mod input_processing {
                     .long("solver")
                     .takes_value(true)
                     .hidden(false)
-                        .help("Solver to be used for the verification of the circuit. ZK-GENVER allows ffsol, cvc5, z3, picus, civer (default), and ALL")
+                        .help("Solver to be used for the verification of the circuit. ZK-GENVER allows ffsol, cvc5, yices, z3, picus, civer (default), and ALL")
                     .display_order(480)
             )
             .arg(

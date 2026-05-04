@@ -6,6 +6,7 @@ use crate::processing_utils::*;
 
 use solvers_interface::ffsol_interface;
 use solvers_interface::cvc5_interface;
+use solvers_interface::yices_interface;
 
 #[derive(Default)]
 pub struct ResultInfoCorrectness{
@@ -56,8 +57,8 @@ pub fn prove_correctness(user_input: Input) -> Result<(), ()> {
 
     let field = user_input.prime;
 
-    if !(user_input.solver_option==PossibleSolver::FFSOL||user_input.solver_option==PossibleSolver::CVC5){
-        println!("Z3, CIVER and PICUS cannot be used to check correctness. Use FFSOL or CVC5 instead");
+    if !(user_input.solver_option==PossibleSolver::FFSOL||user_input.solver_option==PossibleSolver::CVC5||user_input.solver_option==PossibleSolver::YICES){
+        println!("Z3, CIVER and PICUS cannot be used to check correctness. Use FFSOL, CVC5 or YICES instead");
         return Err(());
     };
 
@@ -119,6 +120,9 @@ fn call_prove_correctness(
             },
             PossibleSolver::CVC5=>{
                 cvc5_interface::study_correctness(problem)
+            },
+            PossibleSolver::YICES=>{
+                yices_interface::study_correctness(problem)
             }
             _ => unreachable!()
         }

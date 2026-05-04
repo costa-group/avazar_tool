@@ -2,6 +2,7 @@ pub mod civer_interface;
 pub mod picus_interface;
 pub mod ffsol_interface;
 pub mod cvc5_interface;
+pub mod yices_interface;
 pub mod z3_interface;
 pub mod parallel_interface;
 mod smt2_utils;
@@ -13,7 +14,7 @@ use circom_algebra::algebra::Constraint;
 
 #[derive(PartialEq, Eq, Clone, Copy)] 
 pub enum PossibleSolver{
-    PICUS, CIVER, FFSOL, CVC5, Z3, ALL
+    PICUS, CIVER, FFSOL, CVC5, YICES, Z3, ALL
 }
 
 
