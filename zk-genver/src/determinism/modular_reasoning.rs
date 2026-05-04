@@ -72,6 +72,7 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
 
         let (mut result_safety, mut logs_round) = prove_safety(&verification, solver);
 
+        let mut used_extra_rounds = false;
         let mut finished_verification = match result_safety{
             PossibleResult::UNKNOWN =>{
                 unknown_rounds += 1;

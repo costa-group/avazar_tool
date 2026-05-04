@@ -4,6 +4,7 @@ use std::collections::{HashMap, HashSet, BTreeMap};
 use circom_algebra::algebra::Constraint;
 use utils::read_original_structure::read_original_structure;
 use utils::structure::*;
+use utils::small_utilities::DecomposeOptions;
 use solvers_interface::{PossibleResult, PossibleSolver};
 use crate::Input;
 use crate::determinism::modular_reasoning::check_tags;
@@ -197,7 +198,7 @@ fn process_node(
     let no_abstract_fails = false;
             
     // If the equivalence class of the node has not been studied, we process it.
-    let (result, _, n_rounds, logs, included_nodes) = check_tags(
+    let (result, _, n_rounds, _extra_rounds_helped, logs, included_nodes) = check_tags(
         node,
         &field,
         timeout,
@@ -308,24 +309,20 @@ fn decompose_and_study(
             interface_aux_constraint
         );
     }
-    
+
+    let decompose_options = DecomposeOptions {
+        target_size: Some(target_size as f64),
+        equivalence_mode: equivalence_mode,
+        inverse_coni_mapping: Some(&constraints_original_index),
+        ..Default::default()
+    };
 
     let structure_reader = decompose_node(
         field, 
         &constraints_copy, 
         &node_info.input_signals, 
         &node_info.output_signals,
-        None,
-        Some(target_size as f64),
-        None,
-        equivalence_mode,
-        GraphBackend::GraphRS,
-        ClusteringPreprocessing::None,
-        Some(&constraints_original_index),
-        None,
-        None, // minimum_equivalence_size: Option<usize> -- flag for minimum size to try equivalence
-        None, // equivalence_comparison_budget: Option<usize> -- flag for maximum number of comparisons made -- use only one
-        false
+        decompose_options
     );  
 
 
