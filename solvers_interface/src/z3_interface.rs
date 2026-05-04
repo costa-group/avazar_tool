@@ -2,6 +2,7 @@ use crate::{PossibleResult,SafetyVerification,EquivalenceVerification};
 
 use std::fs::File;
 use std::io::Write;
+use std::str::FromStr;
 use rand::Rng;
 
 use z3::Config;
@@ -98,7 +99,16 @@ pub fn try_prove_safety_with_z3_cancel(
     cancel_flag: &AtomicBool,
 ) -> (PossibleResult,Vec<String>) {
 
-    try_prove_safety_with_z3_internal(problem, Some(cancel_flag))
+    let mut cfg = Config::new();
+    cfg.set_timeout_msec(problem.verification_timeout);
+
+    with_z3_config(
+        &cfg,
+        || {
+            try_prove_safety_with_z3_internal(problem, Some(cancel_flag))
+        }
+
+    )
 }
 
 fn try_prove_safety_with_z3_internal(
@@ -107,10 +117,7 @@ fn try_prove_safety_with_z3_internal(
 ) -> (PossibleResult,Vec<String>) {
 
     let logs = Vec::new();
-    let mut cfg = Config::new();
-    cfg.set_timeout_msec(problem.verification_timeout);
-    let ctx = Context::new(&cfg);
-    let mut solver = Solver::new(&ctx);
+    let mut solver = Solver::new();
     let mut signals_1_to_smt_rep = HashMap::new();
     let mut signals_2_to_smt_rep = HashMap::new();
 
@@ -165,7 +172,7 @@ fn try_prove_safety_with_z3_internal(
 
     let finished = AtomicBool::new(false);
     let result = thread::scope(|scope| {
-        let handle = ctx.handle();
+        let handle = solver.get_context().handle();
         let finished_ref = &finished;
         if let Some(cancel_flag_ref) = cancel_flag {
             scope.spawn(move || {
@@ -193,17 +200,26 @@ fn try_prove_safety_with_z3_internal(
 }
 
 
-
-
 pub fn try_prove_equivalence_with_z3(
+problem: &EquivalenceVerification
+) -> (PossibleResult,Vec<String>) {
+
+    let mut cfg = Config::new();
+    cfg.set_timeout_msec(problem.verification_timeout);
+
+    with_z3_config(
+        &cfg,
+        || {internal_try_prove_equivalence_with_z3(problem)}
+    )
+
+}
+
+fn internal_try_prove_equivalence_with_z3(
     problem: &EquivalenceVerification
 ) -> (PossibleResult,Vec<String>) {
 
     let logs = Vec::new();
-    let mut cfg = Config::new();
-    cfg.set_timeout_msec(problem.verification_timeout);
-    let ctx = Context::new(&cfg);
-    let mut solver = Solver::new(&ctx);
+    let mut solver = Solver::new();
     let mut signals_1_to_smt_rep = HashMap::new();
     let mut signals_2_to_smt_rep = HashMap::new();
 
@@ -313,16 +329,15 @@ pub fn try_prove_safety_with_z3(
 }
 
 
-pub fn declare_signal<'a>(
-    solver: &z3::Solver<'a>,
+pub fn declare_signal(
+    solver: &z3::Solver,
     signal_name: String,
     field: &BigInt
-) -> z3::ast::Int<'a> {
-    let ctx: &Context = solver.get_context();
-    let signal = z3::ast::Int::new_const(ctx, signal_name);
+) -> z3::ast::Int {
+    let signal = z3::ast::Int::new_const(signal_name);
 
-    let zero = z3::ast::Int::from_i64(ctx, 0);
-    let prime = z3::ast::Int::from_str(ctx, &field.to_string()).unwrap();
+    let zero = z3::ast::Int::from_i64(0);
+    let prime = z3::ast::Int::from_str(&field.to_string()).unwrap();
 
     solver.assert(&signal.ge(&zero)); // >=0
     solver.assert(&signal.lt(&prime)); // < prime
@@ -337,57 +352,54 @@ pub fn declare_constraint(
     signals_to_z3: &HashMap<usize, z3::ast::Int>,
     field: &BigInt,
 ) {
-    let ctx: &Context = solver.get_context();
-
-    let mut value_a = z3::ast::Int::from_u64(ctx, 0);
-    let mut value_b = z3::ast::Int::from_u64(ctx, 0);
-    let mut value_c = z3::ast::Int::from_u64(ctx, 0);
+    let mut value_a = z3::ast::Int::from_u64(0);
+    let mut value_b = z3::ast::Int::from_u64(0);
+    let mut value_c = z3::ast::Int::from_u64(0);
 
     for (signal, value) in constraint.a() {
         if *signal == 0 {
-            value_a += &z3::ast::Int::from_str(&ctx, &value.to_string()).unwrap()
+            value_a += &z3::ast::Int::from_str(&value.to_string()).unwrap()
         } else {
             value_a += signals_to_z3.get(signal).unwrap()
-                * &z3::ast::Int::from_str(&ctx, &value.to_string()).unwrap();
+                * &z3::ast::Int::from_str(&value.to_string()).unwrap();
         }
     }
     for (signal, value) in constraint.b() {
         if *signal == 0 {
-            value_b += &z3::ast::Int::from_str(&ctx, &value.to_string()).unwrap()
+            value_b += &z3::ast::Int::from_str(&value.to_string()).unwrap()
         } else {
             value_b += signals_to_z3.get(signal).unwrap()
-                * &z3::ast::Int::from_str(&ctx, &value.to_string()).unwrap();
+                * &z3::ast::Int::from_str(&value.to_string()).unwrap();
         }
     }
     for (signal, value) in constraint.c() {
         if *signal == 0 {
-            value_c += &z3::ast::Int::from_str(&ctx, &value.to_string()).unwrap()
+            value_c += &z3::ast::Int::from_str(&value.to_string()).unwrap()
         } else {
             value_c += signals_to_z3.get(signal).unwrap()
-                * &z3::ast::Int::from_str(&ctx, &value.to_string()).unwrap();
+                * &z3::ast::Int::from_str(&value.to_string()).unwrap();
         }
     }
 
-    let prime = z3::ast::Int::from_str(ctx, &field.to_string()).unwrap();
+    let prime = z3::ast::Int::from_str(&field.to_string()).unwrap();
     let value_left = (value_c - (value_a * value_b)).modulo(&prime);
-    let value_right = z3::ast::Int::from_i64(ctx, 0);
-    solver.assert(&value_left._eq(&value_right));
+    let value_right = z3::ast::Int::from_i64(0);
+    solver.assert(&value_left.eq(&value_right));
 
 }
 
-pub fn declare_all_signals_equal<'a>(
-    solver: &z3::Solver<'a>,
+pub fn declare_all_signals_equal(
+    solver: &z3::Solver,
     signals_1: &Vec<usize>, 
-    signal_1_to_z3: &HashMap<usize,z3::ast::Int<'a>>, 
+    signal_1_to_z3: &HashMap<usize,z3::ast::Int>, 
     signals_2: &Vec<usize>, 
-    signal_2_to_z3: &HashMap<usize,z3::ast::Int<'a>>
-)->z3::ast::Bool<'a>{
-    let ctx: &Context = solver.get_context();
-    let mut all_equal = z3::ast::Bool::from_bool(&ctx, true);
+    signal_2_to_z3: &HashMap<usize,z3::ast::Int>
+)->z3::ast::Bool{
+    let mut all_equal = z3::ast::Bool::from_bool(true);
     for i in 0..signals_1.len(){
         let s_1 = signal_1_to_z3.get(&signals_1[i]).unwrap();
         let s_2 = signal_2_to_z3.get(&signals_2[i]).unwrap();
-        all_equal &= s_1._eq(s_2);
+        all_equal &= s_1.eq(s_2);
 
     }
 
@@ -402,8 +414,6 @@ pub fn apply_deduction_assigned(
     signals_to_smt_symbols_1: &HashMap<usize, z3::ast::Int>,
     signals_to_smt_symbols_2: &HashMap<usize, z3::ast::Int>,
 ) {
-        let ctx: &Context = solver.get_context();
-
         let all_signals = c.take_signals();
         let only_linear_signals = c.take_only_linear_signals();
 
@@ -414,15 +424,15 @@ pub fn apply_deduction_assigned(
 
             let value_right_1 = signals_to_smt_symbols_1.get(s_deduced).unwrap();
             let value_right_2 = signals_to_smt_symbols_2.get(s_deduced).unwrap();
-            let right_side = value_right_1._eq(&value_right_2);
+            let right_side = value_right_1.eq(value_right_2);
 
-            let mut left_side = z3::ast::Bool::from_bool(&ctx, true);
+            let mut left_side = z3::ast::Bool::from_bool(true);
 
             for s in &all_signals {
                 if *s != s_deduced {
                     let value_s_1 = signals_to_smt_symbols_1.get(s).unwrap();
                     let value_s_2 = signals_to_smt_symbols_2.get(s).unwrap();
-                    let new_left_side = value_s_1._eq(&value_s_2);
+                    let new_left_side = value_s_1.eq(value_s_2);
 
                     left_side &= new_left_side;
                 }

@@ -114,7 +114,8 @@ fn try_prove_safety_with_z3_internal(
                 deductions,
                 field,
                 opt_apply_deduction_assigned,
-                logs
+                logs,
+                cancel_flag
             )
         }
     )
@@ -133,6 +134,7 @@ fn internal_try_prove_safety_with_z3(
     field: &BigInt,
     opt_apply_deduction_assigned: bool,
     logs: &mut Vec<String>,
+    cancel_flag: Option<&AtomicBool>,
 ) -> PossibleResult {
     
 
@@ -259,7 +261,7 @@ fn internal_try_prove_safety_with_z3(
 
     let finished = AtomicBool::new(false);
     let check_result = thread::scope(|scope| {
-        let handle = ctx.handle();
+        let handle = solver.get_context().handle();
         let finished_ref = &finished;
         if let Some(cancel_flag_ref) = cancel_flag {
             scope.spawn(move || {
