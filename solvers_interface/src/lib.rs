@@ -3,6 +3,7 @@ pub mod picus_interface;
 pub mod ffsol_interface;
 pub mod cvc5_interface;
 pub mod yices_interface;
+pub mod nia_z3_interface;
 pub mod z3_interface;
 pub mod parallel_interface;
 mod smt2_utils;
@@ -14,7 +15,7 @@ use circom_algebra::algebra::Constraint;
 
 #[derive(PartialEq, Eq, Clone, Copy)] 
 pub enum PossibleSolver{
-    PICUS, CIVER, FFSOL, CVC5, YICES, Z3, ALL
+    PICUS, CIVER, FFSOL, CVC5, YICES, NIAZ3, Z3, ALL
 }
 
 
@@ -51,6 +52,7 @@ pub struct SafetyVerification {
     pub verification_timeout: u64,
     pub added_nodes: HashSet<usize>,
     pub apply_deduction_assigned: bool,
+    pub include_niaz3_in_all: bool,
     pub verbose: bool
 }
 
@@ -66,6 +68,7 @@ impl SafetyVerification{
         field: &BigInt,
         verification_timeout: u64, 
         apply_deduction_assigned: bool,
+        include_niaz3_in_all: bool,
         verbose: bool
     ) -> SafetyVerification {
         let mut fixed_constraints = Vec::new();
@@ -85,6 +88,7 @@ impl SafetyVerification{
             verification_timeout, 
             added_nodes: HashSet::new(),
             apply_deduction_assigned,
+            include_niaz3_in_all,
             verbose
         }
     }

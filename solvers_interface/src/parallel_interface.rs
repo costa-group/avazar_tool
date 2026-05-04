@@ -1,5 +1,5 @@
 use crate::{PossibleResult, SafetyVerification};
-use crate::{civer_interface, ffsol_interface, cvc5_interface, yices_interface, z3_interface};
+use crate::{civer_interface, ffsol_interface, cvc5_interface, nia_z3_interface, yices_interface, z3_interface};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::mpsc::RecvTimeoutError;
@@ -8,15 +8,21 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 /// Runs FFSOL, CVC5, YICES, Z3, and CIVER simultaneously and returns the first decisive
+/// result (VERIFIED or FAILED). NIA-Z3 is included only when
+/// `problem.include_niaz3_in_all` is true.
 /// result (VERIFIED or FAILED). If all solvers return UNKNOWN the function
 /// returns UNKNOWN together with the merged logs.
 pub fn study_safety(problem: &SafetyVerification) -> (PossibleResult, Vec<String>) {
     let start = Instant::now();
-    println!("ALL: Starting parallel safety verification with FFSOL, FFSOL-NOLINEAR, CVC5, YICES, Z3, and CIVER...");
+    if problem.include_niaz3_in_all {
+        println!("ALL: Starting parallel safety verification with FFSOL, FFSOL-NOLINEAR, CVC5, YICES, NIA-Z3, Z3, and CIVER...");
+    } else {
+        println!("ALL: Starting parallel safety verification with FFSOL, FFSOL-NOLINEAR, CVC5, YICES, Z3, and CIVER...");
+    }
     let (tx, rx) = mpsc::channel::<(&'static str, PossibleResult, Vec<String>)>();
     let cancel_token = Arc::new(AtomicBool::new(false));
 
-    let solvers: &[&str] = &[
+    let mut solvers: Vec<&'static str> = vec![
         "ffsol",
         "ffsol-nolinear",
         "cvc5",
@@ -24,6 +30,9 @@ pub fn study_safety(problem: &SafetyVerification) -> (PossibleResult, Vec<String
         "z3",
         "civer",
     ];
+    if problem.include_niaz3_in_all {
+        solvers.push("nia-z3");
+    }
 
     let n_solvers = solvers.len();
     let mut winner: Option<(&'static str, PossibleResult, Vec<String>)> = None;
@@ -32,7 +41,7 @@ pub fn study_safety(problem: &SafetyVerification) -> (PossibleResult, Vec<String
     let mut fallback_logs: Vec<String> = Vec::new();
 
     thread::scope(|scope| {
-        for name in solvers {
+        for name in &solvers {
             let tx = tx.clone();
             let problem_clone = problem.clone();
             let cancel_token = Arc::clone(&cancel_token);
@@ -51,6 +60,7 @@ pub fn study_safety(problem: &SafetyVerification) -> (PossibleResult, Vec<String
                     ),
                     "cvc5" => cvc5_interface::study_safety_with_cancel(&problem_clone, &cancel_token),
                     "yices" => yices_interface::study_safety_with_cancel(&problem_clone, &cancel_token),
+                    "nia-z3" => nia_z3_interface::study_safety_with_cancel(&problem_clone, &cancel_token),
                     "z3" => z3_interface::study_safety_with_cancel(&problem_clone, &cancel_token),
                     "civer" => civer_interface::study_safety_with_cancel(&problem_clone, &cancel_token),
                     _ => (PossibleResult::UNKNOWN, vec!["UNKNOWN SOLVER IN ALL MODE\n".to_string()]),

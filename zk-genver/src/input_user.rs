@@ -12,6 +12,7 @@ pub struct Input {
     pub solver_option: PossibleSolver,
     pub flag_verbose: bool,
     pub apply_deduction_assigned: bool,
+    pub include_niaz3_in_all: bool,
     pub apply_predecessors: bool,
     pub apply_bidirectional: bool,
     pub prime: BigInt,
@@ -36,6 +37,7 @@ impl Input {
         let prime = input_processing::get_prime(&matches)?;
         let clustering_size = input_processing::get_clustering_size(&matches)?;
         let desactivate_deduction_assigned = input_processing::get_apply_deduction_assigned(&matches);
+        let include_niaz3_in_all = input_processing::get_include_niaz3_in_all(&matches);
         let apply_predecessors = input_processing::get_apply_predecessors(&matches);
         let apply_bidirectional = input_processing::get_apply_bidirectional(&matches);
 
@@ -56,6 +58,7 @@ impl Input {
             prime,
             clustering_size,
             apply_deduction_assigned: !desactivate_deduction_assigned,
+            include_niaz3_in_all,
             apply_predecessors,
             apply_bidirectional,
             equivalence_mode,
@@ -155,6 +158,10 @@ mod input_processing {
     pub fn get_apply_deduction_assigned(matches: &ArgMatches) -> bool {
         matches.is_present("desactivate_deduction_assigned")
     }
+
+    pub fn get_include_niaz3_in_all(matches: &ArgMatches) -> bool {
+        matches.is_present("include_niaz3_in_all")
+    }
     
     pub fn get_apply_predecessors(matches: &ArgMatches) -> bool {
         matches.is_present("apply_predecessors")
@@ -202,6 +209,8 @@ mod input_processing {
                         Ok(CVC5)
                     } else if solver == "yices"{
                         Ok(YICES)
+                    } else if solver == "niaz3" || solver == "nia-z3"{
+                        Ok(NIAZ3)
                     } else if solver == "z3"{
                         Ok(Z3)
                     } else if solver == "all"{
@@ -341,11 +350,19 @@ mod input_processing {
                     .display_order(600)
             )
             .arg(
+                Arg::with_name("include_niaz3_in_all")
+                    .long("include_niaz3_in_all")
+                    .takes_value(false)
+                    .hidden(false)
+                    .help("When using --solver all, also run the NIA-Z3 backend")
+                    .display_order(600)
+            )
+            .arg(
                 Arg::with_name("solver")
                     .long("solver")
                     .takes_value(true)
                     .hidden(false)
-                        .help("Solver to be used for the verification of the circuit. ZK-GENVER allows ffsol, cvc5, yices, z3, picus, civer (default), and ALL")
+                        .help("Solver to be used for the verification of the circuit. ZK-GENVER allows ffsol, cvc5, yices, niaz3, z3, picus, civer (default), and ALL")
                     .display_order(480)
             )
             .arg(

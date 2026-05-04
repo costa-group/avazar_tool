@@ -1,4 +1,4 @@
-use solvers_interface::{PossibleResult, PossibleSolver, SafetyVerification, civer_interface, cvc5_interface, ffsol_interface, parallel_interface, picus_interface, yices_interface, z3_interface};
+use solvers_interface::{PossibleResult, PossibleSolver, SafetyVerification, civer_interface, cvc5_interface, ffsol_interface, nia_z3_interface, parallel_interface, picus_interface, yices_interface, z3_interface};
 type Constraint = circom_algebra::algebra::Constraint<usize>;
 use circom_algebra::num_bigint::BigInt;
 use std::collections::LinkedList;
@@ -19,6 +19,7 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
         constraint_list: &Vec<Constraint>,
         solver: PossibleSolver,
         apply_deduction_assigned: bool,
+        include_niaz3_in_all: bool,
         apply_predecessors:bool,
         apply_bidirectional: bool,
         no_abstract_fails:bool,
@@ -51,6 +52,7 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
             field,
             verification_timeout,
             apply_deduction_assigned,
+            include_niaz3_in_all,
             verbose
         );
 
@@ -282,6 +284,9 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
             },
             PossibleSolver::YICES=>{
                 yices_interface::study_safety(problem)
+            },
+            PossibleSolver::NIAZ3=>{
+                nia_z3_interface::study_safety(problem)
             },
             PossibleSolver::Z3=>{
                 z3_interface::study_safety(problem)

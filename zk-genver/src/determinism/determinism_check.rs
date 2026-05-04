@@ -54,6 +54,7 @@ pub fn prove_safety(user_input: Input) -> Result<(), ()> {
 
     let timeout: u64 = user_input.timeout;
     let apply_deduction_assigned: bool = user_input.apply_deduction_assigned;
+    let include_niaz3_in_all: bool = user_input.include_niaz3_in_all;
     let apply_predecessors: bool = user_input.apply_predecessors;
     let apply_bidirectional: bool = user_input.apply_bidirectional;
 
@@ -107,6 +108,7 @@ pub fn prove_safety(user_input: Input) -> Result<(), ()> {
             timeout, 
             user_input.solver_option,
             apply_deduction_assigned,
+            include_niaz3_in_all,
             apply_predecessors,
             apply_bidirectional,
             &mut results,
@@ -135,6 +137,7 @@ pub fn prove_safety(user_input: Input) -> Result<(), ()> {
                 equivalence_mode,
                 target_size,
                 apply_deduction_assigned,
+                include_niaz3_in_all,
                 apply_predecessors,
                 apply_bidirectional,
                 &mut results,
@@ -176,6 +179,7 @@ fn process_node(
     timeout: u64,
     solver: PossibleSolver,
     apply_deduction_assigned: bool,
+    include_niaz3_in_all: bool,
     apply_predecessors: bool,
     apply_bidirectional: bool,
     results: &mut ResultInfoDeterminism,
@@ -207,6 +211,7 @@ fn process_node(
         &constraints ,
         solver,
         apply_deduction_assigned,
+        include_niaz3_in_all,
         apply_predecessors,
         apply_bidirectional,
         no_abstract_fails,
@@ -285,6 +290,7 @@ fn decompose_and_study(
     equivalence_mode: EquivalenceMode,
     target_size: usize,
     apply_deduction_assigned: bool,
+    include_niaz3_in_all: bool,
     apply_predecessors: bool,
     apply_bidirectional: bool,
     results: &mut ResultInfoDeterminism,
@@ -375,6 +381,7 @@ fn decompose_and_study(
             timeout, 
             solver,
             apply_deduction_assigned,
+            include_niaz3_in_all,
             apply_predecessors,
             apply_bidirectional,
             &mut new_results,
