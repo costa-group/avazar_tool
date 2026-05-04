@@ -2,16 +2,17 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::process::{Command, Stdio};
+use std::str::FromStr;
 use std::thread;
 use std::time::Duration;
 use num_bigint_dig::BigInt;
 use solvers_interface::PossibleResult;
 use circom_algebra::algebra::{Constraint, ExecutedInequation};
 use z3::Config;
-use z3::Context;
 use z3::Solver;
 use z3::ast::Ast;
 use z3::*;
+use z3::with_z3_config;
 use rand::Rng;
 use std::os::unix::process::CommandExt;
 use nix::unistd::Pid;
@@ -25,7 +26,6 @@ use crate::safety_z3::insert_constraint_in_smt;
 
 pub type Signal2BoundsFfsol = HashMap<usize, ExecutedInequation<usize>>;
 
-
 pub fn try_prove_safety_with_ffsol(
     inputs: &Vec<usize>,
     outputs: &Vec<usize>,
@@ -38,23 +38,58 @@ pub fn try_prove_safety_with_ffsol(
     apply_deduction_assigned: bool,
     logs: &mut Vec<String>,
 ) -> PossibleResult {
+
+    let mut cfg = Config::new();
+    cfg.set_timeout_msec(verification_timeout);
+
+    with_z3_config(
+        &cfg,
+        || {
+            internal_try_prove_safety_with_ffsol(
+                inputs,
+                outputs,
+                signals,
+                constraints,
+                implications_safety,
+                deductions,
+                field,
+                apply_deduction_assigned,
+                verification_timeout,
+                logs
+            )
+        }
+    )
+
+}
+
+fn internal_try_prove_safety_with_ffsol(
+    inputs: &Vec<usize>,
+    outputs: &Vec<usize>,
+    signals: &Vec<usize>,
+    constraints: &Vec<Constraint<usize>>,
+    implications_safety: &Vec<(Vec<usize>, Vec<usize>)>,
+    deductions: &Signal2Bounds,
+    field: &BigInt,
+    apply_deduction_assigned: bool,
+    verification_timeout: u64,
+    logs: &mut Vec<String>,
+) -> PossibleResult {
         let mut cfg = Config::new();
         cfg.set_timeout_msec(verification_timeout);
-        let ctx = Context::new(&cfg);
-        let solver = Solver::new(&ctx);
-        let zero = z3::ast::Int::from_i64(&ctx, 0);
-        let field_z3 = z3::ast::Int::from_str(&ctx, &field.to_string()).unwrap();
+        let solver = Solver::new();
+        let zero = z3::ast::Int::from_i64(0);
+        let field_z3 = z3::ast::Int::from_str(&field.to_string()).unwrap();
         let mut aux_signals_to_smt_rep = HashMap::new();
         let mut aux_signals_to_smt_rep_aux = HashMap::new();
  
         for s in signals {
             let is_input = inputs.contains(s);
 
-            let aux_signal_to_smt = z3::ast::Int::new_const(&ctx, format!("s_{}", s));
+            let aux_signal_to_smt = z3::ast::Int::new_const(format!("s_{}", s));
             let copy_aux_signal_to_smt = if !is_input {
-                z3::ast::Int::new_const(&ctx, format!("saux_{}", s))
+                z3::ast::Int::new_const(format!("saux_{}", s))
             } else {
-                z3::ast::Int::new_const(&ctx, format!("s_{}", s))
+                z3::ast::Int::new_const(format!("s_{}", s))
             };
                 aux_signals_to_smt_rep.insert(*s, aux_signal_to_smt.clone());
                 aux_signals_to_smt_rep_aux.insert(*s, copy_aux_signal_to_smt.clone());
@@ -65,7 +100,6 @@ pub fn try_prove_safety_with_ffsol(
         for constraint in constraints {
             insert_constraint_in_smt(
                 constraint,
-                &ctx,
                 &solver,
                 &aux_signals_to_smt_rep,
                 &field,
@@ -77,7 +111,6 @@ pub fn try_prove_safety_with_ffsol(
             i = i + 1;
             insert_constraint_in_smt(
                 constraint,
-                &ctx,
                 &solver,
                 &aux_signals_to_smt_rep_aux,
                 &field,
@@ -91,17 +124,17 @@ pub fn try_prove_safety_with_ffsol(
 
 
         for (inputs_i, outputs_o) in implications_safety{
-            let mut implication_left = z3::ast::Bool::from_bool(&ctx, true);
+            let mut implication_left = z3::ast::Bool::from_bool(true);
             for s in inputs_i{
                 let s_1 = aux_signals_to_smt_rep.get(s).unwrap();
                 let s_2 = aux_signals_to_smt_rep_aux.get(s).unwrap();
-                implication_left &= s_1._eq(s_2);
+                implication_left &= s_1.eq(s_2);
             }
-            let mut implication_right = z3::ast::Bool::from_bool(&ctx, true);
+            let mut implication_right = z3::ast::Bool::from_bool(true);
             for s in outputs_o{
                 let s_1 = aux_signals_to_smt_rep.get(s).unwrap();
                 let s_2 = aux_signals_to_smt_rep_aux.get(s).unwrap();
-                implication_right &= s_1._eq(s_2);
+                implication_right &= s_1.eq(s_2);
             }
 
             solver.assert(&implication_left.implies(&implication_right));
@@ -109,11 +142,11 @@ pub fn try_prove_safety_with_ffsol(
 
 
 
-        let mut all_outputs_equal = z3::ast::Bool::from_bool(&ctx, true);
+        let mut all_outputs_equal = z3::ast::Bool::from_bool(true);
         for s in outputs {
             let s_1 = aux_signals_to_smt_rep.get(s).unwrap();
             let s_2 = aux_signals_to_smt_rep_aux.get(s).unwrap();
-            all_outputs_equal &= s_1._eq(s_2);
+            all_outputs_equal &= s_1.eq(s_2);
         }
 
         solver.assert(&!all_outputs_equal);
