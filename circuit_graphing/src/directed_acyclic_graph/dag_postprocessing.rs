@@ -52,7 +52,7 @@ fn merge_under_property<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
 
         // find, for each option, the nodes that will need to be merged
         let adjacency_hashmap : HashMap<usize, &Vec<usize>> = nodes.iter().map(|(k, node)| (*k, node.get_successors())).collect();
-        let required_to_merge: Vec<(usize, Vec<usize>)> = potential_adjacent.into_iter().map(|(idx, &okey)| {
+        let required_to_merge: Vec<(usize, HashSet<usize>)> = potential_adjacent.into_iter().map(|(idx, &okey)| {
             let (parent, child) = if nnode.get_successors().contains(&okey) {(nkey, okey)} else {(okey, nkey)};
             (
                 idx, 
@@ -67,7 +67,7 @@ fn merge_under_property<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
 
         // greedily merge the fewest vertices, tiebreaking on potential property
         // TODO: movie copied calls to here?
-        let choice_to_merge: Vec<usize> = required_to_merge.into_iter().max_by_key(|(idx, req_to_merge)| (req_to_merge.len(), adjacent_to_property[*idx])).unwrap().1;
+        let choice_to_merge: HashSet<usize> = required_to_merge.into_iter().max_by_key(|(idx, req_to_merge)| (req_to_merge.len(), adjacent_to_property[*idx])).unwrap().1;
 
         let root: usize =  DAGNode::merge_nodes(choice_to_merge, nodes, &sig_to_coni, &mut coni_to_node);
 
@@ -120,7 +120,7 @@ pub fn merge_passthrough<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
 
         // since we have a DAG the only potential path is from parent to child via other nodes -- hence don't need both.
 
-        let to_merge: Vec<usize> = dfs_merge_in_dag(
+        let to_merge: HashSet<usize> = dfs_merge_in_dag(
             &parent,
             &child,
             &adjacency_hashmap,

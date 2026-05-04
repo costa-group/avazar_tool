@@ -14,6 +14,10 @@ use std::io::Write;
 use std::error::Error;
 use std::time::{Instant};
 use clap::Parser;
+use mimalloc::MiMalloc;
+
+#[global_allocator]
+static GLOBAL: MiMalloc = MiMalloc;
 
 mod argument_parsing;
 pub mod decompose_circuit;
@@ -22,7 +26,7 @@ pub mod decompose_circuit;
 use utils::structure::StructureReader;
 use crate::decompose_circuit::decompose_circuit;
 use crate::argument_parsing::{Args};
-use utils::small_utilities::FileType;
+use utils::small_utilities::{DecomposeOptions, FileType};
 use utils::read_r1cs::{R1CSData};
 use circuits_and_constraints::acir::{ACIRCircuit};
 use circuits_and_constraints::circuit::Circuit;
@@ -54,22 +58,39 @@ fn write_output_into_file<P: AsRef<Path>>(path: P, result: &StructureReader) -> 
 }
 
 fn start(args: Args) -> Result<(), Box<dyn Error>> {
+    
+    let existing_partition: Option<Vec<Vec<usize>>> =
+     args.existing_partition.map(
+        |path| bincode::deserialize_from(
+                std::fs::File::open(path).expect("Error when attempting to open file")
+            ).expect("Error attempting to deserialize partition")
+    );
     // Pass circuit
     let circuit_parsing_timer = Instant::now();
+
+    let decompose_options = DecomposeOptions {
+        resolution: args.resolution, 
+        target_size: args.target_size, 
+        leiden_max_iterations: args.leiden_max_iterations, 
+        equivalence_mode: args.equivalence_mode, 
+        graph_backend: args.graph_backend, preprocessing: args.preprocessing, 
+        minimum_equivalence_size: args.minimum_equivalence_size, 
+        equivalence_comparison_budget: args.equivalence_comparison_budget, 
+        existing_partition: existing_partition, debug: args.debug,
+        ..Default::default()
+    };
     
     // TODO: refactor some code to make the dyn work
     let result = match args.file_type {
         FileType::R1CS => {
             let circuit = R1CSData::parse_file(&args.filepath)?;
-            println!("Took {:?} to parse", circuit_parsing_timer.elapsed());
-            decompose_circuit(&circuit, args.resolution, args.target_size, args.leiden_max_iterations, args.equivalence_mode, 
-                args.graph_backend, args.preprocessing, None, None, args.minimum_equivalence_size, args.equivalence_comparison_budget, args.debug)
+            if args.debug > 0 { println!("Took {:?} to parse", circuit_parsing_timer.elapsed()); }
+            decompose_circuit(&circuit, decompose_options)
             },
         FileType::ACIR =>{
             let circuit = ACIRCircuit::parse_file(&args.filepath)?;
-            println!("Took {:?} to parse", circuit_parsing_timer.elapsed());
-            decompose_circuit(&circuit, args.resolution, args.target_size, args.leiden_max_iterations, args.equivalence_mode, 
-                args.graph_backend, args.preprocessing, None, None, args.minimum_equivalence_size, args.equivalence_comparison_budget, args.debug)
+            if args.debug > 0 { println!("Took {:?} to parse", circuit_parsing_timer.elapsed()); }
+            decompose_circuit(&circuit, decompose_options)
             }
     };
     

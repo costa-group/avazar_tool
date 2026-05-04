@@ -99,10 +99,10 @@ impl<'a, C: Constraint + 'a, S: Circuit<C> + 'a> DAGNode<'a, C, S> {
         }
     }
 
-    pub fn merge_nodes(to_merge: Vec<usize>, nodes: &mut HashMap<usize, DAGNode<'a, C, S>>, sig_to_coni: &HashMap<usize, Vec<usize>>, coni_to_node: &mut Vec<usize>) -> usize {
+    pub fn merge_nodes(to_merge: HashSet<usize>, nodes: &mut HashMap<usize, DAGNode<'a, C, S>>, sig_to_coni: &HashMap<usize, Vec<usize>>, coni_to_node: &mut Vec<usize>) -> usize {
         // not especially elegant but whatever
-
-        let root: usize = to_merge[0];
+        if to_merge.len() == 0 {panic!("Attempting to merge no nodes");}
+        let root: usize = *to_merge.iter().next().unwrap();
 
         let new_successors: HashSet<usize> = to_merge.iter().flat_map(|nkey| nodes.get(nkey).unwrap().get_successors()).copied().filter(|nkey| !to_merge.contains(nkey)).collect();
         let new_predecessors: HashSet<usize> = to_merge.iter().flat_map(|nkey| nodes.get(nkey).unwrap().get_predecessors()).copied().filter(|nkey| !to_merge.contains(nkey)).collect();
@@ -118,7 +118,7 @@ impl<'a, C: Constraint + 'a, S: Circuit<C> + 'a> DAGNode<'a, C, S> {
 
         let circ: &'a S = nodes[&root].circ;        
 
-        let mut new_constraints: Vec<usize> = Vec::new();
+        let mut new_constraints: Vec<usize> = Vec::with_capacity(to_merge.iter().map(|nkey| nodes[nkey].constraints.len()).sum::<usize>());
         let mut new_input_signals: HashSet<usize> = HashSet::new();
         let mut new_output_signals: HashSet<usize> = HashSet::new();
 
@@ -128,10 +128,10 @@ impl<'a, C: Constraint + 'a, S: Circuit<C> + 'a> DAGNode<'a, C, S> {
 
             new_constraints.extend(constraints);
             new_input_signals.extend(input_signals.into_iter().filter(|sig|
-                circ.signal_is_input(sig) || sig_to_coni[sig].iter().copied().map(|coni| coni_to_node[coni]).collect::<HashSet<usize>>().intersection(&new_predecessors).count() > 0
+                circ.signal_is_input(sig) || sig_to_coni[sig].iter().copied().map(|coni| coni_to_node[coni]).filter(|nodi| new_predecessors.contains(nodi)).count() > 0
             ));
             new_output_signals.extend(output_signals.into_iter().filter(|sig|
-                circ.signal_is_output(sig) || sig_to_coni[sig].iter().copied().map(|coni| coni_to_node[coni]).collect::<HashSet<usize>>().intersection(&new_successors).count() > 0
+                circ.signal_is_output(sig) || sig_to_coni[sig].iter().copied().map(|coni| coni_to_node[coni]).filter(|nodi| new_successors.contains(nodi)).count() > 0
             ));
 
         }

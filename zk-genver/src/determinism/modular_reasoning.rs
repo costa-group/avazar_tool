@@ -26,7 +26,7 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
         extra_rounds: usize,
         verbose: bool
     ) 
-    -> (PossibleResult, f64, usize, Vec<String>, HashSet<usize>){
+    -> (PossibleResult, f64, usize, bool, Vec<String>, HashSet<usize>){
         
         let signals: LinkedList<usize> = node_info.signals.clone().into_iter().collect(); 
         
@@ -75,6 +75,9 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
         let mut finished_verification = match result_safety{
             PossibleResult::UNKNOWN =>{
                 unknown_rounds += 1;
+                if unknown_rounds <= extra_rounds {
+                    used_extra_rounds = true;
+                }
                 unknown_rounds > extra_rounds
             },
             PossibleResult::FAILED =>{
@@ -89,7 +92,7 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
 
             let new_components = std::mem::take(&mut to_check_next);
             for node_id in &new_components{
-                if !verification.added_nodes.contains(node_id) { 
+                if *node_id != node_info.node_id && !verification.added_nodes.contains(node_id) { 
 
                     let pos = nodeid2pos[node_id];
                     let node = &node_list[pos];
@@ -107,6 +110,9 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
             finished_verification = match result_safety{
                 PossibleResult::UNKNOWN =>{
                     unknown_rounds += 1;
+                    if unknown_rounds <= extra_rounds {
+                        used_extra_rounds = true;
+                    }
                     unknown_rounds > extra_rounds
                 },
                 PossibleResult::FAILED =>{
@@ -119,12 +125,17 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
         } 
         let duration = inicio.elapsed();  
         pretty_print_result(&mut logs, duration, n_rounds, &result_safety);
-        (result_safety, duration.as_secs_f64(), n_rounds, logs,verification.added_nodes)
+        let extra_rounds_helped = used_extra_rounds && result_safety == PossibleResult::VERIFIED;
+        (
+            result_safety,
+            duration.as_secs_f64(),
+            n_rounds,
+            extra_rounds_helped,
+            logs,
+            verification.added_nodes,
+        )
         
     }
-
-  
-    
 
     fn add_info_component(
         info: &NodeInfo, 

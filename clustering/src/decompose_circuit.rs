@@ -14,46 +14,26 @@ use circuit_graphing::directed_acyclic_graph::equivalence_classes::{subcircuit_f
 use circuit_graphing::graphing_circuits::{shared_signal_graph};
 use circuit_graphing::leiden_clustering::{CanLeiden};
 use circuit_graphing::bridge_partitioning::{bridge_partitioning};
-use utils::small_utilities::{GraphBackend, EquivalenceMode, ClusteringPreprocessing};
+use utils::small_utilities::{EquivalenceMode, ClusteringPreprocessing, DecomposeOptions};
 
 pub fn decompose_node<C: Constraint>(
-    prime: &BigInt, 
+    prime: &BigInt,
     constraints: &Vec<C>, 
     inputs: &[usize], 
     outputs: &[usize],
-    resolution: Option<f64>,
-    target_size: Option<f64>,
-    leiden_max_iterations: Option<usize>,
-    equivalence_mode: EquivalenceMode,
-    graph_backend: GraphBackend,
-    preprocessing: ClusteringPreprocessing,
-    inverse_coni_mapping: Option<&[usize]>,
-    inverse_sig_mapping: Option<&[usize]>,
-    minimum_equivalence_size: Option<usize>,
-    equivalence_comparison_budget: Option<usize>,
-    debug: bool) -> StructureReader {
+    decompose_options: DecomposeOptions) -> StructureReader {
 
     let lw_circ = LightweightCircuit::<C>::from(prime, constraints, inputs, outputs);
-    decompose_circuit(
-        &lw_circ, 
-        resolution, target_size, leiden_max_iterations, equivalence_mode, graph_backend, preprocessing,
-        inverse_coni_mapping, inverse_sig_mapping, minimum_equivalence_size, equivalence_comparison_budget,
-        debug)
+    decompose_circuit(&lw_circ, decompose_options)
 }
 
 fn decompose_circuit_and_return_dagnodes<'a, C: Constraint, S: Circuit<C>>(
     circuit: &'a S,
-    resolution: Option<f64>,
-    target_size: Option<f64>,
-    leiden_max_iterations: Option<usize>,
-    graph_backend: GraphBackend,
     node_id_generator: &mut dyn Iterator<Item = usize>,
-    inverse_coni_mapping: Option<&[usize]>,
-    inverse_sig_mapping: Option<&[usize]>,
-    debug: bool
+    decompose_options: DecomposeOptions
 ) -> (TimingInfo, HashMap<usize, DAGNode<'a, C, S>>) {
 
-    if debug {println!("LOG: Beginning Clustering of {:?} constraints", circuit.n_constraints());}
+    if decompose_options.debug > 0 {println!("LOG: Beginning Clustering of {:?} constraints", circuit.n_constraints());}
     let mut timing_info: TimingInfo = TimingInfo{
     	clustering: 0.0,
         graph_construction: Some(0.0),
@@ -62,37 +42,46 @@ fn decompose_circuit_and_return_dagnodes<'a, C: Constraint, S: Circuit<C>>(
     	total: 0.0,
     };
 
-    let graph_construction_timer = Instant::now();
-    let graph: Box<dyn CanLeiden> = shared_signal_graph(circuit, graph_backend, debug);
-    
-    timing_info.graph_construction = Some(graph_construction_timer.elapsed().as_secs_f32());
-    if debug {println!("LOG: Finished graph construction in {:?}s", timing_info.graph_construction.unwrap());}
+    let partition: Vec<Vec<usize>> ;
+    if decompose_options.existing_partition.is_none() {
+        let graph_construction_timer = Instant::now();
+        let graph: Box<dyn CanLeiden> = shared_signal_graph(circuit, decompose_options.graph_backend, decompose_options.debug);
+        
+        timing_info.graph_construction = Some(graph_construction_timer.elapsed().as_secs_f32());
+        timing_info.total += timing_info.graph_construction.unwrap();
 
-    // Partition Graph
-    let partition_timer = Instant::now();
+        if decompose_options.debug > 0 {println!("LOG: Finished graph construction in {:?}s", timing_info.graph_construction.unwrap());}
 
-    let resolution = match resolution { Some(r) => r, None => ((graph.num_edges() << 1) as f64)/(target_size.unwrap_or(f64::log2(graph.num_edges() as f64)).powi(2)) };
-    let partition: Vec<Vec<usize>> = graph.get_partition(resolution, leiden_max_iterations.unwrap_or(5), 25565);
-    
-    //insert_and_print_timing(debug, &mut timing, "clustering", partition_timer.elapsed());
-    timing_info.clustering = partition_timer.elapsed().as_secs_f32();
-    timing_info.total += timing_info.clustering;
-    if debug {println!("LOG: Finished clustering in {:?}s", timing_info.clustering);}
+        // Partition Graph
+        let partition_timer = Instant::now();
+
+        let resolution = match decompose_options.resolution { Some(r) => r, None => ((graph.num_edges() << 1) as f64)/(decompose_options.target_size.unwrap_or(f64::log2(graph.num_edges() as f64)).powi(2)) };
+        partition = graph.get_partition(resolution, decompose_options.leiden_max_iterations.unwrap_or(5), decompose_options.seed);
+        
+        //insert_and_print_timing(debug, &mut timing, "clustering", partition_timer.elapsed());
+        timing_info.clustering = partition_timer.elapsed().as_secs_f32();
+        timing_info.total += timing_info.clustering;
+        if decompose_options.debug > 0 {println!("LOG: Finished clustering in {:?}s", timing_info.clustering);}
+        if decompose_options.debug > 1{println!("LOG: Partitioned into {:?} parts", partition.len());}
+    } else {
+        partition = decompose_options.existing_partition.unwrap();
+    }
 
     // Convert into DAG
     let dagnode_timer = Instant::now();
     
-    let mut dagnodes = dag_from_partition(circuit, partition, node_id_generator);
+    let mut dagnodes = dag_from_partition(circuit, partition, node_id_generator, decompose_options.debug);
     merge_passthrough(circuit, &mut dagnodes);
     
     //insert_and_print_timing(debug, &mut timing, "dag_construction_merging", dagnode_timer.elapsed());
     timing_info.dag_construction = dagnode_timer.elapsed().as_secs_f32();
     timing_info.total += timing_info.dag_construction;
 
-    if inverse_coni_mapping.is_some() || inverse_sig_mapping.is_some() {
-        for node in dagnodes.values_mut() {node.map_internal_indices(inverse_coni_mapping, inverse_sig_mapping);} 
+    if decompose_options.inverse_coni_mapping.is_some() || decompose_options.inverse_sig_mapping.is_some() {
+        for node in dagnodes.values_mut() {node.map_internal_indices(decompose_options.inverse_coni_mapping, decompose_options.inverse_sig_mapping);} 
     }
-    if debug {println!("LOG: Finished DAG construction in {:?}s", timing_info.dag_construction);}
+    if decompose_options.debug > 0 {println!("LOG: Finished DAG construction in {:?}s", timing_info.dag_construction);}
+    if decompose_options.debug > 1{println!("LOG: DAG has {:?} nodes", dagnodes.len());}
 
     (timing_info, dagnodes)
 }
@@ -101,11 +90,7 @@ fn decompose_circuit_over_dagnodes<'a, C: Constraint, S: Circuit<C>>(
     circuit: &'a S,
     timing: &mut TimingInfo,
     dagnodes: &HashMap<usize, DAGNode<'a, C, S>>,
-    resolution: Option<f64>,
-    target_size: Option<f64>,
-    leiden_max_iterations: Option<usize>,
-    graph_backend: GraphBackend,
-    debug: bool
+    decompose_options: DecomposeOptions
 ) -> HashMap<usize, DAGNode<'a, C, S>> {
 
     let mut node_id_generator = 0..;
@@ -130,9 +115,18 @@ fn decompose_circuit_over_dagnodes<'a, C: Constraint, S: Circuit<C>>(
             node.get_output_signals()
         );
 
+        let current_options = DecomposeOptions {
+            resolution: decompose_options.resolution,
+            target_size: decompose_options.target_size,
+            leiden_max_iterations: decompose_options.leiden_max_iterations,
+            graph_backend: decompose_options.graph_backend,
+            inverse_coni_mapping: Some(&node.get_constraint_indices().collect::<Vec<_>>()),
+            debug: decompose_options.debug.checked_sub(1).unwrap_or_default(),
+            ..Default::default()
+        };
+
         let (new_timing, iteration_dagnodes) = decompose_circuit_and_return_dagnodes(
-            &lwcirc, resolution, target_size, leiden_max_iterations, graph_backend, &mut node_id_generator,
-            Some(&node.get_constraint_indices().collect::<Vec<_>>()), None, debug
+            &lwcirc, &mut node_id_generator, current_options
         );
 
         previd_to_newids.insert(*nodid, iteration_dagnodes.keys().copied().collect());
@@ -162,17 +156,7 @@ fn decompose_circuit_over_dagnodes<'a, C: Constraint, S: Circuit<C>>(
 
 pub fn decompose_circuit<C: Constraint, S: Circuit<C>>(
     circuit: &S,
-    resolution: Option<f64>,
-    target_size: Option<f64>,
-    leiden_max_iterations: Option<usize>,
-    equivalence_mode: EquivalenceMode,
-    graph_backend: GraphBackend,
-    preprocessing: ClusteringPreprocessing,
-    inverse_coni_mapping: Option<&[usize]>,
-    inverse_sig_mapping: Option<&[usize]>,
-    minimum_equivalence_size: Option<usize>,
-    equivalence_comparison_budget: Option<usize>,
-    debug: bool
+    mut decompose_options: DecomposeOptions
 ) -> StructureReader {
 
     let mut timing_info: TimingInfo = TimingInfo{
@@ -183,21 +167,29 @@ pub fn decompose_circuit<C: Constraint, S: Circuit<C>>(
     	total: 0.0,
     };
 
-    let mut dagnodes = match preprocessing {
+    // Options required for 2nd part and not first
+    let equivalence_mode = decompose_options.equivalence_mode;
+    let equivalence_comparison_budget = decompose_options.equivalence_comparison_budget;
+    let minimum_equivalence_size = decompose_options.equivalence_comparison_budget;
+    let inverse_coni_mapping = decompose_options.inverse_coni_mapping.take();
+    let inverse_sig_mapping = decompose_options.inverse_sig_mapping.take();
+    let debug = decompose_options.debug;
+
+    let mut dagnodes = match decompose_options.preprocessing {
         ClusteringPreprocessing::None => {
             let (new_timing, new_dagnodes) = decompose_circuit_and_return_dagnodes(
-                circuit, resolution, target_size, leiden_max_iterations, graph_backend, &mut (0..), None, None, debug
+                circuit, &mut (0..), decompose_options
             );
             timing_info += new_timing;
             new_dagnodes
         }
         _ => {
-            let preprocessed_nodes = match preprocessing {
-                ClusteringPreprocessing::BridgeFinding => bridge_partitioning(circuit, true, debug),
-                _ => {panic!("Unimplemented partitioning method {:?}", preprocessing);}
+            let preprocessed_nodes = match decompose_options.preprocessing {
+                ClusteringPreprocessing::BridgeFinding => bridge_partitioning(circuit, true, decompose_options.debug),
+                _ => {panic!("Unimplemented partitioning method {:?}", decompose_options.preprocessing);}
             };
             decompose_circuit_over_dagnodes(
-                circuit, &mut timing_info, &preprocessed_nodes, resolution, target_size, leiden_max_iterations, graph_backend, debug
+                circuit, &mut timing_info, &preprocessed_nodes, decompose_options
             )
         }
     };
@@ -221,7 +213,7 @@ pub fn decompose_circuit<C: Constraint, S: Circuit<C>>(
 
     timing_info.equivalency = equivalency_timer.elapsed().as_secs_f32();
     timing_info.total += timing_info.equivalency;
-    if debug {println!("LOG: Finished equivalence in {:?}s", timing_info.equivalency);}
+    if debug > 0 {println!("LOG: Finished equivalence in {:?}s", timing_info.equivalency);}
 
     let dagnode_info: Vec<NodeInfo> = dagnodes.into_values().map(|node| node.to_json(inverse_coni_mapping, inverse_sig_mapping)).collect();
     StructureReader {timing: timing_info, nodes: dagnode_info, equivalency_local: equivalency_local, equivalency_structural: equivalency_structural}

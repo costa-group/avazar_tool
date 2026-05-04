@@ -40,5 +40,8 @@ pub struct Args {
     pub leiden_max_iterations: Option<usize>,
 
     #[arg(long)]
-    pub debug: bool
+    pub existing_partition: Option<String>,
+
+    #[arg(long, default_value_t=0, help = "Debugger level, 0 = None, 1 = Minimal Checkpoints, 2 = Detailed Checkpoints")]
+    pub debug: usize
 }

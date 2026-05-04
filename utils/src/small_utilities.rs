@@ -1,13 +1,15 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::hash::Hash;
+use std::cmp::Ord;
 use itertools::Itertools;
 
 use clap::{ValueEnum};
 use strum_macros::{Display};
 
-#[derive(Debug, Display, Copy, Clone, ValueEnum)]
+#[derive(Debug, Default, Display, Copy, Clone, ValueEnum)]
 pub enum GraphBackend {
     #[strum(serialize = "graphrs")]
+    #[default]
     GraphRS,
     #[strum(serialize = "singleclustering")]
     SingleClustering,
@@ -15,7 +17,7 @@ pub enum GraphBackend {
     XGraph
 }
 
-#[derive(Debug, Display, Copy, Clone, ValueEnum)]
+#[derive(Debug, Default, Display, Copy, Clone, ValueEnum)]
 pub enum EquivalenceMode {
     #[strum(serialize = "total")]
     Total,
@@ -24,41 +26,87 @@ pub enum EquivalenceMode {
     #[strum(serialize = "local")]
     Local,
     #[strum(serialize = "none")]
+    #[default]
     None
 }
 
-#[derive(Debug, Display, Copy, Clone, ValueEnum)]
+#[derive(Debug, Default, Display, Copy, Clone, ValueEnum)]
 pub enum ClusteringPreprocessing {
     #[strum(serialize = "none")]
+    #[default]
     None,
     #[strum(serialize = "bridgefinding")]
     BridgeFinding,
 }
 
-#[derive(Debug, Display, Copy, Clone, ValueEnum)]
+#[derive(Debug, Default, Display, Copy, Clone, ValueEnum)]
 pub enum FileType {
     #[strum(serialize = "r1cs")]
+    #[default]
     R1CS,
     #[strum(serialize = "acir")]
     ACIR
 }
 
-pub fn distance_to_source_set<'a, T: Eq + Hash + Copy>(source_set: impl Iterator<Item = &'a T>, adjacencies: &'a HashMap<T, HashSet<T>>) -> HashMap<&'a T, usize> {
+#[derive(Debug, Clone, Default)]
+pub struct DecomposeOptions<'a> {
+    pub resolution: Option<f64>,
+    pub target_size: Option<f64>,
+    pub leiden_max_iterations: Option<usize>,
+    pub equivalence_mode: EquivalenceMode,
+    pub graph_backend: GraphBackend,
+    pub preprocessing: ClusteringPreprocessing,
+    pub inverse_coni_mapping: Option<&'a [usize]>,
+    pub inverse_sig_mapping: Option<&'a [usize]>,
+    pub minimum_equivalence_size: Option<usize>,
+    pub equivalence_comparison_budget: Option<usize>,
+    pub existing_partition: Option<Vec<Vec<usize>>>,
+    pub seed: Option<u64>,
+    pub debug: usize
+}
 
-    let mut distance: HashMap<&T, usize> = source_set.map(|idx| (idx, 0)).collect();
-    let mut queue: VecDeque<&T> = distance.keys().copied().collect();
+// takes two sorted vecs and returns a sorted vec
+pub fn merge_sorted_vecs(left: &Vec<usize>, right: &Vec<usize>) -> Vec<usize> {
+        let (mut l_pointer, mut r_pointer) = (0, 0);
+        let mut out: Vec<usize> = Vec::new();
+        while l_pointer < left.len() && r_pointer < right.len() {
+            match left[l_pointer].cmp(&right[r_pointer]) {
+                std::cmp::Ordering::Equal => {
+                    out.push(left[l_pointer]); l_pointer += 1; r_pointer += 1;
+                },
+                std::cmp::Ordering::Less => {
+                    l_pointer += 1;
+                },
+                std::cmp::Ordering::Greater => {
+                    r_pointer += 1;
+                }
+            }
+        }
+
+        out
+    }
+
+pub fn distance_to_source_set(source_set: impl Iterator<Item = usize>, adjacencies: &Vec<Vec<usize>>) -> Vec<usize> {
+
+    let mut distance: Vec<usize> = vec![usize::MAX; adjacencies.len()];
+    let mut queue: VecDeque<usize> = source_set.collect();
+    for idx in queue.iter() {distance[*idx] = 0;}
 
     while queue.len() > 0 {
         let curr = queue.pop_front().unwrap();
-        queue.extend(adjacencies.get(curr).unwrap().into_iter().filter(|key| !distance.contains_key(key)));
-        let next_distance = distance.get(curr).unwrap() + 1;
-        for adj in adjacencies.get(curr).unwrap().into_iter() {distance.entry(adj).or_insert(next_distance);}
-    };
+        let next_distance = distance[curr] + 1;
+        for adj in adjacencies[curr].iter().copied() {
+            if distance[adj] == usize::MAX {
+                queue.push_back(adj);
+                distance[adj] = next_distance;
+            }
+        }
+    }
 
     distance
 }
 
-pub fn dfs_merge_in_dag_with_bfs_preprocessing(parent: &usize, child: &usize, adjacencies: &HashMap<usize, &Vec<usize>>, preprocessing_steps: usize) -> Vec<usize> {
+pub fn dfs_merge_in_dag_with_bfs_preprocessing(parent: &usize, child: &usize, adjacencies: &HashMap<usize, &Vec<usize>>, preprocessing_steps: usize) -> HashSet<usize> {
     let mut can_reach_t: HashMap<&usize, bool> = HashMap::from([(child, true)]);
     let mut current_iteration: HashSet<&usize> = HashSet::from([child]);
 
@@ -70,7 +118,7 @@ pub fn dfs_merge_in_dag_with_bfs_preprocessing(parent: &usize, child: &usize, ad
     dfs_merge_in_dag(parent, child, adjacencies, Some(can_reach_t))
 }
 
-pub fn dfs_merge_in_dag(parent: &usize, child: &usize, adjacencies: &HashMap<usize, &Vec<usize>>, can_reach_t: Option<HashMap<&usize, bool>>) -> Vec<usize> {
+pub fn dfs_merge_in_dag(parent: &usize, child: &usize, adjacencies: &HashMap<usize, &Vec<usize>>, can_reach_t: Option<HashMap<&usize, bool>>) -> HashSet<usize> {
 
     let mut can_reach_t: HashMap<&usize, bool> = can_reach_t.unwrap_or(HashMap::from([(child, true)]));
     let mut stack: Vec<&usize> = vec![parent];
