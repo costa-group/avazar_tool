@@ -1293,23 +1293,21 @@ impl<C: Default + Clone + Display + Hash + Eq> Constraint<C> {
 
     pub fn constraint_to_smt2(&self, signal_to_smt2_name: &HashMap<C,String>) -> String{
         
-        let right_side = if self.a.is_empty() || self.b.is_empty(){
-            ArithmeticExpression::coefficients_to_smt2(self.c(),signal_to_smt2_name)
+        let right_side: String = if self.a.is_empty() || self.b.is_empty(){
+            format!("(as ff0 FF0)")
         } else{
             let mul = format!("(ff.mul {} {})",
                 ArithmeticExpression::coefficients_to_smt2(self.a(),signal_to_smt2_name),
                 ArithmeticExpression::coefficients_to_smt2(self.b(),signal_to_smt2_name)
             );
-            if self.c.is_empty(){
-                mul
-            } else{
-                format!("(ff.add {} {})",
-                    mul,
-                    ArithmeticExpression::coefficients_to_smt2(self.c(),signal_to_smt2_name)
-                )
-            }
+            mul
         };
-        format!("(= (as ff0 FF0) {})", right_side)
+        let left_side: String = if self.c.is_empty(){
+            format!("(as ff0 FF0)")
+        } else{
+            ArithmeticExpression::coefficients_to_smt2(self.c(),signal_to_smt2_name)
+        };
+        format!("(= {} {})", left_side, right_side)
     }
 
     pub fn constraint_to_smt2_old(&self, signal_to_smt2_name: &HashMap<C,String>) -> String{
