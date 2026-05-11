@@ -113,6 +113,7 @@ pub fn prove_safety(user_input: Input) -> Result<(), ()> {
             apply_bidirectional,
             &mut results,
             user_input.extra_rounds,
+            user_input.limit_size,
             user_input.flag_verbose
         );
     }
@@ -142,6 +143,7 @@ pub fn prove_safety(user_input: Input) -> Result<(), ()> {
                 apply_bidirectional,
                 &mut results,
                 user_input.extra_rounds,
+                user_input.limit_size,
                 user_input.flag_verbose
             );
         }
@@ -184,6 +186,7 @@ fn process_node(
     apply_bidirectional: bool,
     results: &mut ResultInfoDeterminism,
     extra_rounds: usize,
+    limit_size: usize,
     verbose: bool
 ) {
 
@@ -196,6 +199,12 @@ fn process_node(
     if results.studied_nodes.contains_key(&node.node_id) {
         // If the node has already been studied, we skip it.
         return;
+    }
+
+    if node.constraints.len() > limit_size{
+        println!("Not considering node {} because it is too big", node.node_id);
+        results.studied_nodes.insert(node.node_id, PossibleResult::UNKNOWN);
+        results.unknown_nodes.insert(node.node_id);
     }
 
     println!("LOG: Considering node {} with {} constraints", node.node_id, node.constraints.len());
@@ -220,9 +229,9 @@ fn process_node(
         verbose
     );
         
-        //for log in logs{
-        //    println!("{}", log);
-        //}
+        for log in logs{
+            println!("{}", log);
+        }
 
     // check if one of the children is verified using the parent. If so, do not generalize to any class
     let mut verified_child = false;
@@ -295,6 +304,7 @@ fn decompose_and_study(
     apply_bidirectional: bool,
     results: &mut ResultInfoDeterminism,
     extra_rounds: usize,
+    limit_size: usize,
     verbose: bool
 ) {
     println!("LOG: Reconsidering again node {}", node_id);
@@ -367,8 +377,8 @@ fn decompose_and_study(
 
     for node in &new_structure.nodes{
         if node.constraints.len() == 0{
-            println!("LOG: printing info node with 0 constraints");
-            print_node_info(node, constraints);
+            //println!("LOG: printing info node with 0 constraints");
+            //print_node_info(node, constraints);
         }
 
         process_node(node, 
@@ -386,6 +396,7 @@ fn decompose_and_study(
             apply_bidirectional,
             &mut new_results,
             extra_rounds,
+            limit_size,
             verbose
         );
     }
@@ -423,7 +434,7 @@ fn decompose_and_study(
 
     *max_node_id += new_max_node_id;
 
-    println!("Added the info to the results");
+    //println!("Added the info to the results");
 
 }
 // To get the nodes that were too big and need to be studied again

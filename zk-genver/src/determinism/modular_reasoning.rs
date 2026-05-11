@@ -164,7 +164,7 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
                 to_check_next.append(&mut to_check);
             } 
             if apply_predecessors || apply_bidirectional{
-                            println!("Entra pred");
+                            //println!("Entra pred");
 
                 let mut to_check = generate_and_add_node_info(&info.predecessors, verification, node_list, nodeid2pos, constraint_list, results, apply_bidirectional, false);
                 to_check_next.append(&mut to_check);
