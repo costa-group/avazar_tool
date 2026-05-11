@@ -8,6 +8,10 @@ description = "genverr is a generic circuit verifier for R1CS constraint systems
 keywords = ["zkproofs", "zksanrks","circuits","compiler"]
 categories = ["compilers"]
 
+[[bin]]
+name = "avazar"
+path = "src/main.rs"
+
 [dependencies]
 circom_algebra = {path = "../circom_algebra"}
 solvers_interface = {path = "../solvers_interface"}
