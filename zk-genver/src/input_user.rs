@@ -18,6 +18,7 @@ pub struct Input {
     pub clustering_size: usize,
     pub equivalence_mode: usize,
     pub target_size: usize,
+    pub limit_size: usize,
     pub extra_rounds: usize,
     pub check_equivalence: Option<PathBuf>,
     pub check_correctness: Option<PathBuf>
@@ -44,7 +45,7 @@ impl Input {
         let extra_rounds = input_processing::get_extra_rounds(&matches)?;
         let check_equivalence = input_processing::get_check_equivalence(&matches)?;
         let check_correctness = input_processing::get_check_correctness(&matches)?;
-
+        let limit_size = input_processing::get_limit_size(&matches)?;
 
         Result::Ok(Input {
             input_r1cs,
@@ -61,6 +62,7 @@ impl Input {
             equivalence_mode,
             target_size,
             extra_rounds,
+            limit_size, 
             check_equivalence,
             check_correctness
         })
@@ -185,6 +187,17 @@ mod input_processing {
             Result::Err(eprintln!("{}", Colour::Red.paint("invalid clustering size")))
         }
     }
+
+    pub fn get_limit_size(matches: &ArgMatches) -> Result<usize, ()> {
+        let limit_size_argument = matches.value_of("limit_size").unwrap();
+        let limit_size = usize::from_str_radix(limit_size_argument, 10);
+        if let Result::Ok(size) = limit_size { 
+           Ok(size)
+        }
+        else { 
+            Result::Err(eprintln!("{}", Colour::Red.paint("invalid limit size")))
+        }
+    }
     
     pub fn get_solver(matches: &ArgMatches) -> Result<PossibleSolver,()> {
         use solvers_interface::PossibleSolver::*;
@@ -305,6 +318,15 @@ mod input_processing {
                     .default_value("5000")
                     .help("Timeout for the solvers")
                     .display_order(500)
+            )
+            .arg(
+                Arg::with_name("limit_size")
+                    .long("limit_size")
+                    .takes_value(true)
+                    .hidden(false)
+                    .default_value("500000")
+                    .help("Limit size of the nodes -> not sending to the solvers nodes with more than this limit. Decomposing instead.")
+                    .display_order(876)
             )
             .arg(
                 Arg::with_name("desactivate_deduction_assigned")
