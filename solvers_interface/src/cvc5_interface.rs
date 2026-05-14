@@ -28,10 +28,10 @@ pub fn study_correctness(problem: &CorrectnessVerification)-> (PossibleResult, V
     let result_solver = handling_cvc5_call(&smt2_problem, problem.verification_timeout,problem.verbose, None);
 
     match result_solver{
-        PossibleResult::VERIFIED=>{
+        PossibleResult::FAILED=>{
             logs.push(format!("### THE CONSTRAINT SYSTEMS AND THE FORMULA ARE NOT EQUIVALENT. FOUND COUNTEREXAMPLE USING SMT:\n"));
         },
-        PossibleResult::FAILED=>{
+        PossibleResult::VERIFIED=>{
             logs.push(format!("### THE CONSTRAINT SYSTEM AND THE FORMULA ARE EQUIVALENT\n"));
         },
         PossibleResult::UNKNOWN=>{
@@ -56,10 +56,10 @@ pub fn study_equivalence(problem: &EquivalenceVerification)-> (PossibleResult, V
     let result_solver = handling_cvc5_call(&smt2_problem, problem.verification_timeout,problem.verbose, None);
 
     match result_solver{
-        PossibleResult::VERIFIED=>{
+        PossibleResult::FAILED=>{
             logs.push(format!("### THE CONSTRAINT SYSTEMS ARE NOT EQUIVALENT. FOUND COUNTEREXAMPLE USING SMT:\n"));
         },
-        PossibleResult::FAILED=>{
+        PossibleResult::VERIFIED=>{
             logs.push(format!("### THE CONSTRAINT SYSTEMS ARE EQUIVALENT\n"));
         },
         PossibleResult::UNKNOWN=>{
@@ -85,10 +85,10 @@ pub fn study_safety(problem: &SafetyVerification)-> (PossibleResult, Vec<String>
     let result_solver = handling_cvc5_call(&smt2_problem, problem.verification_timeout,problem.verbose, None);
 
     match result_solver{
-        PossibleResult::VERIFIED=>{
+        PossibleResult::FAILED=>{
             logs.push(format!("### THE TEMPLATE DOES NOT ENSURE SAFETY. FOUND COUNTEREXAMPLE USING SMT:\n"));
         },
-        PossibleResult::FAILED=>{
+        PossibleResult::VERIFIED=>{
             logs.push(format!("### WEAK SAFETY ENSURED BY THE TEMPLATE\n"));
         },
         PossibleResult::UNKNOWN=>{
@@ -115,10 +115,10 @@ pub fn study_safety_with_cancel(problem: &SafetyVerification, cancel_flag: &Atom
     let result_solver = handling_cvc5_call(&smt2_problem, problem.verification_timeout,problem.verbose, Some(cancel_flag));
 
     match result_solver{
-        PossibleResult::VERIFIED=>{
+        PossibleResult::FAILED=>{
             logs.push(format!("### THE TEMPLATE DOES NOT ENSURE SAFETY. FOUND COUNTEREXAMPLE USING SMT:\n"));
         },
-        PossibleResult::FAILED=>{
+        PossibleResult::VERIFIED=>{
             logs.push(format!("### WEAK SAFETY ENSURED BY THE TEMPLATE\n"));
         },
         PossibleResult::UNKNOWN=>{

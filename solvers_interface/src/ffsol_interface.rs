@@ -124,10 +124,10 @@ pub fn study_correctness(problem: &CorrectnessVerification, config: &FfsolConfig
     let result_solver = handling_ffsol_call(&smt2_problem, &problem.template_name, config, None);
 
     match result_solver{
-        PossibleResult::VERIFIED=>{
+        PossibleResult::FAILED=>{
             logs.push(format!("### THE CONSTRAINT SYSTEMS AND THE FORMULA ARE NOT EQUIVALENT. FOUND COUNTEREXAMPLE USING SMT:\n"));
         },
-        PossibleResult::FAILED=>{
+        PossibleResult::VERIFIED=>{
             logs.push(format!("### THE CONSTRAINT SYSTEM AND THE FORMULA ARE EQUIVALENT\n"));
         },
         PossibleResult::UNKNOWN=>{
@@ -151,10 +151,10 @@ pub fn study_equivalence(problem: &EquivalenceVerification, config: &FfsolConfig
     let result_solver = handling_ffsol_call(&smt2_problem, &problem.template_name, config, None);
 
     match result_solver{
-        PossibleResult::VERIFIED=>{
+        PossibleResult::FAILED=>{
             logs.push(format!("### THE CONSTRAINT SYSTEMS ARE NOT EQUIVALENT. FOUND COUNTEREXAMPLE USING SMT:\n"));
         },
-        PossibleResult::FAILED=>{
+        PossibleResult::VERIFIED=>{
             logs.push(format!("### THE CONSTRAINT SYSTEMS ARE EQUIVALENT\n"));
         },
         PossibleResult::UNKNOWN=>{
@@ -181,10 +181,10 @@ pub fn study_safety(problem: &SafetyVerification, config: &FfsolConfig)-> (Possi
     let result_solver = handling_ffsol_call(&smt2_problem, &problem.template_name, config, None);
 
     match result_solver{
-        PossibleResult::VERIFIED=>{
+        PossibleResult::FAILED=>{
             logs.push(format!("### THE TEMPLATE DOES NOT ENSURE SAFETY. FOUND COUNTEREXAMPLE USING SMT:\n"));
         },
-        PossibleResult::FAILED=>{
+        PossibleResult::VERIFIED=>{
             logs.push(format!("### WEAK SAFETY ENSURED BY THE TEMPLATE\n"));
         },
         PossibleResult::UNKNOWN=>{
@@ -216,10 +216,10 @@ pub fn study_safety_with_cancel(problem: &SafetyVerification, cancel_flag: &Atom
     );
 
     match result_solver{
-        PossibleResult::VERIFIED=>{
+        PossibleResult::FAILED=>{
             logs.push(format!("### THE TEMPLATE DOES NOT ENSURE SAFETY. FOUND COUNTEREXAMPLE USING SMT:\n"));
         },
-        PossibleResult::FAILED=>{
+        PossibleResult::VERIFIED=>{
             logs.push(format!("### WEAK SAFETY ENSURED BY THE TEMPLATE\n"));
         },
         PossibleResult::UNKNOWN=>{
