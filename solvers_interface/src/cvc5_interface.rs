@@ -29,13 +29,13 @@ pub fn study_correctness(problem: &CorrectnessVerification)-> (PossibleResult, V
 
     match result_solver{
         PossibleResult::FAILED=>{
-            logs.push(format!("### THE CONSTRAINT SYSTEMS AND THE FORMULA ARE NOT EQUIVALENT. FOUND COUNTEREXAMPLE USING SMT:\n"));
+            logs.push(format!("### CVC5: THE CONSTRAINT SYSTEMS AND THE FORMULA ARE NOT EQUIVALENT. FOUND COUNTEREXAMPLE USING SMT:\n"));
         },
         PossibleResult::VERIFIED=>{
-            logs.push(format!("### THE CONSTRAINT SYSTEM AND THE FORMULA ARE EQUIVALENT\n"));
+            logs.push(format!("### CVC5: THE CONSTRAINT SYSTEM AND THE FORMULA ARE EQUIVALENT\n"));
         },
         PossibleResult::UNKNOWN=>{
-            logs.push("### UNKNOWN: VERIFICATION OF CORRECTNESS TIMEOUT\n".to_string());
+            logs.push("### CVC5: UNKNOWN: VERIFICATION OF CORRECTNESS TIMEOUT\n".to_string());
         },
         _=>{
             unreachable!()
@@ -57,13 +57,13 @@ pub fn study_equivalence(problem: &EquivalenceVerification)-> (PossibleResult, V
 
     match result_solver{
         PossibleResult::FAILED=>{
-            logs.push(format!("### THE CONSTRAINT SYSTEMS ARE NOT EQUIVALENT. FOUND COUNTEREXAMPLE USING SMT:\n"));
+            logs.push(format!("### CVC5: THE CONSTRAINT SYSTEMS ARE NOT EQUIVALENT. FOUND COUNTEREXAMPLE USING SMT:\n"));
         },
         PossibleResult::VERIFIED=>{
-            logs.push(format!("### THE CONSTRAINT SYSTEMS ARE EQUIVALENT\n"));
+            logs.push(format!("### CVC5: THE CONSTRAINT SYSTEMS ARE EQUIVALENT\n"));
         },
         PossibleResult::UNKNOWN=>{
-            logs.push("### UNKNOWN: VERIFICATION OF EQUIVALENCE TIMEOUT\n".to_string());
+            logs.push("### CVC5: UNKNOWN: VERIFICATION OF EQUIVALENCE TIMEOUT\n".to_string());
         },
         _=>{
             unreachable!()
@@ -86,13 +86,13 @@ pub fn study_safety(problem: &SafetyVerification)-> (PossibleResult, Vec<String>
 
     match result_solver{
         PossibleResult::FAILED=>{
-            logs.push(format!("### THE TEMPLATE DOES NOT ENSURE SAFETY. FOUND COUNTEREXAMPLE USING SMT:\n"));
+            logs.push(format!("### CVC5: THE TEMPLATE DOES NOT ENSURE SAFETY. FOUND COUNTEREXAMPLE USING SMT:\n"));
         },
         PossibleResult::VERIFIED=>{
-            logs.push(format!("### WEAK SAFETY ENSURED BY THE TEMPLATE\n"));
+            logs.push(format!("### CVC5: WEAK SAFETY ENSURED BY THE TEMPLATE\n"));
         },
         PossibleResult::UNKNOWN=>{
-            logs.push("### UNKNOWN: VERIFICATION OF WEAK SAFETY USING THE SPECIFICATION TIMEOUT\n".to_string());
+            logs.push("### CVC5: UNKNOWN: VERIFICATION OF WEAK SAFETY USING THE SPECIFICATION TIMEOUT\n".to_string());
         },
         _=>{
             unreachable!()
@@ -116,18 +116,60 @@ pub fn study_safety_with_cancel(problem: &SafetyVerification, cancel_flag: &Atom
 
     match result_solver{
         PossibleResult::FAILED=>{
-            logs.push(format!("### THE TEMPLATE DOES NOT ENSURE SAFETY. FOUND COUNTEREXAMPLE USING SMT:\n"));
+            logs.push(format!("### CVC5: THE TEMPLATE DOES NOT ENSURE SAFETY. FOUND COUNTEREXAMPLE USING SMT:\n"));
         },
         PossibleResult::VERIFIED=>{
-            logs.push(format!("### WEAK SAFETY ENSURED BY THE TEMPLATE\n"));
+            logs.push(format!("### CVC5: WEAK SAFETY ENSURED BY THE TEMPLATE\n"));
         },
         PossibleResult::UNKNOWN=>{
-            logs.push("### UNKNOWN: VERIFICATION OF WEAK SAFETY USING THE SPECIFICATION TIMEOUT\n".to_string());
+            logs.push("### CVC5: UNKNOWN: VERIFICATION OF WEAK SAFETY USING THE SPECIFICATION TIMEOUT\n".to_string());
         },
         _=>{
             unreachable!()
         }
 
+    }
+
+    (result_solver, logs)
+}
+
+pub fn study_equivalence_with_cancel(problem: &EquivalenceVerification, cancel_flag: &AtomicBool) -> (PossibleResult, Vec<String>) {
+    let mut logs = Vec::new();
+
+    if cancel_flag.load(Ordering::Relaxed) {
+        logs.push("### CANCELLED BEFORE STARTING CVC5\n".to_string());
+        return (PossibleResult::UNKNOWN, logs);
+    }
+
+    let smt2_problem: LinkedList<String> = equivalence_problem_to_smt2(problem, false);
+    let result_solver = handling_cvc5_call(&smt2_problem, problem.verification_timeout, problem.verbose, Some(cancel_flag));
+
+    match result_solver {
+        PossibleResult::FAILED   => logs.push("### CVC5: THE CONSTRAINT SYSTEMS ARE NOT EQUIVALENT. FOUND COUNTEREXAMPLE USING SMT:\n".to_string()),
+        PossibleResult::VERIFIED => logs.push("### CVC5: THE CONSTRAINT SYSTEMS ARE EQUIVALENT\n".to_string()),
+        PossibleResult::UNKNOWN  => logs.push("### CVC5: UNKNOWN: VERIFICATION OF EQUIVALENCE TIMEOUT\n".to_string()),
+        _ => unreachable!(),
+    }
+
+    (result_solver, logs)
+}
+
+pub fn study_correctness_with_cancel(problem: &CorrectnessVerification, cancel_flag: &AtomicBool) -> (PossibleResult, Vec<String>) {
+    let mut logs = Vec::new();
+
+    if cancel_flag.load(Ordering::Relaxed) {
+        logs.push("### CANCELLED BEFORE STARTING CVC5\n".to_string());
+        return (PossibleResult::UNKNOWN, logs);
+    }
+
+    let smt2_problem: LinkedList<String> = correctness_problem_to_smt2(problem);
+    let result_solver = handling_cvc5_call(&smt2_problem, problem.verification_timeout, problem.verbose, Some(cancel_flag));
+
+    match result_solver {
+        PossibleResult::FAILED   => logs.push("### CVC5: THE CONSTRAINT SYSTEMS AND THE FORMULA ARE NOT EQUIVALENT. FOUND COUNTEREXAMPLE USING SMT:\n".to_string()),
+        PossibleResult::VERIFIED => logs.push("### CVC5: THE CONSTRAINT SYSTEM AND THE FORMULA ARE EQUIVALENT\n".to_string()),
+        PossibleResult::UNKNOWN  => logs.push("### CVC5: UNKNOWN: VERIFICATION OF CORRECTNESS TIMEOUT\n".to_string()),
+        _ => unreachable!(),
     }
 
     (result_solver, logs)

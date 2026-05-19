@@ -319,6 +319,9 @@ pub type EquivalenceImplication = (Vec<(usize, usize)>, Vec<(usize, usize)>);
             PossibleSolver::Z3=>{
                 z3_interface::study_equivalence(problem)
             },
+            PossibleSolver::ALL=>{
+                parallel_interface::study_equivalence(problem)
+            },
             _ => unreachable!()
         }
     }

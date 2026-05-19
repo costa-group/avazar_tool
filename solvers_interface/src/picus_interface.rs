@@ -74,8 +74,8 @@ pub fn deduce(problem: &SafetyVerification)-> (PossibleResult, Vec<String>){
         None => {
             cmd.kill().ok();
             let _ = fs::remove_file(output_name);
-            eprintln!("picus timed out");
-            (PossibleResult::UNKNOWN, vec!["picus timed out".to_string()])
+            eprintln!("### PICUS: TIMED OUT\n");
+            (PossibleResult::UNKNOWN, vec!["### PICUS: TIMED OUT\n".to_string()])
         }
     }
  

@@ -27,14 +27,14 @@ pub fn study_correctness(problem: &CorrectnessVerification) -> (PossibleResult, 
     let result_solver = handling_nia_z3_call(&smt2_problem, problem.verification_timeout, problem.verbose, None);
 
     match result_solver {
-        PossibleResult::VERIFIED => {
-            logs.push("### THE CONSTRAINT SYSTEMS AND THE FORMULA ARE NOT EQUIVALENT. FOUND COUNTEREXAMPLE USING SMT:\n".to_string());
-        }
         PossibleResult::FAILED => {
-            logs.push("### THE CONSTRAINT SYSTEM AND THE FORMULA ARE EQUIVALENT\n".to_string());
+            logs.push("### NIA-Z3: THE CONSTRAINT SYSTEMS AND THE FORMULA ARE NOT EQUIVALENT. FOUND COUNTEREXAMPLE USING SMT:\n".to_string());
+        }
+        PossibleResult::VERIFIED => {
+            logs.push("### NIA-Z3: THE CONSTRAINT SYSTEM AND THE FORMULA ARE EQUIVALENT\n".to_string());
         }
         PossibleResult::UNKNOWN => {
-            logs.push("### UNKNOWN: VERIFICATION OF CORRECTNESS TIMEOUT\n".to_string());
+            logs.push("### NIA-Z3: UNKNOWN: VERIFICATION OF CORRECTNESS TIMEOUT\n".to_string());
         }
         _ => unreachable!(),
     }
@@ -49,14 +49,14 @@ pub fn study_equivalence(problem: &EquivalenceVerification) -> (PossibleResult, 
     let result_solver = handling_nia_z3_call(&smt2_problem, problem.verification_timeout, problem.verbose, None);
 
     match result_solver {
-        PossibleResult::VERIFIED => {
-            logs.push("### THE CONSTRAINT SYSTEMS ARE NOT EQUIVALENT. FOUND COUNTEREXAMPLE USING SMT:\n".to_string());
-        }
         PossibleResult::FAILED => {
-            logs.push("### THE CONSTRAINT SYSTEMS ARE EQUIVALENT\n".to_string());
+            logs.push("### NIA-Z3: THE CONSTRAINT SYSTEMS ARE NOT EQUIVALENT. FOUND COUNTEREXAMPLE USING SMT:\n".to_string());
+        }
+        PossibleResult::VERIFIED => {
+            logs.push("### NIA-Z3: THE CONSTRAINT SYSTEMS ARE EQUIVALENT\n".to_string());
         }
         PossibleResult::UNKNOWN => {
-            logs.push("### UNKNOWN: VERIFICATION OF EQUIVALENCE TIMEOUT\n".to_string());
+            logs.push("### NIA-Z3: UNKNOWN: VERIFICATION OF EQUIVALENCE TIMEOUT\n".to_string());
         }
         _ => unreachable!(),
     }
@@ -71,14 +71,14 @@ pub fn study_safety(problem: &SafetyVerification) -> (PossibleResult, Vec<String
     let result_solver = handling_nia_z3_call(&smt2_problem, problem.verification_timeout, problem.verbose, None);
 
     match result_solver {
-        PossibleResult::VERIFIED => {
-            logs.push("### THE TEMPLATE DOES NOT ENSURE SAFETY. FOUND COUNTEREXAMPLE USING SMT:\n".to_string());
-        }
         PossibleResult::FAILED => {
-            logs.push("### WEAK SAFETY ENSURED BY THE TEMPLATE\n".to_string());
+            logs.push("### NIA-Z3: THE TEMPLATE DOES NOT ENSURE SAFETY. FOUND COUNTEREXAMPLE USING SMT:\n".to_string());
+        }
+        PossibleResult::VERIFIED => {
+            logs.push("### NIA-Z3: WEAK SAFETY ENSURED BY THE TEMPLATE\n".to_string());
         }
         PossibleResult::UNKNOWN => {
-            logs.push("### UNKNOWN: VERIFICATION OF WEAK SAFETY USING THE SPECIFICATION TIMEOUT\n".to_string());
+            logs.push("### NIA-Z3: UNKNOWN: VERIFICATION OF WEAK SAFETY USING THE SPECIFICATION TIMEOUT\n".to_string());
         }
         _ => unreachable!(),
     }
@@ -103,15 +103,57 @@ pub fn study_safety_with_cancel(problem: &SafetyVerification, cancel_flag: &Atom
     );
 
     match result_solver {
-        PossibleResult::VERIFIED => {
-            logs.push("### THE TEMPLATE DOES NOT ENSURE SAFETY. FOUND COUNTEREXAMPLE USING SMT:\n".to_string());
-        }
         PossibleResult::FAILED => {
-            logs.push("### WEAK SAFETY ENSURED BY THE TEMPLATE\n".to_string());
+            logs.push("### NIA-Z3: THE TEMPLATE DOES NOT ENSURE SAFETY. FOUND COUNTEREXAMPLE USING SMT:\n".to_string());
+        }
+        PossibleResult::VERIFIED => {
+            logs.push("### NIA-Z3: WEAK SAFETY ENSURED BY THE TEMPLATE\n".to_string());
         }
         PossibleResult::UNKNOWN => {
-            logs.push("### UNKNOWN: VERIFICATION OF WEAK SAFETY USING THE SPECIFICATION TIMEOUT\n".to_string());
+            logs.push("### NIA-Z3: UNKNOWN: VERIFICATION OF WEAK SAFETY USING THE SPECIFICATION TIMEOUT\n".to_string());
         }
+        _ => unreachable!(),
+    }
+
+    (result_solver, logs)
+}
+
+pub fn study_equivalence_with_cancel(problem: &EquivalenceVerification, cancel_flag: &AtomicBool) -> (PossibleResult, Vec<String>) {
+    let mut logs = Vec::new();
+
+    if cancel_flag.load(Ordering::Relaxed) {
+        logs.push("### CANCELLED BEFORE STARTING NIA-Z3\n".to_string());
+        return (PossibleResult::UNKNOWN, logs);
+    }
+
+    let smt2_problem = equivalence_problem_to_z3_smt2(problem);
+    let result_solver = handling_nia_z3_call(&smt2_problem, problem.verification_timeout, problem.verbose, Some(cancel_flag));
+
+    match result_solver {
+        PossibleResult::FAILED => logs.push("### NIA-Z3: THE CONSTRAINT SYSTEMS ARE NOT EQUIVALENT. FOUND COUNTEREXAMPLE USING SMT:\n".to_string()),
+        PossibleResult::VERIFIED   => logs.push("### NIA-Z3: THE CONSTRAINT SYSTEMS ARE EQUIVALENT\n".to_string()),
+        PossibleResult::UNKNOWN  => logs.push("### NIA-Z3: UNKNOWN: VERIFICATION OF EQUIVALENCE TIMEOUT\n".to_string()),
+        _ => unreachable!(),
+    }
+
+    (result_solver, logs)
+}
+
+pub fn study_correctness_with_cancel(problem: &CorrectnessVerification, cancel_flag: &AtomicBool) -> (PossibleResult, Vec<String>) {
+    let mut logs = Vec::new();
+
+    if cancel_flag.load(Ordering::Relaxed) {
+        logs.push("### CANCELLED BEFORE STARTING NIA-Z3\n".to_string());
+        return (PossibleResult::UNKNOWN, logs);
+    }
+
+    let smt2_problem = correctness_problem_to_z3_smt2(problem);
+    let result_solver = handling_nia_z3_call(&smt2_problem, problem.verification_timeout, problem.verbose, Some(cancel_flag));
+
+    match result_solver {
+        PossibleResult::FAILED => logs.push("### NIA-Z3: THE CONSTRAINT SYSTEMS AND THE FORMULA ARE NOT EQUIVALENT. FOUND COUNTEREXAMPLE USING SMT:\n".to_string()),
+        PossibleResult::VERIFIED   => logs.push("### NIA-Z3: THE CONSTRAINT SYSTEM AND THE FORMULA ARE EQUIVALENT\n".to_string()),
+        PossibleResult::UNKNOWN  => logs.push("### NIA-Z3: UNKNOWN: VERIFICATION OF CORRECTNESS TIMEOUT\n".to_string()),
         _ => unreachable!(),
     }
 

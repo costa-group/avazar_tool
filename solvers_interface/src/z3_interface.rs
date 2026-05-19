@@ -23,14 +23,14 @@ pub fn study_equivalence(problem: &EquivalenceVerification)-> (PossibleResult, V
     let (result_solver, mut logs) = try_prove_equivalence_with_z3(problem);
 
     match result_solver{
-        PossibleResult::VERIFIED=>{
-            logs.push(format!("### THE CONSTRAINT SYSTEMS ARE NOT EQUIVALENT. FOUND COUNTEREXAMPLE USING SMT:\n"));
-        },
         PossibleResult::FAILED=>{
-            logs.push(format!("### THE CONSTRAINT SYSTEMS ARE EQUIVALENT\n"));
+            logs.push(format!("### Z3: THE CONSTRAINT SYSTEMS ARE NOT EQUIVALENT. FOUND COUNTEREXAMPLE USING SMT:\n"));
+        },
+        PossibleResult::VERIFIED=>{
+            logs.push(format!("### Z3: THE CONSTRAINT SYSTEMS ARE EQUIVALENT\n"));
         },
         PossibleResult::UNKNOWN=>{
-            logs.push("### UNKNOWN: VERIFICATION OF EQUIVALENCE TIMEOUT\n".to_string());
+            logs.push("### Z3: UNKNOWN: VERIFICATION OF EQUIVALENCE TIMEOUT\n".to_string());
         },
         _=>{
             unreachable!()
@@ -42,6 +42,23 @@ pub fn study_equivalence(problem: &EquivalenceVerification)-> (PossibleResult, V
 
 }
 
+pub fn study_equivalence_with_cancel(problem: &EquivalenceVerification, cancel_flag: &AtomicBool) -> (PossibleResult, Vec<String>) {
+    if cancel_flag.load(Ordering::Relaxed) {
+        return (PossibleResult::UNKNOWN, vec!["### CANCELLED BEFORE STARTING Z3\n".to_string()]);
+    }
+
+    let (result_solver, mut logs) = try_prove_equivalence_with_z3_cancel(problem, cancel_flag);
+
+    match result_solver {
+        PossibleResult::FAILED   => logs.push("### Z3: THE CONSTRAINT SYSTEMS ARE NOT EQUIVALENT. FOUND COUNTEREXAMPLE USING SMT:\n".to_string()),
+        PossibleResult::VERIFIED => logs.push("### Z3: THE CONSTRAINT SYSTEMS ARE EQUIVALENT\n".to_string()),
+        PossibleResult::UNKNOWN  => logs.push("### Z3: UNKNOWN: VERIFICATION OF EQUIVALENCE TIMEOUT\n".to_string()),
+        _ => unreachable!(),
+    }
+
+    (result_solver, logs)
+}
+
 
 
 pub fn study_safety(problem: &SafetyVerification)-> (PossibleResult, Vec<String>){
@@ -50,14 +67,14 @@ pub fn study_safety(problem: &SafetyVerification)-> (PossibleResult, Vec<String>
     let (result_solver,mut logs) = try_prove_safety_with_z3(problem);
 
     match result_solver{
-        PossibleResult::VERIFIED=>{
-            logs.push(format!("### THE TEMPLATE DOES NOT ENSURE SAFETY. FOUND COUNTEREXAMPLE USING SMT:\n"));
-        },
         PossibleResult::FAILED=>{
-            logs.push(format!("### WEAK SAFETY ENSURED BY THE TEMPLATE\n"));
+            logs.push(format!("### Z3: THE TEMPLATE DOES NOT ENSURE SAFETY. FOUND COUNTEREXAMPLE USING SMT:\n"));
+        },
+        PossibleResult::VERIFIED=>{
+            logs.push(format!("### Z3: WEAK SAFETY ENSURED BY THE TEMPLATE\n"));
         },
         PossibleResult::UNKNOWN=>{
-            logs.push("### UNKNOWN: VERIFICATION OF WEAK SAFETY USING THE SPECIFICATION TIMEOUT\n".to_string());
+            logs.push("### Z3: UNKNOWN: VERIFICATION OF WEAK SAFETY USING THE SPECIFICATION TIMEOUT\n".to_string());
         },
         _=>{
             unreachable!()
@@ -76,14 +93,14 @@ pub fn study_safety_with_cancel(problem: &SafetyVerification, cancel_flag: &Atom
     let (result_solver, mut logs) = try_prove_safety_with_z3_cancel(problem, cancel_flag);
 
     match result_solver{
-        PossibleResult::VERIFIED=>{
-            logs.push(format!("### THE TEMPLATE DOES NOT ENSURE SAFETY. FOUND COUNTEREXAMPLE USING SMT:\n"));
-        },
         PossibleResult::FAILED=>{
-            logs.push(format!("### WEAK SAFETY ENSURED BY THE TEMPLATE\n"));
+            logs.push(format!("### Z3: THE TEMPLATE DOES NOT ENSURE SAFETY. FOUND COUNTEREXAMPLE USING SMT:\n"));
+        },
+        PossibleResult::VERIFIED=>{
+            logs.push(format!("### Z3: WEAK SAFETY ENSURED BY THE TEMPLATE\n"));
         },
         PossibleResult::UNKNOWN=>{
-            logs.push("### UNKNOWN: VERIFICATION OF WEAK SAFETY USING THE SPECIFICATION TIMEOUT\n".to_string());
+            logs.push("### Z3: UNKNOWN: VERIFICATION OF WEAK SAFETY USING THE SPECIFICATION TIMEOUT\n".to_string());
         },
         _=>{
             unreachable!()
@@ -209,13 +226,28 @@ problem: &EquivalenceVerification
 
     with_z3_config(
         &cfg,
-        || {internal_try_prove_equivalence_with_z3(problem)}
+        || {internal_try_prove_equivalence_with_z3(problem, None)}
     )
 
 }
 
+pub fn try_prove_equivalence_with_z3_cancel(
+    problem: &EquivalenceVerification,
+    cancel_flag: &AtomicBool,
+) -> (PossibleResult, Vec<String>) {
+
+    let mut cfg = Config::new();
+    cfg.set_timeout_msec(problem.verification_timeout);
+
+    with_z3_config(
+        &cfg,
+        || {internal_try_prove_equivalence_with_z3(problem, Some(cancel_flag))}
+    )
+}
+
 fn internal_try_prove_equivalence_with_z3(
-    problem: &EquivalenceVerification
+    problem: &EquivalenceVerification,
+    cancel_flag: Option<&AtomicBool>,
 ) -> (PossibleResult,Vec<String>) {
 
     let logs = Vec::new();
@@ -275,49 +307,36 @@ fn internal_try_prove_equivalence_with_z3(
     }
 
 
-    let result = match solver.check() {
-        SatResult::Sat => {
-            // logs.push(format!(
-            //     "### THE TEMPLATE DOES NOT ENSURE SAFETY. FOUND COUNTEREXAMPLE USING SMT:\n"
-            // ));
+    if cancel_flag.map_or(false, |flag| flag.load(Ordering::Relaxed)) {
+        return (PossibleResult::UNKNOWN, vec!["### CANCELLED BEFORE CHECKING Z3\n".to_string()]);
+    }
 
-            // let model = solver.get_model().unwrap();
-            // for s in &problem.inputs_1 {
-            //     let v = model
-            //         .eval(signals_1_to_smt_rep.get(s).unwrap(), true)
-            //         .unwrap();
-            //     logs.push(format!("Input signal {}: {}\n", s, v.to_string()));
-            // }
-            // for s in &problem.outputs_1 {
-            //     let v = model
-            //         .eval(signals_1_to_smt_rep.get(s).unwrap(), true)
-            //         .unwrap();
-            //     let v1 = model
-            //         .eval(signals_2_to_smt_rep.get(s).unwrap(), true)
-            //         .unwrap();
+    let finished = AtomicBool::new(false);
+    let result = thread::scope(|scope| {
+        let handle = solver.get_context().handle();
+        let finished_ref = &finished;
+        if let Some(cancel_flag_ref) = cancel_flag {
+            scope.spawn(move || {
+                while !finished_ref.load(Ordering::Relaxed) {
+                    if cancel_flag_ref.load(Ordering::Relaxed) {
+                        handle.interrupt();
+                        break;
+                    }
+                    thread::sleep(Duration::from_millis(10));
+                }
+            });
+        }
 
-            //     logs.push(format!(
-            //         "Output signal {}: values {} | {}\n",
-            //         s,
-            //         v.to_string(),
-            //         v1.to_string()
-            //     ));
-            // }
+        let result = match solver.check() {
+            SatResult::Sat   => PossibleResult::FAILED,
+            SatResult::Unsat => PossibleResult::VERIFIED,
+            _                => PossibleResult::UNKNOWN,
+        };
 
-            PossibleResult::FAILED
-        }
-        SatResult::Unsat => {
-            //logs.push(format!("### WEAK SAFETY ENSURED BY THE TEMPLATE\n"));
-            PossibleResult::VERIFIED
-        }
-        _ => {
-            //logs.push(format!(
-            //    "### UNKNOWN: VERIFICATION OF WEAK SAFETY USING THE SPECIFICATION TIMEOUT\n"
-            //));
-            PossibleResult::UNKNOWN
-        }
-    };
-    
+        finished.store(true, Ordering::SeqCst);
+        result
+    });
+
     (result, logs)
 }
 

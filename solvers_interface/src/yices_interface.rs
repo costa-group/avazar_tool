@@ -28,14 +28,14 @@ pub fn study_correctness(problem: &CorrectnessVerification) -> (PossibleResult, 
     let result_solver = handling_yices_call(&smt2_problem, problem.verification_timeout, problem.verbose, None);
 
     match result_solver {
-        PossibleResult::VERIFIED => {
-            logs.push(format!("### THE CONSTRAINT SYSTEMS AND THE FORMULA ARE NOT EQUIVALENT. FOUND COUNTEREXAMPLE USING SMT:\n"));
-        }
         PossibleResult::FAILED => {
-            logs.push(format!("### THE CONSTRAINT SYSTEM AND THE FORMULA ARE EQUIVALENT\n"));
+            logs.push(format!("### YICES: THE CONSTRAINT SYSTEMS AND THE FORMULA ARE NOT EQUIVALENT. FOUND COUNTEREXAMPLE USING SMT:\n"));
+        }
+        PossibleResult::VERIFIED => {
+            logs.push(format!("### YICES: THE CONSTRAINT SYSTEM AND THE FORMULA ARE EQUIVALENT\n"));
         }
         PossibleResult::UNKNOWN => {
-            logs.push("### UNKNOWN: VERIFICATION OF CORRECTNESS TIMEOUT\n".to_string());
+            logs.push("### YICES: UNKNOWN: VERIFICATION OF CORRECTNESS TIMEOUT\n".to_string());
         }
         _ => {
             unreachable!()
@@ -54,14 +54,14 @@ pub fn study_equivalence(problem: &EquivalenceVerification) -> (PossibleResult, 
     let result_solver = handling_yices_call(&smt2_problem, problem.verification_timeout, problem.verbose, None);
 
     match result_solver {
-        PossibleResult::VERIFIED => {
-            logs.push(format!("### THE CONSTRAINT SYSTEMS ARE NOT EQUIVALENT. FOUND COUNTEREXAMPLE USING SMT:\n"));
-        }
         PossibleResult::FAILED => {
-            logs.push(format!("### THE CONSTRAINT SYSTEMS ARE EQUIVALENT\n"));
+            logs.push(format!("### YICES: THE CONSTRAINT SYSTEMS ARE NOT EQUIVALENT. FOUND COUNTEREXAMPLE USING SMT:\n"));
+        }
+        PossibleResult::VERIFIED => {
+            logs.push(format!("### YICES: THE CONSTRAINT SYSTEMS ARE EQUIVALENT\n"));
         }
         PossibleResult::UNKNOWN => {
-            logs.push("### UNKNOWN: VERIFICATION OF EQUIVALENCE TIMEOUT\n".to_string());
+            logs.push("### YICES: UNKNOWN: VERIFICATION OF EQUIVALENCE TIMEOUT\n".to_string());
         }
         _ => {
             unreachable!()
@@ -80,14 +80,14 @@ pub fn study_safety(problem: &SafetyVerification) -> (PossibleResult, Vec<String
     let result_solver = handling_yices_call(&smt2_problem, problem.verification_timeout, problem.verbose, None);
 
     match result_solver {
-        PossibleResult::VERIFIED => {
-            logs.push(format!("### THE TEMPLATE DOES NOT ENSURE SAFETY. FOUND COUNTEREXAMPLE USING SMT:\n"));
-        }
         PossibleResult::FAILED => {
-            logs.push(format!("### WEAK SAFETY ENSURED BY THE TEMPLATE\n"));
+            logs.push(format!("### YICES: THE TEMPLATE DOES NOT ENSURE SAFETY. FOUND COUNTEREXAMPLE USING SMT:\n"));
+        }
+        PossibleResult::VERIFIED => {
+            logs.push(format!("### YICES: WEAK SAFETY ENSURED BY THE TEMPLATE\n"));
         }
         PossibleResult::UNKNOWN => {
-            logs.push("### UNKNOWN: VERIFICATION OF WEAK SAFETY USING THE SPECIFICATION TIMEOUT\n".to_string());
+            logs.push("### YICES: UNKNOWN: VERIFICATION OF WEAK SAFETY USING THE SPECIFICATION TIMEOUT\n".to_string());
         }
         _ => {
             unreachable!()
@@ -109,18 +109,60 @@ pub fn study_safety_with_cancel(problem: &SafetyVerification, cancel_flag: &Atom
     let result_solver = handling_yices_call(&smt2_problem, problem.verification_timeout, problem.verbose, Some(cancel_flag));
 
     match result_solver {
-        PossibleResult::VERIFIED => {
-            logs.push(format!("### THE TEMPLATE DOES NOT ENSURE SAFETY. FOUND COUNTEREXAMPLE USING SMT:\n"));
-        }
         PossibleResult::FAILED => {
-            logs.push(format!("### WEAK SAFETY ENSURED BY THE TEMPLATE\n"));
+            logs.push(format!("### YICES: THE TEMPLATE DOES NOT ENSURE SAFETY. FOUND COUNTEREXAMPLE USING SMT:\n"));
+        }
+        PossibleResult::VERIFIED => {
+            logs.push(format!("### YICES: WEAK SAFETY ENSURED BY THE TEMPLATE\n"));
         }
         PossibleResult::UNKNOWN => {
-            logs.push("### UNKNOWN: VERIFICATION OF WEAK SAFETY USING THE SPECIFICATION TIMEOUT\n".to_string());
+            logs.push("### YICES: UNKNOWN: VERIFICATION OF WEAK SAFETY USING THE SPECIFICATION TIMEOUT\n".to_string());
         }
         _ => {
             unreachable!()
         }
+    }
+
+    (result_solver, logs)
+}
+
+pub fn study_equivalence_with_cancel(problem: &EquivalenceVerification, cancel_flag: &AtomicBool) -> (PossibleResult, Vec<String>) {
+    let mut logs = Vec::new();
+
+    if cancel_flag.load(Ordering::Relaxed) {
+        logs.push("### CANCELLED BEFORE STARTING YICES\n".to_string());
+        return (PossibleResult::UNKNOWN, logs);
+    }
+
+    let smt2_problem: LinkedList<String> = equivalence_problem_to_smt2(problem, false);
+    let result_solver = handling_yices_call(&smt2_problem, problem.verification_timeout, problem.verbose, Some(cancel_flag));
+
+    match result_solver {
+        PossibleResult::FAILED   => logs.push("### YICES: THE CONSTRAINT SYSTEMS ARE NOT EQUIVALENT. FOUND COUNTEREXAMPLE USING SMT:\n".to_string()),
+        PossibleResult::VERIFIED => logs.push("### YICES: THE CONSTRAINT SYSTEMS ARE EQUIVALENT\n".to_string()),
+        PossibleResult::UNKNOWN  => logs.push("### YICES: UNKNOWN: VERIFICATION OF EQUIVALENCE TIMEOUT\n".to_string()),
+        _ => unreachable!(),
+    }
+
+    (result_solver, logs)
+}
+
+pub fn study_correctness_with_cancel(problem: &CorrectnessVerification, cancel_flag: &AtomicBool) -> (PossibleResult, Vec<String>) {
+    let mut logs = Vec::new();
+
+    if cancel_flag.load(Ordering::Relaxed) {
+        logs.push("### CANCELLED BEFORE STARTING YICES\n".to_string());
+        return (PossibleResult::UNKNOWN, logs);
+    }
+
+    let smt2_problem: LinkedList<String> = correctness_problem_to_smt2(problem);
+    let result_solver = handling_yices_call(&smt2_problem, problem.verification_timeout, problem.verbose, Some(cancel_flag));
+
+    match result_solver {
+        PossibleResult::FAILED   => logs.push("### YICES: THE CONSTRAINT SYSTEMS AND THE FORMULA ARE NOT EQUIVALENT. FOUND COUNTEREXAMPLE USING SMT:\n".to_string()),
+        PossibleResult::VERIFIED => logs.push("### YICES: THE CONSTRAINT SYSTEM AND THE FORMULA ARE EQUIVALENT\n".to_string()),
+        PossibleResult::UNKNOWN  => logs.push("### YICES: UNKNOWN: VERIFICATION OF CORRECTNESS TIMEOUT\n".to_string()),
+        _ => unreachable!(),
     }
 
     (result_solver, logs)

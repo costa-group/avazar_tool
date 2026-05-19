@@ -144,6 +144,7 @@ impl SafetyVerification{
 
 
 
+#[derive(Clone)]
 pub struct EquivalenceVerification {
     pub template_name: String,
     pub signals_1: LinkedList<usize>,
@@ -216,6 +217,7 @@ impl EquivalenceVerification{
 
 
 
+#[derive(Clone)]
 pub struct CorrectnessVerification {
     pub template_name: String,
     pub signals_1: Vec<usize>,
