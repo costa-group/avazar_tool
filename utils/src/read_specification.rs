@@ -3,17 +3,18 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
 use std::error::Error;
-
+use std::collections::HashMap;
 
 #[derive(Deserialize,Serialize, Debug, Clone)]
-pub struct SpecificationInfo{
-    pub node_id: usize,
-    pub node_name:String,
-    pub constraints: Vec<String>, //ids of the constraints
+pub struct NodeSpecificationInfo{
+    pub call_name: String,
+    pub body: Vec<String>,
     pub input_signals: Vec<String>,
     pub output_signals: Vec<String>,
     pub signals: Vec<String>, 
 }
+
+pub type SpecificationInfo = HashMap<String, NodeSpecificationInfo>;
 
 
 

@@ -53,8 +53,6 @@ pub fn prove_equivalence(user_input: Input) -> Result<(), ()> {
     } else{
         generate_empty_equivalence_structure(constraints.len(), constraints_aux.len(), signals.len(), signals_aux.len(), n_outputs, n_outputs_aux, n_inputs, n_inputs_aux)
     }; 
-
-    println!("{:?}", structure);
         
     let timeout: u64 = user_input.timeout;
     let apply_deduction_assigned: bool = user_input.apply_deduction_assigned;
@@ -78,7 +76,6 @@ pub fn prove_equivalence(user_input: Input) -> Result<(), ()> {
         structural_equivalence_classes,
         mut max_node_id
     ) = process_equivalence_structure(&structure);
-    println!("{:?}", nodeid2pos);
 
 
     let clustering_size = user_input.clustering_size;

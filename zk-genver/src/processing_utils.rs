@@ -29,7 +29,7 @@ pub fn process_constraints(input: &PathBuf) -> (
     )
 }
 
-
+/* 
 pub fn process_smt_formula(input: &PathBuf) ->(
     Vec<String>,
     Vec<String>,
@@ -44,7 +44,7 @@ pub fn process_smt_formula(input: &PathBuf) ->(
         result.output_signals,
         result.input_signals
     )
-}
+}*/
 
 pub fn process_structure(structure: &StructureInfo) -> (HashMap<usize, usize>, HashMap<usize, usize>, HashMap<usize, usize>, usize){
     

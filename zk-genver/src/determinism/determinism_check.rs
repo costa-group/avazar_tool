@@ -15,6 +15,7 @@ use solvers_interface::PossibleResult::VERIFIED;
 
 
 pub struct ResultInfoDeterminism{
+    previously_verified_nodes: HashSet<usize>,
     verified_nodes: HashSet<usize>,
     failed_nodes: HashSet<usize>,
     unknown_nodes: HashSet<usize>,
@@ -83,6 +84,7 @@ pub fn prove_safety(user_input: Input) -> Result<(), ()> {
 
     
     let mut results = ResultInfoDeterminism{
+        previously_verified_nodes: HashSet::new(),
         verified_nodes: HashSet::new(),
         failed_nodes: HashSet::new(),
         unknown_nodes: HashSet::new(),
@@ -192,7 +194,17 @@ fn process_node(
 
     // To not study the custom templates
     if node.is_custom{
+        println!("Not studying node {}: {} --> custom template ", node.node_id, node.node_name);
         results.studied_nodes.insert(node.node_id, PossibleResult::NOTHING);
+        return;
+    }
+
+    // To add the templates already verified 
+    if node.is_deterministic{
+        println!("Not studying node {}: {} --> already verified ", node.node_id, node.node_name);
+        results.studied_nodes.insert(node.node_id, PossibleResult::VERIFIED);
+        results.previously_verified_nodes.insert(node.node_id);
+
         return;
     }
 
@@ -352,6 +364,7 @@ fn decompose_and_study(
     println!("LOG: node decomposed in {} new nodes", new_nodeid2pos.len());
 
     let mut new_results = ResultInfoDeterminism{
+        previously_verified_nodes: HashSet::new(),
         verified_nodes: HashSet::new(),
         failed_nodes: HashSet::new(),
         unknown_nodes: HashSet::new(),
@@ -611,14 +624,14 @@ fn print_pretty_results(results: &ResultInfoDeterminism){
 
     println!("--------------------------------------------");
     println!("--------------------------------------------");
-    println!("------ ZK-GENVER VERIFICATION RESULTS ------");
+    println!("------- AVAZAR VERIFICATION RESULTS --------");
     println!("--------------------------------------------");
     println!("--------------------------------------------\n");
 
     if results.failed_nodes.is_empty() && results.unknown_nodes.is_empty() && results.unknown_undivisible_nodes.is_empty(){
         println!("-> All nodes satisfy determinism :)");
     } else{
-    	println!("-> ZK-GENVER could not verify determinism of all components");
+    	println!("-> AVAZAR could not verify determinism of all components");
     	if !results.failed_nodes.is_empty(){
         	println!("Nodes that do not satisfy determinism: ");
         	for c in &results.failed_nodes{
@@ -635,7 +648,13 @@ fn print_pretty_results(results: &ResultInfoDeterminism){
     		}
         }
     }
-    println!("  * Number of verified nodes (determinism): {}",  results.verified_nodes.len());
+    println!("  * Number of verified nodes (determinism): {}",  results.verified_nodes.len() + results.previously_verified_nodes.len());
+    if results.previously_verified_nodes.len() > 0{
+        println!("    - Number of nodes that were verified previously (syntactic analysis): {}", results.previously_verified_nodes.len());
+    }
+    if results.verified_nodes.len() > 0{
+        println!("    - Number of nodes that were verified by AVAZAR tool: {}", results.verified_nodes.len());
+    } 
     println!("  * Number of failed nodes (determinism): {}",  results.failed_nodes.len());        
     println!("  * Number of timeout nodes (determinism): {}",  results.unknown_nodes.len()+results.unknown_undivisible_nodes.len());
     println!("  * Percentage of constraints that are in verified nodes : {}%", (results.verified_constraints as f64 / results.total_constraints as f64) * 100.0);
