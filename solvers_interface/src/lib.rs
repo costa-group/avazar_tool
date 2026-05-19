@@ -9,13 +9,60 @@ pub mod parallel_interface;
 mod smt2_utils;
 
 use std::collections::{HashSet, LinkedList};
+use std::path::Path;
 use num_bigint_dig::BigInt;
 
 use circom_algebra::algebra::Constraint;
 
-#[derive(PartialEq, Eq, Clone, Copy)] 
+#[derive(PartialEq, Eq, Clone, Copy)]
 pub enum PossibleSolver{
     PICUS, CIVER, FFSOL, CVC5, YICES, NIAZ3, Z3, ALL
+}
+
+pub fn check_binary_in_path(binary: &str) -> bool {
+    if binary.starts_with('.') || binary.starts_with('/') {
+        return Path::new(binary).exists();
+    }
+    std::process::Command::new("which")
+        .arg(binary)
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+impl PossibleSolver {
+    /// Returns the external binary required by this solver, or None if it uses a built-in library.
+    pub fn required_binary(&self) -> Option<&'static str> {
+        match self {
+            PossibleSolver::FFSOL  => Some("ffsol"),
+            PossibleSolver::CVC5   => Some("cvc5"),
+            PossibleSolver::YICES  => Some("yices-smt2"),
+            PossibleSolver::NIAZ3  => Some("z3"),
+            PossibleSolver::PICUS  => Some("./Picus/run-picus"),
+            PossibleSolver::Z3 | PossibleSolver::CIVER | PossibleSolver::ALL => None,
+        }
+    }
+
+    pub fn is_available(&self) -> bool {
+        match self.required_binary() {
+            None         => true,
+            Some(binary) => check_binary_in_path(binary),
+        }
+    }
+
+    /// Maps the internal name used in ALL/parallel mode to the corresponding solver variant.
+    /// `"ffsol-nolinear"` shares the same binary as `FFSOL`.
+    pub fn from_parallel_name(name: &str) -> PossibleSolver {
+        match name {
+            "ffsol" | "ffsol-nolinear" => PossibleSolver::FFSOL,
+            "cvc5"                     => PossibleSolver::CVC5,
+            "yices"                    => PossibleSolver::YICES,
+            "z3"                       => PossibleSolver::Z3,
+            "civer"                    => PossibleSolver::CIVER,
+            "nia-z3"                   => PossibleSolver::NIAZ3,
+            _                          => PossibleSolver::CIVER,
+        }
+    }
 }
 
 

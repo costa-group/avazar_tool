@@ -209,30 +209,36 @@ mod input_processing {
     pub fn get_solver(matches: &ArgMatches) -> Result<PossibleSolver,()> {
         use solvers_interface::PossibleSolver::*;
         match matches.is_present("solver"){
-            true => 
-               {
-                   let solver = matches.value_of("solver").unwrap().to_ascii_lowercase();
-                   if solver == "civer"{
-                        Ok(CIVER)
-                    } else if solver == "picus"{
-                        Ok(PICUS)
-                    } else if solver == "ffsol"{
-                        Ok(FFSOL)
-                    } else if solver == "cvc5"{
-                        Ok(CVC5)
-                    } else if solver == "yices"{
-                        Ok(YICES)
-                    } else if solver == "niaz3" || solver == "nia-z3"{
-                        Ok(NIAZ3)
-                    } else if solver == "z3"{
-                        Ok(Z3)
-                    } else if solver == "all"{
-                        Ok(ALL)
-                    }else{
-                        Result::Err(eprintln!("{}", Colour::Red.paint("invalid solver")))
-                    }
-               }
-               
+            true => {
+                let solver = matches.value_of("solver").unwrap().to_ascii_lowercase();
+                let solver_enum = if solver == "civer" {
+                    Ok(CIVER)
+                } else if solver == "picus" {
+                    Ok(PICUS)
+                } else if solver == "ffsol" {
+                    Ok(FFSOL)
+                } else if solver == "cvc5" {
+                    Ok(CVC5)
+                } else if solver == "yices" {
+                    Ok(YICES)
+                } else if solver == "niaz3" || solver == "nia-z3" {
+                    Ok(NIAZ3)
+                } else if solver == "z3" {
+                    Ok(Z3)
+                } else if solver == "all" {
+                    Ok(ALL)
+                } else {
+                    Result::Err(eprintln!("{}", Colour::Red.paint("invalid solver")))
+                }?;
+
+                if solver_enum != ALL && !solver_enum.is_available() {
+                    let binary = solver_enum.required_binary().unwrap();
+                    return Result::Err(eprintln!("{}", Colour::Red.paint(
+                        format!("solver '{}' requires '{}' which was not found in PATH", solver, binary)
+                    )));
+                }
+                Ok(solver_enum)
+            }
             false => Ok(CIVER),
         }
     }

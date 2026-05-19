@@ -1,4 +1,4 @@
-use crate::{PossibleResult, SafetyVerification};
+use crate::{PossibleResult, PossibleSolver, SafetyVerification};
 use crate::{civer_interface, ffsol_interface, cvc5_interface, nia_z3_interface, yices_interface, z3_interface};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
@@ -14,24 +14,38 @@ use std::time::{Duration, Instant};
 /// returns UNKNOWN together with the merged logs.
 pub fn study_safety(problem: &SafetyVerification) -> (PossibleResult, Vec<String>) {
     let start = Instant::now();
-    if problem.include_niaz3_in_all {
-        println!("ALL: Starting parallel safety verification with FFSOL, FFSOL-NOLINEAR, CVC5, YICES, NIA-Z3, Z3, and CIVER...");
-    } else {
-        println!("ALL: Starting parallel safety verification with FFSOL, FFSOL-NOLINEAR, CVC5, YICES, Z3, and CIVER...");
-    }
     let (tx, rx) = mpsc::channel::<(&'static str, PossibleResult, Vec<String>)>();
     let cancel_token = Arc::new(AtomicBool::new(false));
 
-    let mut solvers: Vec<&'static str> = vec![
-        "ffsol",
-        "ffsol-nolinear",
-        "cvc5",
-        "yices",
-        "z3",
-        "civer",
-    ];
+    let candidates: &[&'static str] = &["ffsol", "ffsol-nolinear", "cvc5", "yices", "z3", "civer"];
+    let mut solvers: Vec<&'static str> = candidates
+        .iter()
+        .filter(|&&name| {
+            let solver = PossibleSolver::from_parallel_name(name);
+            let ok = solver.is_available();
+            if !ok {
+                let bin = solver.required_binary().unwrap_or(name);
+                println!("ALL: skipping '{}' — binary '{}' not found in PATH", name, bin);
+            }
+            ok
+        })
+        .copied()
+        .collect();
+
     if problem.include_niaz3_in_all {
-        solvers.push("nia-z3");
+        if PossibleSolver::NIAZ3.is_available() {
+            solvers.push("nia-z3");
+        } else {
+            let bin = PossibleSolver::NIAZ3.required_binary().unwrap();
+            println!("ALL: skipping 'nia-z3' — binary '{}' not found in PATH", bin);
+        }
+    }
+
+    println!("ALL: Starting parallel safety verification with: {}", solvers.join(", "));
+
+    if solvers.is_empty() {
+        println!("ALL: no solvers available — all required binaries are missing");
+        return (PossibleResult::UNKNOWN, vec!["### ALL: NO SOLVERS AVAILABLE\n".to_string()]);
     }
 
     let n_solvers = solvers.len();
