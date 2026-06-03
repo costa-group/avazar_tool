@@ -14,7 +14,7 @@ use utils::union_find::{UnionFind};
 
 pub fn dag_from_partition<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
     circ: &'a S, partition: Vec<Vec<usize>>, node_id_generator: &mut dyn Iterator<Item = usize>,
-    debug: usize) -> HashMap<usize, DAGNode<'a, C, S>> {
+    dead_ends_as_outputs: bool, debug: usize) -> HashMap<usize, DAGNode<'a, C, S>> {
 
     let timer = Instant::now();
 
@@ -28,7 +28,7 @@ pub fn dag_from_partition<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
     ).collect();
 
     let input_parts: HashSet<usize> = (0..n_parts).filter(|key| part_to_signals_arr[*key].iter().any(|sig| circ.signal_is_input(sig))).collect();
-    let output_parts: HashSet<usize> = (0..n_parts).filter(|key| part_to_signals_arr[*key].iter().any(|sig| circ.signal_is_output(sig))).collect();
+    let mut output_parts: HashSet<usize> = (0..n_parts).filter(|key| part_to_signals_arr[*key].iter().any(|sig| circ.signal_is_output(sig))).collect();
 
     const NO_PART: usize = usize::MAX;
     let mut coni_to_part: Vec<usize> = vec![NO_PART; circ.n_constraints()];
@@ -58,6 +58,9 @@ pub fn dag_from_partition<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
         }
         neighbours}
     ).collect();
+
+    // include dead-ends as outputs
+    if dead_ends_as_outputs{ output_parts.extend((0..n_parts).filter(|parti| adjacencies[*parti].len() == 1)); }
 
     if debug > 1 { println!("LOG: Total-edges {:?}, max-edges {:?}", adjacencies.iter().map(|set| set.len()).sum::<usize>(), adjacencies.iter().map(|set| set.len()).max()); }
     if debug > 1 { println!("LOG: Adjacency preprocessing done in {:?}", timer.elapsed().as_secs_f32()); }

@@ -61,7 +61,7 @@ fn start(args: Args) -> Result<(), Box<dyn Error>> {
     
     let existing_partition: Option<Vec<Vec<usize>>> =
      args.existing_partition.map(
-        |path| bincode::deserialize_from(
+        |path| serde_json::from_reader(
                 std::fs::File::open(path).expect("Error when attempting to open file")
             ).expect("Error attempting to deserialize partition")
     );
@@ -77,6 +77,10 @@ fn start(args: Args) -> Result<(), Box<dyn Error>> {
         minimum_equivalence_size: args.minimum_equivalence_size, 
         equivalence_comparison_budget: args.equivalence_comparison_budget, 
         existing_partition: existing_partition, debug: args.debug,
+        extract_raw_partition: args.extract_raw_partition,
+        clique_cluster_size: args.clique_cluster_size,
+        dead_ends_as_outputs: args.dead_ends_as_outputs,
+
         ..Default::default()
     };
     
@@ -94,13 +98,18 @@ fn start(args: Args) -> Result<(), Box<dyn Error>> {
             }
     };
     
-    
-    
-
     let filepath_rev: String = args.filepath.chars().rev().collect();
     let circname: String = filepath_rev[filepath_rev.find('.').expect("filepath didn't have filetype period")+1..filepath_rev.find('/').unwrap_or(filepath_rev.len())].chars().rev().collect();
     
-    let outfile: String = format!("{}/{}_{}_{}_{:?}.json", args.out_directory, circname, args.graph_backend, args.equivalence_mode, if args.target_size.is_some() {args.target_size.unwrap() as usize} else {0});
+    use utils::small_utilities::{GraphBackend, EquivalenceMode};
+
+    let mut outfile: String = format!("{}/{}", args.out_directory, circname);
+    if args.graph_backend != GraphBackend::GraphRS {outfile.push_str(&format!("_{}", args.graph_backend));}
+    if args.equivalence_mode != EquivalenceMode::None {outfile.push_str(&format!("_{}", args.equivalence_mode));}
+    if args.target_size.is_some() {outfile.push_str(&format!("_t{}", args.target_size.unwrap()));}
+    if args.clique_cluster_size.is_some() {outfile.push_str(&format!("_c{}", args.clique_cluster_size.unwrap()));}
+    if args.dead_ends_as_outputs {outfile.push_str(&"_deadends");}
+    outfile.push_str(&".json");
 
     write_output_into_file(outfile, &result)
 }

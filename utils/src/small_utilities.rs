@@ -6,7 +6,7 @@ use itertools::Itertools;
 use clap::{ValueEnum};
 use strum_macros::{Display};
 
-#[derive(Debug, Default, Display, Copy, Clone, ValueEnum)]
+#[derive(Debug, Default, Display, Copy, Clone, ValueEnum, PartialEq)]
 pub enum GraphBackend {
     #[strum(serialize = "graphrs")]
     #[default]
@@ -17,7 +17,7 @@ pub enum GraphBackend {
     XGraph
 }
 
-#[derive(Debug, Default, Display, Copy, Clone, ValueEnum)]
+#[derive(Debug, Default, Display, Copy, Clone, ValueEnum, PartialEq)]
 pub enum EquivalenceMode {
     #[strum(serialize = "total")]
     Total,
@@ -30,7 +30,7 @@ pub enum EquivalenceMode {
     None
 }
 
-#[derive(Debug, Default, Display, Copy, Clone, ValueEnum)]
+#[derive(Debug, Default, Display, Copy, Clone, ValueEnum, PartialEq)]
 pub enum ClusteringPreprocessing {
     #[strum(serialize = "none")]
     #[default]
@@ -39,7 +39,7 @@ pub enum ClusteringPreprocessing {
     BridgeFinding,
 }
 
-#[derive(Debug, Default, Display, Copy, Clone, ValueEnum)]
+#[derive(Debug, Default, Display, Copy, Clone, ValueEnum, PartialEq)]
 pub enum FileType {
     #[strum(serialize = "r1cs")]
     #[default]
@@ -61,6 +61,9 @@ pub struct DecomposeOptions<'a> {
     pub minimum_equivalence_size: Option<usize>,
     pub equivalence_comparison_budget: Option<usize>,
     pub existing_partition: Option<Vec<Vec<usize>>>,
+    pub extract_raw_partition: bool,
+    pub clique_cluster_size: Option<usize>,
+    pub dead_ends_as_outputs: bool,
     pub seed: Option<u64>,
     pub debug: usize
 }

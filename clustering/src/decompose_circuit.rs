@@ -11,7 +11,7 @@ use circuit_graphing::directed_acyclic_graph::{DAGNode};
 use circuit_graphing::directed_acyclic_graph::dag_from_partition::dag_from_partition;
 use circuit_graphing::directed_acyclic_graph::dag_postprocessing::merge_passthrough;
 use circuit_graphing::directed_acyclic_graph::equivalence_classes::{subcircuit_fingerprinting_equivalency, subcircuit_fingerprint_with_structural_augmentation_equivalency, subcircuit_fingerprinting_equivalency_and_structural_augmentation_equivalency};
-use circuit_graphing::graphing_circuits::{shared_signal_graph};
+use circuit_graphing::graphing_circuits::{undo_clique_clusters, shared_signal_graph};
 use circuit_graphing::leiden_clustering::{CanLeiden};
 use circuit_graphing::bridge_partitioning::{bridge_partitioning};
 use utils::small_utilities::{EquivalenceMode, ClusteringPreprocessing, DecomposeOptions};
@@ -42,10 +42,10 @@ fn decompose_circuit_and_return_dagnodes<'a, C: Constraint, S: Circuit<C>>(
     	total: 0.0,
     };
 
-    let partition: Vec<Vec<usize>> ;
+    let partition: Vec<Vec<usize>>;
     if decompose_options.existing_partition.is_none() {
         let graph_construction_timer = Instant::now();
-        let graph: Box<dyn CanLeiden> = shared_signal_graph(circuit, decompose_options.graph_backend, decompose_options.debug);
+        let (graph, clique_clusters): (Box<dyn CanLeiden>, Vec<Vec<usize>>) = shared_signal_graph(circuit, decompose_options.graph_backend, decompose_options.clique_cluster_size, decompose_options.debug);
         
         timing_info.graph_construction = Some(graph_construction_timer.elapsed().as_secs_f32());
         timing_info.total += timing_info.graph_construction.unwrap();
@@ -56,7 +56,13 @@ fn decompose_circuit_and_return_dagnodes<'a, C: Constraint, S: Circuit<C>>(
         let partition_timer = Instant::now();
 
         let resolution = match decompose_options.resolution { Some(r) => r, None => ((graph.num_edges() << 1) as f64)/(decompose_options.target_size.unwrap_or(f64::log2(graph.num_edges() as f64)).powi(2)) };
-        partition = graph.get_partition(resolution, decompose_options.leiden_max_iterations.unwrap_or(5), decompose_options.seed);
+        let init_partition = graph.get_partition(resolution, decompose_options.leiden_max_iterations.unwrap_or(5), decompose_options.seed);
+
+        partition = if decompose_options.clique_cluster_size.is_some() {
+            undo_clique_clusters(circuit, init_partition, clique_clusters)
+        } else {
+            init_partition
+        };
         
         //insert_and_print_timing(debug, &mut timing, "clustering", partition_timer.elapsed());
         timing_info.clustering = partition_timer.elapsed().as_secs_f32();
@@ -67,10 +73,24 @@ fn decompose_circuit_and_return_dagnodes<'a, C: Constraint, S: Circuit<C>>(
         partition = decompose_options.existing_partition.unwrap();
     }
 
+    if decompose_options.extract_raw_partition {
+        use std::fs::File;
+        use std::io::BufWriter;
+        use std::io::Write;
+
+        let file = File::create("partition.json").unwrap();
+        let mut writer = BufWriter::new(file);
+
+        // Write the result.
+        let value = serde_json::to_string_pretty(&partition).unwrap();
+        writer.write(value.as_bytes());
+        writer.flush();
+    }
+
     // Convert into DAG
     let dagnode_timer = Instant::now();
     
-    let mut dagnodes = dag_from_partition(circuit, partition, node_id_generator, decompose_options.debug);
+    let mut dagnodes = dag_from_partition(circuit, partition, node_id_generator, decompose_options.dead_ends_as_outputs, decompose_options.debug);
     merge_passthrough(circuit, &mut dagnodes);
     
     //insert_and_print_timing(debug, &mut timing, "dag_construction_merging", dagnode_timer.elapsed());
