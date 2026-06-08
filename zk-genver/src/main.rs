@@ -3,6 +3,7 @@ mod determinism;
 mod processing_utils;
 mod equivalence;
 mod correctness;
+mod report;
 
 use num_bigint_dig::BigInt;
 use input_user::Input;

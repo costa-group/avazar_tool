@@ -9,6 +9,7 @@ use circom_algebra::algebra::Constraint;
 use crate::correctness::modular_reasoning::check_node;
 use utils::read_specification::*;
 use utils::small_utilities::{GraphBackend, EquivalenceMode, ClusteringPreprocessing};
+use crate::report;
 
 
 #[derive(Default)]
@@ -36,7 +37,7 @@ pub fn prove_correctness(user_input: Input) -> Result<(), ()> {
         = process_constraints(&user_input.input_r1cs);
 
     let node_to_smt2_encoding_info
-        = read_smt_specification(&user_input.check_correctness.unwrap()).unwrap();
+        = read_smt_specification(&user_input.check_correctness.clone().unwrap()).unwrap();
 
     // Read the structure
     let structure  = if user_input.input_structure.is_some(){
@@ -53,7 +54,7 @@ pub fn prove_correctness(user_input: Input) -> Result<(), ()> {
     let apply_bidirectional: bool = user_input.apply_bidirectional;
 
 
-    let field = user_input.prime;
+    let field = user_input.prime.clone();
 
     let equivalence_mode = match user_input.equivalence_mode{
         0 => EquivalenceMode::None,
@@ -136,8 +137,14 @@ pub fn prove_correctness(user_input: Input) -> Result<(), ()> {
     }
     */
 
-    // print the results    
-    print_pretty_results(&results, &structure, nodeid2pos);
+    // print the results
+    print_pretty_results(&results, &structure, &nodeid2pos);
+
+    if let Some(report_path) = &user_input.report_output {
+        let rep = build_correctness_report(&user_input, &results, &structure, &nodeid2pos);
+        report::write_report(&rep, report_path);
+    }
+
     Result::Ok(())
 }
 
@@ -478,12 +485,63 @@ fn update_result_for_class(node_result: &PossibleResult, equiv_class: &Vec<usize
 
 
 
+fn build_correctness_report(
+    input: &crate::Input,
+    results: &ResultInfoCorrectness,
+    structure: &StructureInfo,
+    nodeid2pos: &HashMap<usize, usize>,
+) -> report::VerificationReport {
+    let overall = report::compute_overall(
+        results.failed_nodes.is_empty(),
+        results.unknown_nodes.is_empty(),
+    );
+
+    let summary = report::ReportSummary {
+        total_nodes: results.studied_nodes.len(),
+        verified_nodes: results.verified_nodes.len(),
+        previously_verified_nodes: None,
+        failed_nodes: results.failed_nodes.len(),
+        timeout_nodes: results.unknown_nodes.len(),
+        total_constraints: None,
+        verified_constraints: None,
+        verified_constraints_pct: None,
+    };
+
+    let mut nodes: Vec<report::NodeResult> = results.studied_nodes.iter().map(|(node_id, result)| {
+        let node_name = nodeid2pos.get(node_id)
+            .and_then(|&pos| structure.nodes.get(pos))
+            .map(|n| n.node_name.clone())
+            .unwrap_or_default();
+        report::NodeResult {
+            node_id: *node_id,
+            node_name,
+            result: report::possible_result_str(result).to_string(),
+            num_constraints: None,
+            previously_verified: None,
+        }
+    }).collect();
+    nodes.sort_by_key(|n| n.node_id);
+
+    let specification_circuit = input.check_correctness.as_ref()
+        .map(|p| p.display().to_string());
+
+    report::VerificationReport {
+        check_type: report::CheckType::Correctness,
+        input_circuit: input.input_r1cs.display().to_string(),
+        second_circuit: specification_circuit,
+        solver: report::solver_to_str(input.solver_option).to_string(),
+        timeout_ms: input.timeout,
+        overall_result: overall,
+        summary,
+        nodes,
+        failed_templates: None,
+    }
+}
+
 fn print_pretty_results(
     results: &ResultInfoCorrectness,
     structure: &StructureInfo,
-    node_id_to_pos: HashMap<usize, usize>,
-
-
+    node_id_to_pos: &HashMap<usize, usize>,
 ){
 
 
@@ -491,16 +549,16 @@ fn print_pretty_results(
 
     println!("--------------------------------------------");
     println!("--------------------------------------------");
-    println!("------ ZK-GENVER VERIFICATION RESULTS ------");
+    println!("------ AVAZAR VERIFICATION RESULTS ------");
     println!("--------------------------------------------");
     println!("--------------------------------------------\n");
 
     if results.failed_nodes.is_empty() && results.unknown_nodes.is_empty(){
-        println!("-> All nodes are equivalent :)");
+        println!("-> All nodes satisfy correctness :)");
     } else{
-    	println!("-> ZK-GENVER could not verify the equivalence of all components");
+    	println!("-> AVAZAR could not verify the correctness of all components");
     	if !results.failed_nodes.is_empty(){
-        	println!("Nodes that are not equivalent: ");
+        	println!("Nodes that are not correct: ");
         	for c in &results.failed_nodes{
                 let pos = node_id_to_pos.get(c).unwrap();
                 let node_name = &structure.nodes[*pos].node_name;
@@ -508,7 +566,7 @@ fn print_pretty_results(
     		}
         }
     	if !results.unknown_nodes.is_empty() {
-        	println!("Nodes that timeout when checking equivalence: ");
+        	println!("Nodes that timeout when checking correctness: ");
         	for c in &results.unknown_nodes{
     			let pos = node_id_to_pos.get(c).unwrap();
                 let node_name = &structure.nodes[*pos].node_name;
@@ -516,8 +574,8 @@ fn print_pretty_results(
     		}
         }
     }
-    println!("  * Number of verified nodes (equivalence): {}",  results.verified_nodes.len());
-    println!("  * Number of failed nodes (equivalence): {}",  results.failed_nodes.len());        
-    println!("  * Number of timeout nodes (equivalence): {}",  results.unknown_nodes.len());
+    println!("  * Number of verified nodes (correctness): {}",  results.verified_nodes.len());
+    println!("  * Number of failed nodes (correctness): {}",  results.failed_nodes.len());
+    println!("  * Number of timeout nodes (correctness): {}",  results.unknown_nodes.len());
 
 }

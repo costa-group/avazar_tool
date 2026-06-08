@@ -11,6 +11,7 @@ use crate::determinism::modular_reasoning::check_tags;
 use clustering::decompose_circuit::decompose_node;
 use utils::small_utilities::{GraphBackend, EquivalenceMode, ClusteringPreprocessing};
 use crate::processing_utils::*;
+use crate::report;
 use solvers_interface::PossibleResult::VERIFIED;
 
 
@@ -69,7 +70,7 @@ pub fn prove_safety(user_input: Input) -> Result<(), ()> {
         None
     };
 
-    let field = user_input.prime;
+    let field = user_input.prime.clone();
 
     let equivalence_mode = match user_input.equivalence_mode{
         0 => EquivalenceMode::None,
@@ -166,8 +167,14 @@ pub fn prove_safety(user_input: Input) -> Result<(), ()> {
         );
     }
 
-    // print the results    
+    // print the results
     print_pretty_results(&results);
+
+    if let Some(report_path) = &user_input.report_output {
+        let rep = build_determinism_report(&user_input, &results, &structure, &nodeid2pos);
+        report::write_report(&rep, report_path);
+    }
+
     Result::Ok(())
 }
 
@@ -616,6 +623,84 @@ fn compute_info_fails_original_template(
     results.unverified_nodes_to_templates = Some(unverified_nodes_to_templates); 
     results.unverified_nodes_to_nodes = Some(unverified_nodes_to_nodes); 
 
+}
+
+fn build_determinism_report(
+    input: &crate::Input,
+    results: &ResultInfoDeterminism,
+    structure: &StructureInfo,
+    nodeid2pos: &HashMap<usize, usize>,
+) -> report::VerificationReport {
+    let total_verified = results.verified_nodes.len() + results.previously_verified_nodes.len();
+    let total_timeout  = results.unknown_nodes.len() + results.unknown_undivisible_nodes.len();
+
+    let overall = report::compute_overall(
+        results.failed_nodes.is_empty(),
+        total_timeout == 0,
+    );
+
+    let verified_pct = if results.total_constraints > 0 {
+        (results.verified_constraints as f64 / results.total_constraints as f64) * 100.0
+    } else {
+        0.0
+    };
+
+    let summary = report::ReportSummary {
+        total_nodes: results.studied_nodes.len(),
+        verified_nodes: total_verified,
+        previously_verified_nodes: Some(results.previously_verified_nodes.len()),
+        failed_nodes: results.failed_nodes.len(),
+        timeout_nodes: total_timeout,
+        total_constraints: Some(results.total_constraints),
+        verified_constraints: Some(results.verified_constraints),
+        verified_constraints_pct: Some(verified_pct),
+    };
+
+    let mut nodes: Vec<report::NodeResult> = results.studied_nodes.iter().map(|(node_id, result)| {
+        let (node_name, num_constraints) = nodeid2pos.get(node_id)
+            .and_then(|&pos| structure.nodes.get(pos))
+            .map(|n| (n.node_name.clone(), n.constraints.len()))
+            .unwrap_or_else(|| (String::new(), 0));
+        report::NodeResult {
+            node_id: *node_id,
+            node_name,
+            result: report::possible_result_str(result).to_string(),
+            num_constraints: Some(num_constraints),
+            previously_verified: Some(results.previously_verified_nodes.contains(node_id)),
+        }
+    }).collect();
+    nodes.sort_by_key(|n| n.node_id);
+
+    
+    let names: std::collections::HashSet<String> = results.failed_nodes.iter()
+            .chain(results.unknown_nodes.iter())
+            .chain(results.unknown_undivisible_nodes.iter())
+            .filter_map(|node_id| {
+                nodeid2pos.get(node_id)
+                    .and_then(|&pos| structure.nodes.get(pos))
+                    .map(|n| n.node_name.clone())
+            })
+            .filter(|name| !name.is_empty())
+            .collect();
+    let failed_templates = if names.is_empty() {
+            None
+        } else {
+            let mut v: Vec<String> = names.into_iter().collect();
+            v.sort();
+            Some(v)
+        };
+
+    report::VerificationReport {
+        check_type: report::CheckType::Determinism,
+        input_circuit: input.input_r1cs.display().to_string(),
+        second_circuit: None,
+        solver: report::solver_to_str(input.solver_option).to_string(),
+        timeout_ms: input.timeout,
+        overall_result: overall,
+        summary,
+        nodes,
+        failed_templates,
+    }
 }
 
 fn print_pretty_results(results: &ResultInfoDeterminism){

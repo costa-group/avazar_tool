@@ -22,7 +22,8 @@ pub struct Input {
     pub limit_size: usize,
     pub extra_rounds: usize,
     pub check_equivalence: Option<PathBuf>,
-    pub check_correctness: Option<PathBuf>
+    pub check_correctness: Option<PathBuf>,
+    pub report_output: Option<PathBuf>,
 }
 
 
@@ -48,6 +49,7 @@ impl Input {
         let check_equivalence = input_processing::get_check_equivalence(&matches)?;
         let check_correctness = input_processing::get_check_correctness(&matches)?;
         let limit_size = input_processing::get_limit_size(&matches)?;
+        let report_output = input_processing::get_report_output(&matches);
 
         Result::Ok(Input {
             input_r1cs,
@@ -65,9 +67,10 @@ impl Input {
             equivalence_mode,
             target_size,
             extra_rounds,
-            limit_size, 
+            limit_size,
             check_equivalence,
-            check_correctness
+            check_correctness,
+            report_output,
         })
     }
 }
@@ -278,12 +281,16 @@ mod input_processing {
     pub fn get_extra_rounds(matches: &ArgMatches) -> Result<usize, ()> {
         let timeout_argument = matches.value_of("extra_rounds").unwrap();
         let timeout = usize::from_str_radix(timeout_argument, 10);
-        if let Result::Ok(time) = timeout { 
+        if let Result::Ok(time) = timeout {
            Ok(time)
         }
-        else { 
+        else {
             Result::Err(eprintln!("{}", Colour::Red.paint("invalid extra_rounds")))
         }
+    }
+
+    pub fn get_report_output(matches: &ArgMatches) -> Option<PathBuf> {
+        matches.value_of("report").map(|s| PathBuf::from(s))
     }
 
     pub fn view() -> ArgMatches<'static> {
@@ -438,6 +445,14 @@ mod input_processing {
                     .help("To choose the number of extra rounds of adding successors/predecessors when a node makes timeout. The default value is 0."),
             )
             
+            .arg(
+                Arg::with_name("report")
+                    .long("report")
+                    .takes_value(true)
+                    .hidden(false)
+                    .help("Path to write a JSON report with all results and statistics")
+                    .display_order(900)
+            )
             .get_matches()
     }
 
