@@ -5,7 +5,6 @@ use nix::sys::signal::killpg;
 use nix::sys::signal::Signal;
 use nix::unistd::Pid;
 use num_bigint_dig::BigInt;
-use rand::Rng;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::fs::File;
@@ -24,7 +23,8 @@ pub fn study_correctness(problem: &CorrectnessVerification) -> (PossibleResult, 
     let mut logs = Vec::new();
 
     let smt2_problem = correctness_problem_to_z3_smt2(problem);
-    let result_solver = handling_nia_z3_call(&smt2_problem, problem.verification_timeout, problem.verbose, None);
+    let file_name = crate::correctness_smt2_name(&problem.original_file, &problem.template_name, "nia_z3");
+    let result_solver = handling_nia_z3_call(&smt2_problem, problem.verification_timeout, problem.verbose, None, file_name);
 
     match result_solver {
         PossibleResult::FAILED => {
@@ -46,7 +46,8 @@ pub fn study_equivalence(problem: &EquivalenceVerification) -> (PossibleResult, 
     let mut logs = Vec::new();
 
     let smt2_problem = equivalence_problem_to_z3_smt2(problem);
-    let result_solver = handling_nia_z3_call(&smt2_problem, problem.verification_timeout, problem.verbose, None);
+    let file_name = crate::equivalence_smt2_name(&problem.original_file, &problem.template_name, "nia_z3");
+    let result_solver = handling_nia_z3_call(&smt2_problem, problem.verification_timeout, problem.verbose, None, file_name);
 
     match result_solver {
         PossibleResult::FAILED => {
@@ -68,7 +69,8 @@ pub fn study_safety(problem: &SafetyVerification) -> (PossibleResult, Vec<String
     let mut logs = Vec::new();
 
     let smt2_problem = safety_problem_to_z3_smt2(problem);
-    let result_solver = handling_nia_z3_call(&smt2_problem, problem.verification_timeout, problem.verbose, None);
+    let file_name = crate::determinism_smt2_name(&problem.original_file, &problem.template_name, problem.added_nodes.len(), "nia_z3");
+    let result_solver = handling_nia_z3_call(&smt2_problem, problem.verification_timeout, problem.verbose, None, file_name);
 
     match result_solver {
         PossibleResult::FAILED => {
@@ -95,11 +97,13 @@ pub fn study_safety_with_cancel(problem: &SafetyVerification, cancel_flag: &Atom
     }
 
     let smt2_problem = safety_problem_to_z3_smt2(problem);
+    let file_name = crate::determinism_smt2_name(&problem.original_file, &problem.template_name, problem.added_nodes.len(), "nia_z3");
     let result_solver = handling_nia_z3_call(
         &smt2_problem,
         problem.verification_timeout,
         problem.verbose,
         Some(cancel_flag),
+        file_name,
     );
 
     match result_solver {
@@ -127,7 +131,8 @@ pub fn study_equivalence_with_cancel(problem: &EquivalenceVerification, cancel_f
     }
 
     let smt2_problem = equivalence_problem_to_z3_smt2(problem);
-    let result_solver = handling_nia_z3_call(&smt2_problem, problem.verification_timeout, problem.verbose, Some(cancel_flag));
+    let file_name = crate::equivalence_smt2_name(&problem.original_file, &problem.template_name, "nia_z3");
+    let result_solver = handling_nia_z3_call(&smt2_problem, problem.verification_timeout, problem.verbose, Some(cancel_flag), file_name);
 
     match result_solver {
         PossibleResult::FAILED => logs.push("### NIA-Z3: THE CONSTRAINT SYSTEMS ARE NOT EQUIVALENT. FOUND COUNTEREXAMPLE USING SMT:\n".to_string()),
@@ -148,7 +153,8 @@ pub fn study_correctness_with_cancel(problem: &CorrectnessVerification, cancel_f
     }
 
     let smt2_problem = correctness_problem_to_z3_smt2(problem);
-    let result_solver = handling_nia_z3_call(&smt2_problem, problem.verification_timeout, problem.verbose, Some(cancel_flag));
+    let file_name = crate::correctness_smt2_name(&problem.original_file, &problem.template_name, "nia_z3");
+    let result_solver = handling_nia_z3_call(&smt2_problem, problem.verification_timeout, problem.verbose, Some(cancel_flag), file_name);
 
     match result_solver {
         PossibleResult::FAILED => logs.push("### NIA-Z3: THE CONSTRAINT SYSTEMS AND THE FORMULA ARE NOT EQUIVALENT. FOUND COUNTEREXAMPLE USING SMT:\n".to_string()),
@@ -477,10 +483,8 @@ pub fn handling_nia_z3_call(
     timeout: u64,
     verbose: bool,
     cancel_flag: Option<&AtomicBool>,
+    new_file_name: String,
 ) -> PossibleResult {
-    let mut rng = rand::thread_rng();
-    let random_number: u32 = rng.gen();
-    let new_file_name = format!("output_nia_z3_{}.smt2", random_number);
 
     {
         let mut file = File::create(&new_file_name).expect("Unable to create SMT2 file");

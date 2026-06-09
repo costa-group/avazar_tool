@@ -8,7 +8,6 @@ use std::io::Read;
 use wait_timeout::ChildExt;
 use std::fs::File;
 use std::io::Write;
-use rand::Rng;
 use std::os::unix::process::CommandExt;
 use std::thread;
 use nix::unistd::Pid;
@@ -24,8 +23,9 @@ pub fn study_correctness(problem: &CorrectnessVerification) -> (PossibleResult, 
     let mut logs = Vec::new();
 
     let smt2_problem: LinkedList<String> = correctness_problem_to_smt2(problem);
+    let file_name = crate::correctness_smt2_name(&problem.original_file, &problem.template_name, "yices");
 
-    let result_solver = handling_yices_call(&smt2_problem, problem.verification_timeout, problem.verbose, None);
+    let result_solver = handling_yices_call(&smt2_problem, problem.verification_timeout, problem.verbose, None, file_name);
 
     match result_solver {
         PossibleResult::FAILED => {
@@ -50,8 +50,9 @@ pub fn study_equivalence(problem: &EquivalenceVerification) -> (PossibleResult, 
     let mut logs = Vec::new();
 
     let smt2_problem: LinkedList<String> = equivalence_problem_to_smt2(problem, false);
+    let file_name = crate::equivalence_smt2_name(&problem.original_file, &problem.template_name, "yices");
 
-    let result_solver = handling_yices_call(&smt2_problem, problem.verification_timeout, problem.verbose, None);
+    let result_solver = handling_yices_call(&smt2_problem, problem.verification_timeout, problem.verbose, None, file_name);
 
     match result_solver {
         PossibleResult::FAILED => {
@@ -76,8 +77,9 @@ pub fn study_safety(problem: &SafetyVerification) -> (PossibleResult, Vec<String
     let mut logs = Vec::new();
 
     let smt2_problem: LinkedList<String> = safety_problem_to_smt2(problem);
+    let file_name = crate::determinism_smt2_name(&problem.original_file, &problem.template_name, problem.added_nodes.len(), "yices");
 
-    let result_solver = handling_yices_call(&smt2_problem, problem.verification_timeout, problem.verbose, None);
+    let result_solver = handling_yices_call(&smt2_problem, problem.verification_timeout, problem.verbose, None, file_name);
 
     match result_solver {
         PossibleResult::FAILED => {
@@ -106,7 +108,8 @@ pub fn study_safety_with_cancel(problem: &SafetyVerification, cancel_flag: &Atom
     }
 
     let smt2_problem: LinkedList<String> = safety_problem_to_smt2(problem);
-    let result_solver = handling_yices_call(&smt2_problem, problem.verification_timeout, problem.verbose, Some(cancel_flag));
+    let file_name = crate::determinism_smt2_name(&problem.original_file, &problem.template_name, problem.added_nodes.len(), "yices");
+    let result_solver = handling_yices_call(&smt2_problem, problem.verification_timeout, problem.verbose, Some(cancel_flag), file_name);
 
     match result_solver {
         PossibleResult::FAILED => {
@@ -135,7 +138,8 @@ pub fn study_equivalence_with_cancel(problem: &EquivalenceVerification, cancel_f
     }
 
     let smt2_problem: LinkedList<String> = equivalence_problem_to_smt2(problem, false);
-    let result_solver = handling_yices_call(&smt2_problem, problem.verification_timeout, problem.verbose, Some(cancel_flag));
+    let file_name = crate::equivalence_smt2_name(&problem.original_file, &problem.template_name, "yices");
+    let result_solver = handling_yices_call(&smt2_problem, problem.verification_timeout, problem.verbose, Some(cancel_flag), file_name);
 
     match result_solver {
         PossibleResult::FAILED   => logs.push("### YICES: THE CONSTRAINT SYSTEMS ARE NOT EQUIVALENT. FOUND COUNTEREXAMPLE USING SMT:\n".to_string()),
@@ -156,7 +160,8 @@ pub fn study_correctness_with_cancel(problem: &CorrectnessVerification, cancel_f
     }
 
     let smt2_problem: LinkedList<String> = correctness_problem_to_smt2(problem);
-    let result_solver = handling_yices_call(&smt2_problem, problem.verification_timeout, problem.verbose, Some(cancel_flag));
+    let file_name = crate::correctness_smt2_name(&problem.original_file, &problem.template_name, "yices");
+    let result_solver = handling_yices_call(&smt2_problem, problem.verification_timeout, problem.verbose, Some(cancel_flag), file_name);
 
     match result_solver {
         PossibleResult::FAILED   => logs.push("### YICES: THE CONSTRAINT SYSTEMS AND THE FORMULA ARE NOT EQUIVALENT. FOUND COUNTEREXAMPLE USING SMT:\n".to_string()),
@@ -174,11 +179,8 @@ pub fn handling_yices_call(
     timeout: u64,
     verbose: bool,
     cancel_flag: Option<&AtomicBool>,
+    new_file_name: String,
 ) -> PossibleResult {
-    // produce a random number for the file name
-    let mut rng = rand::thread_rng();
-    let random_number: u32 = rng.gen();
-    let new_file_name = format!("output_{}.smt2", random_number);
 
 
     // Ensure the SMT2 text is fully written and flushed to disk before continuing.

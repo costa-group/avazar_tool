@@ -34,7 +34,13 @@ pub struct ResultInfoEquivalence{
 
 }
 
-pub fn prove_equivalence(user_input: Input) -> Result<(), ()> {    
+pub fn prove_equivalence(user_input: Input) -> Result<(), ()> {
+    let original_file = user_input.input_r1cs
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("")
+        .to_string();
+
     let (constraints,
         signals,
         n_outputs,
@@ -91,15 +97,15 @@ pub fn prove_equivalence(user_input: Input) -> Result<(), ()> {
     };
 
     for node in structure.nodes.iter().rev(){
-        process_node(&node, 
-            &structure, 
-            &constraints, 
+        process_node(&node,
+            &structure,
+            &constraints,
             &constraints_aux,
             &local_equivalence_classes,
             &structural_equivalence_classes,
-            &nodeid2pos, 
-            &field, 
-            timeout, 
+            &nodeid2pos,
+            &field,
+            timeout,
             user_input.solver_option,
             apply_deduction_assigned,
             include_niaz3_in_all,
@@ -108,7 +114,8 @@ pub fn prove_equivalence(user_input: Input) -> Result<(), ()> {
             &mut results,
             user_input.extra_rounds,
             user_input.limit_size,
-            user_input.flag_verbose
+            user_input.flag_verbose,
+            &original_file,
         );
     }
     /* 
@@ -175,7 +182,8 @@ fn process_node(
     results: &mut ResultInfoEquivalence,
     extra_rounds: usize,
     limit_size: usize,
-    verbose: bool
+    verbose: bool,
+    original_file: &str,
 ) {
 
     // To not study the custom templates
@@ -204,7 +212,7 @@ fn process_node(
         &field,
         timeout,
         &structure.nodes,
-        &nodeid2pos, 
+        &nodeid2pos,
         &constraints_1,
         &constraints_2,
         solver,
@@ -215,7 +223,8 @@ fn process_node(
         no_abstract_fails,
         results,
         extra_rounds,
-        verbose
+        verbose,
+        original_file,
     );
         
         for log in logs{

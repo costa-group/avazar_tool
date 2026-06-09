@@ -12,8 +12,8 @@ use crate::equivalence::equivalence_check::ResultInfoEquivalence;
 pub type EquivalenceImplication = (Vec<(usize, usize)>, Vec<(usize, usize)>);
 
     pub fn check_node(
-        node_info: &NodeInfo, 
-        field: &BigInt, 
+        node_info: &NodeInfo,
+        field: &BigInt,
         verification_timeout: u64,
         node_list: &Vec<NodeInfo>,
         nodeid2pos: &HashMap<usize, usize>,
@@ -27,7 +27,8 @@ pub type EquivalenceImplication = (Vec<(usize, usize)>, Vec<(usize, usize)>);
         no_abstract_fails:bool,
         results:&ResultInfoEquivalence,
         extra_rounds: usize,
-        verbose: bool
+        verbose: bool,
+        original_file: &str,
     ) 
     -> (PossibleResult, f64, usize, bool, Vec<String>, HashSet<usize>){
 
@@ -48,15 +49,21 @@ pub type EquivalenceImplication = (Vec<(usize, usize)>, Vec<(usize, usize)>);
         let implications_safety: Vec<EquivalenceImplication> = Vec::new();
 
 
+        let node_name = if node_info.node_name.is_empty() {
+            format!("node_{}", node_info.node_id)
+        } else {
+            node_info.node_name.clone()
+        };
         let mut verification = CorrectnessVerification::new(
-            &node_info.node_name.to_string(), 
+            &node_name,
+            &original_file.to_string(),
             signals_1,
-            signals_2, 
+            signals_2,
             node_info.input_signals.clone(),
             node_specification_info.input_signals.clone(),
             node_info.output_signals.clone(),
             node_specification_info.output_signals.clone(),
-            constraints_1.clone(), 
+            constraints_1.clone(),
             constraints_2.clone(),
             implications_safety,
             field,

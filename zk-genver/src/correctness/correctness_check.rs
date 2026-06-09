@@ -29,7 +29,8 @@ pub struct ResultInfoCorrectness{
 
 }
 
-pub fn prove_correctness(user_input: Input) -> Result<(), ()> {    
+pub fn prove_correctness(user_input: Input) -> Result<(), ()> {
+    let original_file = user_input.input_r1cs.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string();
     let (constraints,
         signals,
         n_outputs,
@@ -100,10 +101,11 @@ pub fn prove_correctness(user_input: Input) -> Result<(), ()> {
             &mut results,
             user_input.extra_rounds,
             user_input.limit_size,
-            user_input.flag_verbose
+            user_input.flag_verbose,
+            &original_file
         );
     }
-    /* 
+    /*
     let mut to_study_again = if clustering_size != 0{
         reconsider_big_nodes(&structure, &nodeid2pos, &mut results, clustering_size)
     } else{
@@ -167,7 +169,8 @@ fn process_node(
     results: &mut ResultInfoCorrectness,
     extra_rounds: usize,
     limit_size: usize,
-    verbose: bool
+    verbose: bool,
+    original_file: &str,
 ) {
 
     // To not study the custom templates
@@ -196,7 +199,7 @@ fn process_node(
         &field,
         timeout,
         &structure.nodes,
-        &nodeid2pos, 
+        &nodeid2pos,
         &constraints,
         &specification,
         solver,
@@ -207,7 +210,8 @@ fn process_node(
         no_abstract_fails,
         results,
         extra_rounds,
-        verbose
+        verbose,
+        original_file,
     );
         
         for log in logs{

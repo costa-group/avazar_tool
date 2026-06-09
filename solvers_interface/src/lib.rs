@@ -90,6 +90,7 @@ pub enum PossibleResult{
 #[derive(Clone)]
 pub struct SafetyVerification {
     pub template_name: String,
+    pub original_file: String,
     pub signals: LinkedList<usize>,
     pub inputs: Vec<usize>,
     pub outputs: Vec<usize>,
@@ -107,13 +108,14 @@ impl SafetyVerification{
 
     pub fn new(
         template_name: &String,
+        original_file: &String,
         signals: LinkedList<usize>,
         inputs: Vec<usize>,
         outputs: Vec<usize>,
         constraints: Vec<Constraint<usize>>,
         implications_safety: Vec<(Vec<usize>, Vec<usize>)>,
         field: &BigInt,
-        verification_timeout: u64, 
+        verification_timeout: u64,
         apply_deduction_assigned: bool,
         include_niaz3_in_all: bool,
         verbose: bool
@@ -126,20 +128,53 @@ impl SafetyVerification{
 
         SafetyVerification {
             template_name: template_name.clone(),
+            original_file: original_file.clone(),
             signals,
             inputs,
-            outputs, 
+            outputs,
             implications_safety,
             constraints: fixed_constraints,
             field: field.clone(),
-            verification_timeout, 
+            verification_timeout,
             added_nodes: HashSet::new(),
             apply_deduction_assigned,
             include_niaz3_in_all,
             verbose
         }
     }
-    
+
+}
+
+fn sanitize_name(s: &str) -> String {
+    s.chars().map(|c| if c.is_alphanumeric() || c == '_' || c == '-' { c } else { '_' }).collect()
+}
+
+pub fn determinism_smt2_name(original_file: &str, template_name: &str, level: usize, solver: &str) -> String {
+    let original = sanitize_name(original_file);
+    let template = sanitize_name(template_name);
+    format!("determinism_{}_{}_level_{}_{}.smt2", original, template, level, solver)
+}
+
+pub fn equivalence_smt2_name(original_file: &str, template_name: &str, solver: &str) -> String {
+    let random: u32 = rand::Rng::gen(&mut rand::thread_rng());
+    let original = sanitize_name(original_file);
+    if template_name.is_empty() {
+        format!("equivalence_{}_{}_{}.smt2", original, solver, random)
+    } else {
+        let template = sanitize_name(template_name);
+        format!("equivalence_{}_{}_{}_{}.smt2", original, template, solver, random)
+    }
+}
+
+pub fn correctness_smt2_name(original_file: &str, template_name: &str, solver: &str) -> String {
+    let random: u32 = rand::Rng::gen(&mut rand::thread_rng());
+    let original = sanitize_name(original_file);
+    if template_name.is_empty() {
+        format!("correctness_{}_{}_{}.smt2", original, solver, random)
+    } else {
+        let template = sanitize_name(template_name);
+        format!("correctness_{}_{}_{}_{}.smt2", original, template, solver, random)
+    }
 }
 
 
@@ -147,6 +182,7 @@ impl SafetyVerification{
 #[derive(Clone)]
 pub struct EquivalenceVerification {
     pub template_name: String,
+    pub original_file: String,
     pub signals_1: LinkedList<usize>,
     pub signals_2: LinkedList<usize>,
     pub inputs_1: Vec<usize>,
@@ -167,6 +203,7 @@ impl EquivalenceVerification{
 
     pub fn new(
         template_name: &String,
+        original_file: &String,
         signals_1: LinkedList<usize>,
         signals_2: LinkedList<usize>,
         inputs_1: Vec<usize>,
@@ -177,7 +214,7 @@ impl EquivalenceVerification{
         constraints_2: Vec<Constraint<usize>>,
         implications_equivalence: Vec<(Vec<(usize, usize)>, Vec<(usize, usize)>)>,
         field: &BigInt,
-        verification_timeout: u64, 
+        verification_timeout: u64,
         apply_deduction_assigned: bool,
         verbose: bool
     ) -> EquivalenceVerification {
@@ -194,6 +231,7 @@ impl EquivalenceVerification{
 
         EquivalenceVerification {
             template_name: template_name.clone(),
+            original_file: original_file.clone(),
             signals_1,
             signals_2,
             inputs_1,
@@ -220,6 +258,7 @@ impl EquivalenceVerification{
 #[derive(Clone)]
 pub struct CorrectnessVerification {
     pub template_name: String,
+    pub original_file: String,
     pub signals_1: Vec<usize>,
     pub signals_2: Vec<String>,
     pub inputs_1: Vec<usize>,
@@ -239,6 +278,7 @@ impl CorrectnessVerification{
 
     pub fn new(
         template_name: &String,
+        original_file: &String,
         signals_1: Vec<usize>,
         signals_2: Vec<String>,
         inputs_1: Vec<usize>,
@@ -249,7 +289,7 @@ impl CorrectnessVerification{
         constraints_2: Vec<String>,
         implications_equivalence: Vec<(Vec<usize>, Vec<String>)>,
         field: &BigInt,
-        verification_timeout: u64, 
+        verification_timeout: u64,
         verbose: bool
     ) -> CorrectnessVerification {
         let mut fixed_constraints_1 = Vec::new();
@@ -261,6 +301,7 @@ impl CorrectnessVerification{
 
         CorrectnessVerification {
             template_name: template_name.clone(),
+            original_file: original_file.clone(),
             signals_1,
             signals_2,
             inputs_1,

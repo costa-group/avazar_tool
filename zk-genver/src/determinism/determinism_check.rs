@@ -32,7 +32,13 @@ pub struct ResultInfoDeterminism{
 
 }
 
-pub fn prove_safety(user_input: Input) -> Result<(), ()> {    
+pub fn prove_safety(user_input: Input) -> Result<(), ()> {
+    let original_file = user_input.input_r1cs
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("")
+        .to_string();
+
     let (constraints,
         signals,
         n_outputs,
@@ -101,14 +107,14 @@ pub fn prove_safety(user_input: Input) -> Result<(), ()> {
     };
 
     for node in structure.nodes.iter().rev(){
-        process_node(&node, 
-            &structure, 
-            &constraints, 
+        process_node(&node,
+            &structure,
+            &constraints,
             &local_equivalence_classes,
             &structural_equivalence_classes,
-            &nodeid2pos, 
-            &field, 
-            timeout, 
+            &nodeid2pos,
+            &field,
+            timeout,
             user_input.solver_option,
             apply_deduction_assigned,
             include_niaz3_in_all,
@@ -117,7 +123,8 @@ pub fn prove_safety(user_input: Input) -> Result<(), ()> {
             &mut results,
             user_input.extra_rounds,
             user_input.limit_size,
-            user_input.flag_verbose
+            user_input.flag_verbose,
+            &original_file,
         );
     }
 
@@ -135,8 +142,8 @@ pub fn prove_safety(user_input: Input) -> Result<(), ()> {
                 &constraints,
                 &mut nodeid2pos,
                 &mut max_node_id,
-                &field, 
-                timeout, 
+                &field,
+                timeout,
                 user_input.solver_option,
                 equivalence_mode,
                 target_size,
@@ -147,7 +154,8 @@ pub fn prove_safety(user_input: Input) -> Result<(), ()> {
                 &mut results,
                 user_input.extra_rounds,
                 user_input.limit_size,
-                user_input.flag_verbose
+                user_input.flag_verbose,
+                &original_file,
             );
         }
         to_study_again = reconsider_big_nodes(&structure, &nodeid2pos, &mut results, clustering_size);
@@ -196,7 +204,8 @@ fn process_node(
     results: &mut ResultInfoDeterminism,
     extra_rounds: usize,
     limit_size: usize,
-    verbose: bool
+    verbose: bool,
+    original_file: &str,
 ) {
 
     // To not study the custom templates
@@ -235,8 +244,8 @@ fn process_node(
         &field,
         timeout,
         &structure.nodes,
-        &nodeid2pos, 
-        &constraints ,
+        &nodeid2pos,
+        &constraints,
         solver,
         apply_deduction_assigned,
         include_niaz3_in_all,
@@ -245,7 +254,8 @@ fn process_node(
         no_abstract_fails,
         results,
         extra_rounds,
-        verbose
+        verbose,
+        original_file,
     );
         
         for log in logs{
@@ -324,7 +334,8 @@ fn decompose_and_study(
     results: &mut ResultInfoDeterminism,
     extra_rounds: usize,
     limit_size: usize,
-    verbose: bool
+    verbose: bool,
+    original_file: &str,
 ) {
     println!("LOG: Reconsidering again node {}", node_id);
     let node_info = structure.nodes.get(*nodeid2pos.get(&node_id).unwrap()).unwrap();
@@ -401,14 +412,14 @@ fn decompose_and_study(
             //print_node_info(node, constraints);
         }
 
-        process_node(node, 
-            &new_structure, 
-            &constraints, 
+        process_node(node,
+            &new_structure,
+            &constraints,
             &local_equivalence_classes,
             &structural_equivalence_classes,
-            &new_nodeid2pos, 
-            &field, 
-            timeout, 
+            &new_nodeid2pos,
+            &field,
+            timeout,
             solver,
             apply_deduction_assigned,
             include_niaz3_in_all,
@@ -417,7 +428,8 @@ fn decompose_and_study(
             &mut new_results,
             extra_rounds,
             limit_size,
-            verbose
+            verbose,
+            original_file,
         );
     }
 

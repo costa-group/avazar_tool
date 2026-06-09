@@ -173,9 +173,7 @@ fn try_prove_safety_with_z3_internal(
     solver.assert(&!equal_outputs);
 
     if problem.verbose{
-        let mut rng = rand::thread_rng();
-        let random_number: u32 = rng.gen();
-        let new_file_name = format!("output_{}.smt2", random_number);
+        let new_file_name = crate::determinism_smt2_name(&problem.original_file, &problem.template_name, problem.added_nodes.len(), "z3");
 
         let mut file: File = File::create(&new_file_name).expect("Unable to create SMT2 file");
         file.write_all(format!("{}",solver).as_bytes()).expect("Unable to write SMT2 file");
@@ -294,12 +292,8 @@ fn internal_try_prove_equivalence_with_z3(
     solver.assert(&!equal_outputs);
 
     if problem.verbose{
-        //produce a random number for the file name
-        let mut rng = rand::thread_rng();
-        let random_number: u32 = rng.gen();
-        let new_file_name = format!("output_{}.smt2", random_number);
+        let new_file_name = crate::equivalence_smt2_name(&problem.original_file, &problem.template_name, "z3");
 
-        // Ensure the SMT2 text is fully written and flushed to disk before continuing.
         let mut file: File = File::create(&new_file_name).expect("Unable to create SMT2 file");
         file.write_all(format!("{}",solver).as_bytes()).expect("Unable to write SMT2 file");
         file.sync_all().expect("Failed to sync SMT2 file to disk");
