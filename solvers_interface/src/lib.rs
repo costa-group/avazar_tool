@@ -145,35 +145,93 @@ impl SafetyVerification{
 
 }
 
-fn sanitize_name(s: &str) -> String {
-    s.chars().map(|c| if c.is_alphanumeric() || c == '_' || c == '-' { c } else { '_' }).collect()
+const MAX_SAFE_FILENAME_BYTES: usize = 240;
+
+fn sanitize_name(s: &str, compact_parenthesis: bool) -> String {
+    let source = if compact_parenthesis {
+        compact_parenthesized_segments(s)
+    } else {
+        s.to_string()
+    };
+
+    source
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
+        .collect()
+}
+
+fn compact_parenthesized_segments(s: &str) -> String {
+    if let Some(start) = s.find('(') {
+        if let Some(rel_end) = s[start + 1..].find(')') {
+            let end = start + 1 + rel_end;
+            let inner = &s[start + 1..end];
+            let hash = seahash::hash(inner.as_bytes());
+
+            let mut out = String::with_capacity(s.len());
+            out.push_str(&s[..start]);
+            out.push_str(&format!("_p{:016x}", hash));
+            out.push_str(&s[end + 1..]);
+            return out;
+        }
+    }
+
+    s.to_string()
+}
+
+fn ensure_safe_length(
+    file_name: String,
+    original_file: &str,
+    template_name: &str,
+    rebuild: impl Fn(&str, &str) -> String,
+) -> String {
+    if file_name.as_bytes().len() <= MAX_SAFE_FILENAME_BYTES {
+        return file_name;
+    }
+    let original_compact = sanitize_name(original_file, true);
+    let template_compact = sanitize_name(template_name, true);
+    rebuild(&original_compact, &template_compact)
 }
 
 pub fn determinism_smt2_name(original_file: &str, template_name: &str, level: usize, solver: &str) -> String {
-    let original = sanitize_name(original_file);
-    let template = sanitize_name(template_name);
-    format!("determinism_{}_{}_level_{}_{}.smt2", original, template, level, solver)
+    let original = sanitize_name(original_file, false);
+    let template = sanitize_name(template_name, false);
+    let file_name = format!("determinism_{}_{}_level_{}_{}.smt2", original, template, level, solver);
+    ensure_safe_length(file_name, original_file, template_name, |o, t| {
+        format!("determinism_{}_{}_level_{}_{}.smt2", o, t, level, solver)
+    })
 }
 
 pub fn equivalence_smt2_name(original_file: &str, template_name: &str, solver: &str) -> String {
     let random: u32 = rand::Rng::gen(&mut rand::thread_rng());
-    let original = sanitize_name(original_file);
+    let original = sanitize_name(original_file, false);
     if template_name.is_empty() {
-        format!("equivalence_{}_{}_{}.smt2", original, solver, random)
+        let file_name = format!("equivalence_{}_{}_{}.smt2", original, solver, random);
+        ensure_safe_length(file_name, original_file, template_name, |o, _t| {
+            format!("equivalence_{}_{}_{}.smt2", o, solver, random)
+        })
     } else {
-        let template = sanitize_name(template_name);
-        format!("equivalence_{}_{}_{}_{}.smt2", original, template, solver, random)
+        let template = sanitize_name(template_name, false);
+        let file_name = format!("equivalence_{}_{}_{}_{}.smt2", original, template, solver, random);
+        ensure_safe_length(file_name, original_file, template_name, |o, t| {
+            format!("equivalence_{}_{}_{}_{}.smt2", o, t, solver, random)
+        })
     }
 }
 
 pub fn correctness_smt2_name(original_file: &str, template_name: &str, solver: &str) -> String {
     let random: u32 = rand::Rng::gen(&mut rand::thread_rng());
-    let original = sanitize_name(original_file);
+    let original = sanitize_name(original_file, false);
     if template_name.is_empty() {
-        format!("correctness_{}_{}_{}.smt2", original, solver, random)
+        let file_name = format!("correctness_{}_{}_{}.smt2", original, solver, random);
+        ensure_safe_length(file_name, original_file, template_name, |o, _t| {
+            format!("correctness_{}_{}_{}.smt2", o, solver, random)
+        })
     } else {
-        let template = sanitize_name(template_name);
-        format!("correctness_{}_{}_{}_{}.smt2", original, template, solver, random)
+        let template = sanitize_name(template_name, false);
+        let file_name = format!("correctness_{}_{}_{}_{}.smt2", original, template, solver, random);
+        ensure_safe_length(file_name, original_file, template_name, |o, t| {
+            format!("correctness_{}_{}_{}_{}.smt2", o, t, solver, random)
+        })
     }
 }
 
