@@ -6,12 +6,13 @@ use circuits_and_constraints::circuit::Circuit;
 use circuits_and_constraints::constraint::Constraint;
 use circuits_and_constraints::utils::signals_to_constraints_with_them;
 use utils::union_find::UnionFind;
+use utils::small_utilities::HierarchyMode;
 
 use crate::directed_acyclic_graph::{DAGNode};
 use crate::directed_acyclic_graph::dag_from_partition::dag_from_partition;
 use crate::directed_acyclic_graph::dag_postprocessing::merge_passthrough;
 
-pub fn bridge_partitioning<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(circ: &'a S, strict_bridge: bool, debug: usize) -> HashMap<usize, DAGNode<'a, C, S>> {
+pub fn bridge_partitioning<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(circ: &'a S, strict_bridge: bool, hierarchy_mode: HierarchyMode, debug: usize) -> HashMap<usize, DAGNode<'a, C, S>> {
 
     // partition the constraints into clusters based on connectedness through non-bridge nodes
     if debug > 1 {println!("LOG: Beginning bridge partitioning");}
@@ -63,7 +64,7 @@ pub fn bridge_partitioning<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(circ: &'a
     let dag_from_partition_timer = Instant::now();
 
     // pass partition to hierarchy and return DAGNodes
-    let mut dagnodes = dag_from_partition(circ, node_to_coni, &mut (0..), false, debug);
+    let mut dagnodes = dag_from_partition(circ, node_to_coni, &mut (0..), false, hierarchy_mode, debug);
     if debug > 1 {println!(
         "LOG: Number of passthrough clusters {:?} out of {:?}", dagnodes.values().filter(|&node| node.get_input_signals().intersection(node.get_output_signals()).count() > 0).count(), dagnodes.len()
     );}

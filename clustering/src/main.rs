@@ -75,6 +75,7 @@ fn start(args: Args) -> Result<(), Box<dyn Error>> {
         equivalence_mode: args.equivalence_mode, 
         graph_backend: args.graph_backend, preprocessing: args.preprocessing, 
         minimum_equivalence_size: args.minimum_equivalence_size, 
+        hierarchy_mode: args.hierarchy_mode,
         equivalence_comparison_budget: args.equivalence_comparison_budget, 
         existing_partition: existing_partition, debug: args.debug,
         extract_raw_partition: args.extract_raw_partition,

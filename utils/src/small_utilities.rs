@@ -40,6 +40,15 @@ pub enum ClusteringPreprocessing {
 }
 
 #[derive(Debug, Default, Display, Copy, Clone, ValueEnum, PartialEq)]
+pub enum HierarchyMode {
+    #[strum(serialize = "conservative")]
+    #[default]
+    Conservative,
+    #[strum(serialize = "optimisation")]
+    Optimisation,
+}
+
+#[derive(Debug, Default, Display, Copy, Clone, ValueEnum, PartialEq)]
 pub enum FileType {
     #[strum(serialize = "r1cs")]
     #[default]
@@ -56,6 +65,7 @@ pub struct DecomposeOptions<'a> {
     pub equivalence_mode: EquivalenceMode,
     pub graph_backend: GraphBackend,
     pub preprocessing: ClusteringPreprocessing,
+    pub hierarchy_mode: HierarchyMode,
     pub inverse_coni_mapping: Option<&'a [usize]>,
     pub inverse_sig_mapping: Option<&'a [usize]>,
     pub minimum_equivalence_size: Option<usize>,

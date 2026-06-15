@@ -9,21 +9,19 @@ use super::DAGNode;
 use circuits_and_constraints::constraint::Constraint;
 use circuits_and_constraints::circuit::Circuit;
 use circuits_and_constraints::utils::signals_to_constraints_with_them;
-use utils::small_utilities::{distance_to_source_set, merge_sorted_vecs};
+use utils::small_utilities::{distance_to_source_set, merge_sorted_vecs, HierarchyMode};
 use utils::union_find::{UnionFind};
+use super::satisfiability_hierarchy::dag_from_partition_solver;
+use super::export_to_dzn::write_dzn;
 
-pub fn dag_from_partition<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
-    circ: &'a S, partition: Vec<Vec<usize>>, node_id_generator: &mut dyn Iterator<Item = usize>,
-    dead_ends_as_outputs: bool, debug: usize) -> HashMap<usize, DAGNode<'a, C, S>> {
-
-    let timer = Instant::now();
-
+fn get_intial_components<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
+        circ: &'a S, partition: &Vec<Vec<usize>>,
+        dead_ends_as_outputs: bool, _debug: usize
+    ) -> (Vec<Vec<usize>>, HashSet<usize>, HashSet<usize>) {
     // have partitions keep Vec<Vec<usize>>, index by vec index throughout until we make the DAGNodes
-
-
     // sorted arr signal list
     let n_parts = partition.len();
-    let part_to_signals_arr: Vec<Vec<usize>> = partition.iter().map(|part|
+    let part_to_signals_arr: Vec<Vec<usize>> = partition.into_iter().map(|part|
         part.iter().copied().flat_map(|idx| circ.get_constraints()[idx].borrow().signals()).sorted_unstable().dedup().collect()
     ).collect();
 
@@ -32,7 +30,7 @@ pub fn dag_from_partition<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
 
     const NO_PART: usize = usize::MAX;
     let mut coni_to_part: Vec<usize> = vec![NO_PART; circ.n_constraints()];
-    for (idx, part) in partition.iter().enumerate() {
+    for (idx, part) in partition.into_iter().enumerate() {
         for coni in part.iter().copied() {
             match coni_to_part[coni] {
                 NO_PART => {coni_to_part[coni] = idx;}
@@ -43,8 +41,6 @@ pub fn dag_from_partition<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
 
     // get the signal indices
     let sig_to_coni = signals_to_constraints_with_them(circ.get_constraints(), None, None);
-
-    if debug > 1 { println!("LOG: Easy preprocessing done in {:?}", timer.elapsed().as_secs_f32()); }
     
     let mut last_seen_at: Vec<usize> = vec![0;n_parts];
     // note that this is not sorted
@@ -61,19 +57,66 @@ pub fn dag_from_partition<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
 
     // include dead-ends as outputs
     if dead_ends_as_outputs{ output_parts.extend((0..n_parts).filter(|parti| adjacencies[*parti].len() == 1)); }
+    (adjacencies, input_parts, output_parts)
+}
 
-    if debug > 1 { println!("LOG: Total-edges {:?}, max-edges {:?}", adjacencies.iter().map(|set| set.len()).sum::<usize>(), adjacencies.iter().map(|set| set.len()).max()); }
-    if debug > 1 { println!("LOG: Adjacency preprocessing done in {:?}", timer.elapsed().as_secs_f32()); }
+fn lt(x: (usize, usize), y: (usize, usize)) -> bool {x.0 < y.0 && (y.1 <= x.1) || x.0 == y.0 && (y.1 < x.1)}
 
+fn write_to_dzn(adjacencies: &Vec<Vec<usize>>, input_parts: &HashSet<usize>, output_parts: &HashSet<usize>) -> () {
+
+    let distance_to_inputs = distance_to_source_set(input_parts.into_iter().copied(), adjacencies);
+    let distance_to_outputs = distance_to_source_set(output_parts.into_iter().copied(), adjacencies);
+
+    // make the preorder
+    let part_to_preorder: Vec<(usize, usize)> = (0..adjacencies.len()).map(|key| (distance_to_inputs[key], distance_to_outputs[key])).collect();
+
+    let edges: Vec<(usize, usize)> = adjacencies.into_iter().enumerate()
+                    .flat_map( |(idx, part)| part.into_iter().copied().map(move |x| (idx, x)))
+                    .filter(|(a, b)| a < b)
+                    .collect();
+    let fuzzy: Vec<bool> = edges.iter()
+                    .map(|&(a, b)| !lt(part_to_preorder[a], part_to_preorder[b]) && !lt(part_to_preorder[b], part_to_preorder[a]))
+                    .collect();
+    
+    write_dzn("data.dzn", adjacencies, &edges, &fuzzy, input_parts, output_parts);
+    
+}
+
+fn add_arc_to_nodes<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(arc: (usize, usize), idx_to_nodeid: &Vec<usize>, part_to_signals_arr: &Vec<Vec<usize>>, nodes: &mut HashMap<usize, DAGNode<'a, C, S>>) -> () {
+    let (l, r) = arc;
+    let l_id = idx_to_nodeid[l]; let r_id = idx_to_nodeid[r];
+
+    let shared_signals: Vec<usize> = merge_sorted_vecs(&part_to_signals_arr[l], &part_to_signals_arr[r]);
+
+    {let lnode: &mut DAGNode<C, S> = nodes.get_mut(&l_id).unwrap();
+
+    lnode.add_successors([r_id].into_iter());
+    lnode.update_output_signals(shared_signals.iter().copied());};
+
+    {let rnode: &mut DAGNode<C, S> = nodes.get_mut(&r_id).unwrap();
+    
+    rnode.add_predecessors([l_id].into_iter());
+    rnode.update_input_signals(shared_signals.into_iter())};
+}
+
+fn conservative_hierarchy<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
+    circ: &'a S, partition: Vec<Vec<usize>>, node_id_generator: &mut dyn Iterator<Item = usize>,
+    adjacencies: Vec<Vec<usize>>, input_parts: HashSet<usize>, output_parts: HashSet<usize>, 
+    timer: Instant, debug: usize) -> HashMap<usize, DAGNode<'a, C, S>> {
+
+    let n_parts = partition.len();
     let distance_to_inputs = distance_to_source_set(input_parts.into_iter(), &adjacencies);
     let distance_to_outputs = distance_to_source_set(output_parts.into_iter(), &adjacencies);
+    let part_to_signals_arr: Vec<Vec<usize>> = partition.iter().map(|part|
+        part.into_iter().copied().flat_map(|idx| circ.get_constraints()[idx].borrow().signals()).sorted_unstable().dedup().collect()
+    ).collect();
+
 
     if debug > 1 { println!("LOG: Found distances to sources in {:?}", timer.elapsed().as_secs_f32()); }
 
     // make the preorder
     let part_to_preorder: Vec<(usize, usize)> = (0..n_parts).map(|key| (distance_to_inputs[key], distance_to_outputs[key])).collect();
 
-    
     // DAGNode indices might not be 0..n_parts so now need to do some pointer work
     // need idx => node_id for arcs 
     let idx_to_nodeid: Vec<usize> = node_id_generator.take(n_parts).collect();
@@ -99,8 +142,6 @@ pub fn dag_from_partition<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
 
     let mut arcs : Vec<(usize, usize)> = Vec::new();
     let mut fuzzy_adjacencies: HashMap<usize, FxHashSet<usize>> = HashMap::new();
-
-    fn lt(x: (usize, usize), y: (usize, usize)) -> bool {x.0 < y.0 && (y.1 <= x.1) || x.0 == y.0 && (y.1 < x.1)}
 
     for (idx, adjacent) in adjacencies.into_iter().enumerate() {for idy in adjacent.into_iter() {
         if lt(part_to_preorder[idx], part_to_preorder[idy]) {arcs.push((idx, idy));}
@@ -166,10 +207,102 @@ pub fn dag_from_partition<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
     let components_to_merge = undirected_components.get_components();
     if debug > 1 { println!("LOG: Need to merge {:?} components with total size {:?}", components_to_merge.len(), components_to_merge.iter().map(|s| s.len()).sum::<usize>()); }
 
+    let sig_to_coni = signals_to_constraints_with_them(circ.get_constraints(), None, None);
     for to_merge in components_to_merge.into_iter() {
         DAGNode::merge_nodes(to_merge.into_iter().collect(), &mut nodes, &sig_to_coni, &mut coni_to_node);
     }
     if debug > 1 { println!("LOG: Merged fuzzy components in {:?}", timer.elapsed().as_secs_f32()); }
 
     nodes
+}
+
+fn optimisation_hierarchy<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
+    circ: &'a S, partition: Vec<Vec<usize>>, node_id_generator: &mut dyn Iterator<Item = usize>,
+    adjacencies: Vec<Vec<usize>>, input_parts: HashSet<usize>, output_parts: HashSet<usize>, 
+    timer: Instant, debug: usize) -> HashMap<usize, DAGNode<'a, C, S>> {
+    
+    let (to_merge, unmerged_distance_to_inputs, unmerged_distance_to_outputs) = dag_from_partition_solver(&adjacencies, &input_parts, &output_parts, debug);
+
+    let mut undirected_components = UnionFind::new(false);
+    for (u, v) in to_merge.into_iter() {
+        undirected_components.union([u, v].into_iter());
+    }
+    for v in 0..partition.len() {undirected_components.find(v);}
+
+    let components = undirected_components.get_components();
+    let parent_to_newidx: HashMap<usize, usize> = components.iter().enumerate().map(|(idx, part)| (undirected_components.find(part[0]), idx)).collect();
+
+    let mut merged_partition : Vec<Vec<usize>> = vec![Vec::new(); parent_to_newidx.len()];
+    let mut merged_adjacencies : Vec<Vec<usize>> = vec![Vec::new(); parent_to_newidx.len()];
+    let merged_inputs: HashSet<usize> = input_parts.into_iter().map(|x| parent_to_newidx[&undirected_components.find(x)]).collect();
+    let merged_outputs: HashSet<usize> = output_parts.into_iter().map(|x| parent_to_newidx[&undirected_components.find(x)]).collect();
+
+    for part in components.into_iter() {
+        let newidx = parent_to_newidx[&undirected_components.find(part[0])];
+        let part = part.into_iter().collect::<HashSet<_>>();
+
+        merged_partition[newidx] = part.iter().copied().flat_map(|v| partition[v].iter().copied()).collect();
+        merged_adjacencies[newidx] = part.iter().copied().flat_map(|v| adjacencies[v].iter().copied()).map(|x| parent_to_newidx[&undirected_components.find(x)]).collect::<HashSet<_>>().into_iter().filter(|x| *x != newidx).collect();
+    }
+
+    let n_parts = merged_partition.len();
+
+    let mut distance_to_inputs = vec![usize::MAX; n_parts];
+    let mut distance_to_outputs = vec![usize::MAX; n_parts];
+
+    for (&parent, &idx) in parent_to_newidx.iter() {
+        distance_to_inputs[idx] = unmerged_distance_to_inputs[parent];
+        distance_to_outputs[idx] = unmerged_distance_to_outputs[parent];
+    }
+
+    let part_to_preorder: Vec<(usize, usize)> = (0..n_parts).map(|key| (distance_to_inputs[key], distance_to_outputs[key])).collect();
+    let mut arcs: Vec<(usize, usize)> = Vec::new();
+
+    for (idx, adjacent) in merged_adjacencies.into_iter().enumerate() {for idy in adjacent.into_iter() {
+        if lt(part_to_preorder[idx], part_to_preorder[idy]) {arcs.push((idx, idy));}
+        else if !lt(part_to_preorder[idy], part_to_preorder[idx]) {panic!("Fusing didn't remove all fuzzy edges as required")}
+    }}
+
+    let idx_to_nodeid: Vec<usize> = node_id_generator.take(n_parts).collect();
+    let part_to_signals_arr: Vec<Vec<usize>> = merged_partition.iter().map(|part|
+        part.into_iter().copied().flat_map(|idx| circ.get_constraints()[idx].borrow().signals()).sorted_unstable().dedup().collect()
+    ).collect();
+
+    let mut nodes : HashMap<usize, DAGNode<'a, C, S>> = merged_partition.into_iter().enumerate().map(|(idx, part)| {
+        (idx_to_nodeid[idx], 
+        DAGNode::new(
+            circ, 
+            idx_to_nodeid[idx], 
+            part, 
+            part_to_signals_arr[idx].iter().copied().filter(|sig| circ.signal_is_input(sig)).collect(), // get global labelled signal in initially
+            part_to_signals_arr[idx].iter().copied().filter(|sig| circ.signal_is_output(sig)).collect(),
+            None, None))
+    }).collect();
+
+    for arc in arcs.into_iter() {add_arc_to_nodes(arc, &idx_to_nodeid, &part_to_signals_arr, &mut nodes);}
+
+    nodes
+}
+
+pub fn dag_from_partition<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
+    circ: &'a S, partition: Vec<Vec<usize>>, node_id_generator: &mut dyn Iterator<Item = usize>,
+    dead_ends_as_outputs: bool, hierarchy_mode: HierarchyMode, debug: usize) -> HashMap<usize, DAGNode<'a, C, S>> {
+
+    let timer = Instant::now();
+
+    let (adjacencies, input_parts, output_parts) = get_intial_components(circ, &partition, dead_ends_as_outputs, debug);
+
+    if debug > 1 { println!("LOG: Total-edges {:?}, max-edges {:?}", adjacencies.iter().map(|set| set.len()).sum::<usize>(), adjacencies.iter().map(|set| set.len()).max()); }
+    if debug > 1 { println!("LOG: Adjacency preprocessing done in {:?}", timer.elapsed().as_secs_f32()); }
+
+    match hierarchy_mode {
+        HierarchyMode::Conservative => conservative_hierarchy(
+            circ, partition, node_id_generator,
+            adjacencies, input_parts, output_parts, 
+            timer, debug),
+        HierarchyMode::Optimisation => optimisation_hierarchy(
+            circ, partition, node_id_generator,
+            adjacencies, input_parts, output_parts, 
+            timer, debug)
+    }
 }

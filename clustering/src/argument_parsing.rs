@@ -1,5 +1,5 @@
 use clap::Parser;
-use utils::small_utilities::{GraphBackend, EquivalenceMode, FileType, ClusteringPreprocessing};
+use utils::small_utilities::{GraphBackend, EquivalenceMode, FileType, ClusteringPreprocessing, HierarchyMode};
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -26,6 +26,9 @@ pub struct Args {
 
     #[arg(short, long="preprocessing", value_enum, default_value_t=ClusteringPreprocessing::None)]
     pub preprocessing: ClusteringPreprocessing,
+
+    #[arg(short, long="hierarchy_mode", value_enum, default_value_t=HierarchyMode::Conservative)]
+    pub hierarchy_mode: HierarchyMode,
 
     #[arg(short, long="file_type", value_enum, default_value_t=FileType::R1CS)]
     pub file_type: FileType,

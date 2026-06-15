@@ -90,7 +90,7 @@ fn decompose_circuit_and_return_dagnodes<'a, C: Constraint, S: Circuit<C>>(
     // Convert into DAG
     let dagnode_timer = Instant::now();
     
-    let mut dagnodes = dag_from_partition(circuit, partition, node_id_generator, decompose_options.dead_ends_as_outputs, decompose_options.debug);
+    let mut dagnodes = dag_from_partition(circuit, partition, node_id_generator, decompose_options.dead_ends_as_outputs, decompose_options.hierarchy_mode, decompose_options.debug);
     merge_passthrough(circuit, &mut dagnodes);
     
     //insert_and_print_timing(debug, &mut timing, "dag_construction_merging", dagnode_timer.elapsed());
@@ -140,6 +140,7 @@ fn decompose_circuit_over_dagnodes<'a, C: Constraint, S: Circuit<C>>(
             target_size: decompose_options.target_size,
             leiden_max_iterations: decompose_options.leiden_max_iterations,
             graph_backend: decompose_options.graph_backend,
+            hierarchy_mode: decompose_options.hierarchy_mode,
             inverse_coni_mapping: Some(&node.get_constraint_indices().collect::<Vec<_>>()),
             debug: decompose_options.debug.checked_sub(1).unwrap_or_default(),
             ..Default::default()
@@ -205,7 +206,7 @@ pub fn decompose_circuit<C: Constraint, S: Circuit<C>>(
         }
         _ => {
             let preprocessed_nodes = match decompose_options.preprocessing {
-                ClusteringPreprocessing::BridgeFinding => bridge_partitioning(circuit, true, decompose_options.debug),
+                ClusteringPreprocessing::BridgeFinding => bridge_partitioning(circuit, true, decompose_options.hierarchy_mode, decompose_options.debug),
                 _ => {panic!("Unimplemented partitioning method {:?}", decompose_options.preprocessing);}
             };
             decompose_circuit_over_dagnodes(
