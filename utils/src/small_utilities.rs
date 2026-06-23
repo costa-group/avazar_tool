@@ -46,6 +46,8 @@ pub enum HierarchyMode {
     Conservative,
     #[strum(serialize = "optimisation")]
     Optimisation,
+    #[strum(serialize = "extension")]
+    Extension,
 }
 
 #[derive(Debug, Default, Display, Copy, Clone, ValueEnum, PartialEq)]
