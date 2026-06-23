@@ -10,13 +10,60 @@ mod smt2_utils;
 use std::collections::HashMap;
 
 use std::collections::{HashSet, LinkedList};
+use std::path::Path;
 use num_bigint_dig::BigInt;
 
 use circom_algebra::algebra::Constraint;
 
-#[derive(PartialEq, Eq, Clone, Copy)] 
+#[derive(PartialEq, Eq, Clone, Copy)]
 pub enum PossibleSolver{
     PICUS, CIVER, FFSOL, CVC5, YICES, NIAZ3, Z3, ALL
+}
+
+pub fn check_binary_in_path(binary: &str) -> bool {
+    if binary.starts_with('.') || binary.starts_with('/') {
+        return Path::new(binary).exists();
+    }
+    std::process::Command::new("which")
+        .arg(binary)
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+impl PossibleSolver {
+    /// Returns the external binary required by this solver, or None if it uses a built-in library.
+    pub fn required_binary(&self) -> Option<&'static str> {
+        match self {
+            PossibleSolver::FFSOL  => Some("ffsol"),
+            PossibleSolver::CVC5   => Some("cvc5"),
+            PossibleSolver::YICES  => Some("yices-smt2"),
+            PossibleSolver::NIAZ3  => Some("z3"),
+            PossibleSolver::PICUS  => Some("./Picus/run-picus"),
+            PossibleSolver::Z3 | PossibleSolver::CIVER | PossibleSolver::ALL => None,
+        }
+    }
+
+    pub fn is_available(&self) -> bool {
+        match self.required_binary() {
+            None         => true,
+            Some(binary) => check_binary_in_path(binary),
+        }
+    }
+
+    /// Maps the internal name used in ALL/parallel mode to the corresponding solver variant.
+    /// `"ffsol-nolinear"` shares the same binary as `FFSOL`.
+    pub fn from_parallel_name(name: &str) -> PossibleSolver {
+        match name {
+            "ffsol" | "ffsol-nolinear" => PossibleSolver::FFSOL,
+            "cvc5"                     => PossibleSolver::CVC5,
+            "yices"                    => PossibleSolver::YICES,
+            "z3"                       => PossibleSolver::Z3,
+            "civer"                    => PossibleSolver::CIVER,
+            "nia-z3"                   => PossibleSolver::NIAZ3,
+            _                          => PossibleSolver::CIVER,
+        }
+    }
 }
 
 
@@ -44,6 +91,7 @@ pub enum PossibleResult{
 #[derive(Clone)]
 pub struct SafetyVerification {
     pub template_name: String,
+    pub original_file: String,
     pub signals: LinkedList<usize>,
     pub inputs: Vec<usize>,
     pub outputs: Vec<usize>,
@@ -61,13 +109,14 @@ impl SafetyVerification{
 
     pub fn new(
         template_name: &String,
+        original_file: &String,
         signals: LinkedList<usize>,
         inputs: Vec<usize>,
         outputs: Vec<usize>,
         constraints: Vec<Constraint<usize>>,
         implications_safety: Vec<(Vec<usize>, Vec<usize>)>,
         field: &BigInt,
-        verification_timeout: u64, 
+        verification_timeout: u64,
         apply_deduction_assigned: bool,
         include_niaz3_in_all: bool,
         verbose: bool
@@ -80,26 +129,119 @@ impl SafetyVerification{
 
         SafetyVerification {
             template_name: template_name.clone(),
+            original_file: original_file.clone(),
             signals,
             inputs,
-            outputs, 
+            outputs,
             implications_safety,
             constraints: fixed_constraints,
             field: field.clone(),
-            verification_timeout, 
+            verification_timeout,
             added_nodes: HashSet::new(),
             apply_deduction_assigned,
             include_niaz3_in_all,
             verbose
         }
     }
-    
+
+}
+
+const MAX_SAFE_FILENAME_BYTES: usize = 240;
+
+fn sanitize_name(s: &str, compact_parenthesis: bool) -> String {
+    let source = if compact_parenthesis {
+        compact_parenthesized_segments(s)
+    } else {
+        s.to_string()
+    };
+
+    source
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
+        .collect()
+}
+
+fn compact_parenthesized_segments(s: &str) -> String {
+    if let Some(start) = s.find('(') {
+        if let Some(rel_end) = s[start + 1..].find(')') {
+            let end = start + 1 + rel_end;
+            let inner = &s[start + 1..end];
+            let hash = seahash::hash(inner.as_bytes());
+
+            let mut out = String::with_capacity(s.len());
+            out.push_str(&s[..start]);
+            out.push_str(&format!("_p{:016x}", hash));
+            out.push_str(&s[end + 1..]);
+            return out;
+        }
+    }
+
+    s.to_string()
+}
+
+fn ensure_safe_length(
+    file_name: String,
+    original_file: &str,
+    template_name: &str,
+    rebuild: impl Fn(&str, &str) -> String,
+) -> String {
+    if file_name.as_bytes().len() <= MAX_SAFE_FILENAME_BYTES {
+        return file_name;
+    }
+    let original_compact = sanitize_name(original_file, true);
+    let template_compact = sanitize_name(template_name, true);
+    rebuild(&original_compact, &template_compact)
+}
+
+pub fn determinism_smt2_name(original_file: &str, template_name: &str, level: usize, solver: &str) -> String {
+    let original = sanitize_name(original_file, false);
+    let template = sanitize_name(template_name, false);
+    let file_name = format!("determinism_{}_{}_level_{}_{}.smt2", original, template, level, solver);
+    ensure_safe_length(file_name, original_file, template_name, |o, t| {
+        format!("determinism_{}_{}_level_{}_{}.smt2", o, t, level, solver)
+    })
+}
+
+pub fn equivalence_smt2_name(original_file: &str, template_name: &str, solver: &str) -> String {
+    let random: u32 = rand::Rng::gen(&mut rand::thread_rng());
+    let original = sanitize_name(original_file, false);
+    if template_name.is_empty() {
+        let file_name = format!("equivalence_{}_{}_{}.smt2", original, solver, random);
+        ensure_safe_length(file_name, original_file, template_name, |o, _t| {
+            format!("equivalence_{}_{}_{}.smt2", o, solver, random)
+        })
+    } else {
+        let template = sanitize_name(template_name, false);
+        let file_name = format!("equivalence_{}_{}_{}_{}.smt2", original, template, solver, random);
+        ensure_safe_length(file_name, original_file, template_name, |o, t| {
+            format!("equivalence_{}_{}_{}_{}.smt2", o, t, solver, random)
+        })
+    }
+}
+
+pub fn correctness_smt2_name(original_file: &str, template_name: &str, solver: &str) -> String {
+    let random: u32 = rand::Rng::gen(&mut rand::thread_rng());
+    let original = sanitize_name(original_file, false);
+    if template_name.is_empty() {
+        let file_name = format!("correctness_{}_{}_{}.smt2", original, solver, random);
+        ensure_safe_length(file_name, original_file, template_name, |o, _t| {
+            format!("correctness_{}_{}_{}.smt2", o, solver, random)
+        })
+    } else {
+        let template = sanitize_name(template_name, false);
+        let file_name = format!("correctness_{}_{}_{}_{}.smt2", original, template, solver, random);
+        ensure_safe_length(file_name, original_file, template_name, |o, t| {
+            format!("correctness_{}_{}_{}_{}.smt2", o, t, solver, random)
+        })
+    }
 }
 
 
 
+#[derive(Clone)]
 pub struct EquivalenceVerification {
     pub template_name: String,
+    pub original_file: String,
     pub signals_1: LinkedList<usize>,
     pub signals_2: LinkedList<usize>,
     pub inputs_1: Vec<usize>,
@@ -120,6 +262,7 @@ impl EquivalenceVerification{
 
     pub fn new(
         template_name: &String,
+        original_file: &String,
         signals_1: LinkedList<usize>,
         signals_2: LinkedList<usize>,
         inputs_1: Vec<usize>,
@@ -130,7 +273,7 @@ impl EquivalenceVerification{
         constraints_2: Vec<Constraint<usize>>,
         implications_equivalence: Vec<(Vec<(usize, usize)>, Vec<(usize, usize)>)>,
         field: &BigInt,
-        verification_timeout: u64, 
+        verification_timeout: u64,
         apply_deduction_assigned: bool,
         verbose: bool
     ) -> EquivalenceVerification {
@@ -147,6 +290,7 @@ impl EquivalenceVerification{
 
         EquivalenceVerification {
             template_name: template_name.clone(),
+            original_file: original_file.clone(),
             signals_1,
             signals_2,
             inputs_1,
@@ -170,8 +314,10 @@ impl EquivalenceVerification{
 
 
 
+#[derive(Clone)]
 pub struct CorrectnessVerification {
     pub template_name: String,
+    pub original_file: String,
     pub signals_1: Vec<usize>,
     pub signals_2: Vec<String>,
     pub inputs_1: Vec<usize>,
@@ -192,6 +338,7 @@ impl CorrectnessVerification{
 
     pub fn new(
         template_name: &String,
+        original_file: &String,
         signals_1: Vec<usize>,
         signals_2: Vec<String>,
         inputs_1: Vec<usize>,
@@ -215,6 +362,7 @@ impl CorrectnessVerification{
 
         CorrectnessVerification {
             template_name: template_name.clone(),
+            original_file: original_file.clone(),
             signals_1,
             signals_2,
             inputs_1,

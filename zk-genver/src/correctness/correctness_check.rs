@@ -243,6 +243,8 @@ pub fn prove_correctness(user_input: Input) -> Result<(), ()> {
 
         let to_study = CorrectnessVerification::new(
             &"main".to_string(),
+                    &"main".to_string(),
+
             signals,
             signals_aux,
             inputs,

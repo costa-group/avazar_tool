@@ -12,6 +12,7 @@ use solvers_interface::cvc5_interface;
 use solvers_interface::nia_z3_interface;
 use solvers_interface::yices_interface;
 use solvers_interface::z3_interface;
+use crate::report;
 
 use utils::small_utilities::{GraphBackend, EquivalenceMode, ClusteringPreprocessing};
 
@@ -33,7 +34,13 @@ pub struct ResultInfoEquivalence{
 
 }
 
-pub fn prove_equivalence(user_input: Input) -> Result<(), ()> {    
+pub fn prove_equivalence(user_input: Input) -> Result<(), ()> {
+    let original_file = user_input.input_r1cs
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("")
+        .to_string();
+
     let (constraints,
         signals,
         n_outputs,
@@ -44,7 +51,7 @@ pub fn prove_equivalence(user_input: Input) -> Result<(), ()> {
         signals_aux,
         n_outputs_aux,
         n_inputs_aux)
-        = process_constraints(&user_input.check_equivalence.unwrap());
+        = process_constraints(&user_input.check_equivalence.clone().unwrap());
 
     // Read the structure
     let structure  = if user_input.input_structure.is_some(){
@@ -53,8 +60,6 @@ pub fn prove_equivalence(user_input: Input) -> Result<(), ()> {
     } else{
         generate_empty_equivalence_structure(constraints.len(), constraints_aux.len(), signals.len(), signals_aux.len(), n_outputs, n_outputs_aux, n_inputs, n_inputs_aux)
     }; 
-
-    println!("{:?}", structure);
         
     let timeout: u64 = user_input.timeout;
     let apply_deduction_assigned: bool = user_input.apply_deduction_assigned;
@@ -63,7 +68,7 @@ pub fn prove_equivalence(user_input: Input) -> Result<(), ()> {
     let apply_bidirectional: bool = user_input.apply_bidirectional;
 
 
-    let field = user_input.prime;
+    let field = user_input.prime.clone();
 
     let equivalence_mode = match user_input.equivalence_mode{
         0 => EquivalenceMode::None,
@@ -78,7 +83,6 @@ pub fn prove_equivalence(user_input: Input) -> Result<(), ()> {
         structural_equivalence_classes,
         mut max_node_id
     ) = process_equivalence_structure(&structure);
-    println!("{:?}", nodeid2pos);
 
 
     let clustering_size = user_input.clustering_size;
@@ -93,15 +97,15 @@ pub fn prove_equivalence(user_input: Input) -> Result<(), ()> {
     };
 
     for node in structure.nodes.iter().rev(){
-        process_node(&node, 
-            &structure, 
-            &constraints, 
+        process_node(&node,
+            &structure,
+            &constraints,
             &constraints_aux,
             &local_equivalence_classes,
             &structural_equivalence_classes,
-            &nodeid2pos, 
-            &field, 
-            timeout, 
+            &nodeid2pos,
+            &field,
+            timeout,
             user_input.solver_option,
             apply_deduction_assigned,
             include_niaz3_in_all,
@@ -110,7 +114,8 @@ pub fn prove_equivalence(user_input: Input) -> Result<(), ()> {
             &mut results,
             user_input.extra_rounds,
             user_input.limit_size,
-            user_input.flag_verbose
+            user_input.flag_verbose,
+            &original_file,
         );
     }
     /* 
@@ -147,8 +152,14 @@ pub fn prove_equivalence(user_input: Input) -> Result<(), ()> {
     }
     */
 
-    // print the results    
-    print_pretty_results(&results, &structure, nodeid2pos);
+    // print the results
+    print_pretty_results(&results, &structure, &nodeid2pos);
+
+    if let Some(report_path) = &user_input.report_output {
+        let rep = build_equivalence_report(&user_input, &results, &structure, &nodeid2pos);
+        report::write_report(&rep, report_path);
+    }
+
     Result::Ok(())
 }
 
@@ -171,7 +182,8 @@ fn process_node(
     results: &mut ResultInfoEquivalence,
     extra_rounds: usize,
     limit_size: usize,
-    verbose: bool
+    verbose: bool,
+    original_file: &str,
 ) {
 
     // To not study the custom templates
@@ -200,7 +212,7 @@ fn process_node(
         &field,
         timeout,
         &structure.nodes,
-        &nodeid2pos, 
+        &nodeid2pos,
         &constraints_1,
         &constraints_2,
         solver,
@@ -211,7 +223,8 @@ fn process_node(
         no_abstract_fails,
         results,
         extra_rounds,
-        verbose
+        verbose,
+        original_file,
     );
         
         for log in logs{
@@ -489,12 +502,63 @@ fn update_result_for_class(node_result: &PossibleResult, equiv_class: &Vec<usize
 
 
 
+fn build_equivalence_report(
+    input: &crate::Input,
+    results: &ResultInfoEquivalence,
+    structure: &EquivalenceStructureInfo,
+    nodeid2pos: &HashMap<usize, usize>,
+) -> report::VerificationReport {
+    let overall = report::compute_overall(
+        results.failed_nodes.is_empty(),
+        results.unknown_nodes.is_empty(),
+    );
+
+    let summary = report::ReportSummary {
+        total_nodes: results.studied_nodes.len(),
+        verified_nodes: results.verified_nodes.len(),
+        previously_verified_nodes: None,
+        failed_nodes: results.failed_nodes.len(),
+        timeout_nodes: results.unknown_nodes.len(),
+        total_constraints: None,
+        verified_constraints: None,
+        verified_constraints_pct: None,
+    };
+
+    let mut nodes: Vec<report::NodeResult> = results.studied_nodes.iter().map(|(node_id, result)| {
+        let node_name = nodeid2pos.get(node_id)
+            .and_then(|&pos| structure.nodes.get(pos))
+            .map(|n| n.node_name.clone())
+            .unwrap_or_default();
+        report::NodeResult {
+            node_id: *node_id,
+            node_name,
+            result: report::possible_result_str(result).to_string(),
+            num_constraints: None,
+            previously_verified: None,
+        }
+    }).collect();
+    nodes.sort_by_key(|n| n.node_id);
+
+    let second_circuit = input.check_equivalence.as_ref()
+        .map(|p| p.display().to_string());
+
+    report::VerificationReport {
+        check_type: report::CheckType::Equivalence,
+        input_circuit: input.input_r1cs.display().to_string(),
+        second_circuit,
+        solver: report::solver_to_str(input.solver_option).to_string(),
+        timeout_ms: input.timeout,
+        overall_result: overall,
+        summary,
+        nodes,
+        failed_templates: None,
+    }
+}
+
 fn print_pretty_results(
     results: &ResultInfoEquivalence,
     structure: &EquivalenceStructureInfo,
-    node_id_to_pos: HashMap<usize, usize>,
-
-
+    node_id_to_pos: &HashMap<usize, usize>,
 ){
 
 

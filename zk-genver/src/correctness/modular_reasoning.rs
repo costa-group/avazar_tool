@@ -1,9 +1,10 @@
 use solvers_interface::{EquivalenceVerification, PossibleResult, PossibleSolver, cvc5_interface, ffsol_interface, nia_z3_interface, parallel_interface, yices_interface, z3_interface};
 type Constraint = circom_algebra::algebra::Constraint<usize>;
 use circom_algebra::num_bigint::BigInt;
+use utils::read_specification::SpecificationInfo;
 use std::collections::LinkedList;
 use std::time::{Instant, Duration};
-use utils::equivalence_structure::NodeInfo;
+use utils::structure::NodeInfo;
 use std::collections::{HashSet,HashMap};
 use crate::equivalence::equivalence_check::ResultInfoEquivalence;
 
@@ -16,8 +17,8 @@ pub type EquivalenceImplication = (Vec<(usize, usize)>, Vec<(usize, usize)>);
         verification_timeout: u64,
         node_list: &Vec<NodeInfo>,
         nodeid2pos: &HashMap<usize, usize>,
-        constraint_list_1: &Vec<Constraint>,
-        constraint_list_2: &Vec<Constraint>,
+        constraint_list: &Vec<Constraint>,
+        specification: &SpecificationInfo,
         solver: PossibleSolver,
         apply_deduction_assigned: bool,
         include_niaz3_in_all: bool,
@@ -28,19 +29,18 @@ pub type EquivalenceImplication = (Vec<(usize, usize)>, Vec<(usize, usize)>);
         extra_rounds: usize,
         verbose: bool,
         original_file: &str,
-    )
+    ) 
     -> (PossibleResult, f64, usize, bool, Vec<String>, HashSet<usize>){
-        
-        let signals_1: LinkedList<usize> = node_info.signals_1.clone().into_iter().collect(); 
-        let signals_2: LinkedList<usize> = node_info.signals_2.clone().into_iter().collect(); 
 
-        let mut constraints_1 = Vec::new();
-        for c in &node_info.constraints_1{
-            constraints_1.push(constraint_list_1[*c].clone());
-        }
-        let mut constraints_2 = Vec::new();
-        for c in &node_info.constraints_2{
-            constraints_2.push(constraint_list_2[*c].clone());
+        let node_name = node_info.node_name;
+        let node_specification_info = specification.get(&node_name).unwrap();
+        
+        let signals_1: LinkedList<usize> = node_info.signals.clone().into_iter().collect(); 
+        let signals_2: LinkedList<String> = node_specification_info.signals.clone().into_iter().collect(); 
+
+        let mut constraints = Vec::new();
+        for c in &node_info.constraints{
+            constraints.push(constraint_list[*c].clone());
         }
 
         let mut logs =  Vec::new();
@@ -54,15 +54,15 @@ pub type EquivalenceImplication = (Vec<(usize, usize)>, Vec<(usize, usize)>);
         } else {
             node_info.node_name.clone()
         };
-        let mut verification = EquivalenceVerification::new(
+        let mut verification = CorrectnessVerification::new(
             &node_name,
             &original_file.to_string(),
             signals_1,
             signals_2,
-            node_info.input_signals_1.clone(),
-            node_info.input_signals_2.clone(),
-            node_info.output_signals_1.clone(),
-            node_info.output_signals_2.clone(),
+            node_info.input_signals.clone(),
+            node_specification_info.input_signals.clone(),
+            node_info.output_signals.clone(),
+            node_specification_info.output_signals.clone(),
             constraints_1.clone(),
             constraints_2.clone(),
             implications_safety,

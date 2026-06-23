@@ -11,8 +11,8 @@ use crate::determinism::determinism_check::ResultInfoDeterminism;
 pub type SafetyImplication = (Vec<usize>, Vec<usize>);
 
     pub fn check_tags(
-        node_info: &NodeInfo, 
-        field: &BigInt, 
+        node_info: &NodeInfo,
+        field: &BigInt,
         verification_timeout: u64,
         node_list: &Vec<NodeInfo>,
         nodeid2pos: &HashMap<usize, usize>,
@@ -25,12 +25,13 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
         no_abstract_fails:bool,
         results:&ResultInfoDeterminism,
         extra_rounds: usize,
-        verbose: bool
-    ) 
+        verbose: bool,
+        original_file: &str,
+    )
     -> (PossibleResult, f64, usize, bool, Vec<String>, HashSet<usize>){
-        
-        let signals: LinkedList<usize> = node_info.signals.clone().into_iter().collect(); 
-        
+
+        let signals: LinkedList<usize> = node_info.signals.clone().into_iter().collect();
+
         let mut constraints = Vec::new();
         for c in &node_info.constraints{
             constraints.push(constraint_list[*c].clone());
@@ -42,12 +43,18 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
         let implications_safety: Vec<SafetyImplication> = Vec::new();
 
 
+        let node_name = if node_info.node_name.is_empty() {
+            format!("node_{}", node_info.node_id)
+        } else {
+            node_info.node_name.clone()
+        };
         let mut verification = SafetyVerification::new(
-            &node_info.node_name.to_string(), 
-            signals, 
+            &node_name,
+            &original_file.to_string(),
+            signals,
             node_info.input_signals.clone(),
             node_info.output_signals.clone(),
-            constraints.clone(), 
+            constraints.clone(),
             implications_safety,
             field,
             verification_timeout,
