@@ -7,6 +7,7 @@ pub mod nia_z3_interface;
 pub mod z3_interface;
 pub mod parallel_interface;
 mod smt2_utils;
+use std::collections::HashMap;
 
 use std::collections::{HashSet, LinkedList};
 use num_bigint_dig::BigInt;
@@ -184,6 +185,7 @@ pub struct CorrectnessVerification {
     pub verification_timeout: u64,
     pub added_nodes: HashSet<usize>,
     pub verbose: bool,
+    pub macros: Vec<String>,
 }
 
 impl CorrectnessVerification{
@@ -201,7 +203,8 @@ impl CorrectnessVerification{
         implications_equivalence: Vec<(Vec<usize>, Vec<String>)>,
         field: &BigInt,
         verification_timeout: u64, 
-        verbose: bool
+        verbose: bool,
+        macros:  Vec<String>,
     ) -> CorrectnessVerification {
         let mut fixed_constraints_1 = Vec::new();
         for mut c in constraints_1{
@@ -224,7 +227,8 @@ impl CorrectnessVerification{
             field: field.clone(),
             verification_timeout, 
             added_nodes: HashSet::new(),
-            verbose
+            verbose,
+            macros
         }
     }
     

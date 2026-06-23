@@ -30,16 +30,24 @@ pub fn correctness_problem_to_smt2(problem: &CorrectnessVerification)->LinkedLis
         
     }
 
+
+    // include the macros!!!
+    for macro_info in &problem.macros{
+        smt2_problem.push_back(
+            macro_info.to_string()
+        );
+    }
+
+
     for constraint in &problem.constraints_2 {
 
         smt2_problem.push_back(
-            format!("{}",
+            format!("(assert {})",
                 constraint
             )
         );
         
     }
-
 
     // for imp in &problem.implications_equivalence{
     //     let new_imp = implication_to_smt2(imp,&signal_to_name,&signal_to_name_aux);

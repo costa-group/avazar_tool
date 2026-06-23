@@ -22,3 +22,5 @@ ansi_term = "0.12.1"
 wast = "39.0.0"
 exitcode = "1.1.2"
 num-bigint-dig = "0.6.0"
+indexmap = { version = "2.0", features = ["serde"] }
+regex = "1"

@@ -1,11 +1,13 @@
 use std::collections::{HashMap, BTreeMap};
 use circom_algebra::algebra::Constraint;
 use utils::read_r1cs::read_r1cs;
-use utils::read_specification::read_smt_specification;
+use utils::read_specification::{read_smt_specification, MacroDef, MainSection};
 
 use utils::structure::*;
 use utils::equivalence_structure::*;
 use std::path::PathBuf;
+use indexmap::IndexMap;
+
 
 
 pub fn process_constraints(input: &PathBuf) -> (
@@ -31,18 +33,14 @@ pub fn process_constraints(input: &PathBuf) -> (
 
 
 pub fn process_smt_formula(input: &PathBuf) ->(
-    Vec<String>,
-    Vec<String>,
-    Vec<String>,
-    Vec<String>
+    IndexMap<String, MacroDef>,
+    MainSection
 ){
     let input: &String = &format!("{}", input.display());
     let result = read_smt_specification(input).unwrap();
     (
-        result.constraints,
-        result.signals,
-        result.output_signals,
-        result.input_signals
+        result.macros,
+        result.main,
     )
 }
 

@@ -7,6 +7,8 @@ use crate::BigInt;
 pub struct Input {
     pub input_r1cs: PathBuf,
     pub input_structure: Option<PathBuf>,
+    pub input_correspondence: Option<PathBuf>,
+
     pub timeout: u64,
     pub original_structure: Option<PathBuf>,
     pub solver_option: PossibleSolver,
@@ -31,6 +33,7 @@ impl Input {
         let matches = input_processing::view();
         let input_r1cs = input_processing::get_input_r1cs(&matches)?;
         let input_structure = input_processing::get_input_structure(&matches)?;
+        let input_correspondence = input_processing::get_input_correspondence(&matches)?;
         let timeout =  input_processing::get_timeout(&matches)?;
         let original_structure = input_processing::get_original_structure(&matches)?;
         let solver_option = input_processing::get_solver(&matches)?;
@@ -52,6 +55,7 @@ impl Input {
         Result::Ok(Input {
             input_r1cs,
             input_structure,
+            input_correspondence,
             timeout,
             original_structure,
             solver_option,
@@ -93,6 +97,19 @@ mod input_processing {
     pub fn get_input_structure(matches: &ArgMatches) -> Result<Option<PathBuf>, ()> {
         if matches.is_present("input_structure"){
             let route = Path::new(matches.value_of("input_structure").unwrap()).to_path_buf();
+            if route.is_file() {
+                Result::Ok(Some(route))
+            } else {
+                Result::Err(eprintln!("{}", Colour::Red.paint("invalid input structure")))
+            }
+        } else{
+            Ok(None)
+        }
+    }
+
+    pub fn get_input_correspondence(matches: &ArgMatches) -> Result<Option<PathBuf>, ()> {
+        if matches.is_present("correspondence"){
+            let route = Path::new(matches.value_of("correspondence").unwrap()).to_path_buf();
             if route.is_file() {
                 Result::Ok(Some(route))
             } else {
@@ -303,6 +320,14 @@ mod input_processing {
                     .hidden(false)
                     .takes_value(true)
                     .help("Structure in which the circuit is initially processed. If not given, the circuit is clusterized by ZK-GENVER")
+                    .display_order(460)
+            )
+            .arg(
+                Arg::with_name("correspondence")
+                    .long("correspondence")
+                    .hidden(false)
+                    .takes_value(true)
+                    .help("The correspondence between the witness signals and the original names in the circom program")
                     .display_order(460)
             )
             .arg(
