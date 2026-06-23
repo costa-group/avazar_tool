@@ -3,11 +3,38 @@ use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::Path;
 
+use super::dag_utils::lt;
+use utils::small_utilities::distance_to_source_set;
+
+pub fn write_to_dzn(adjacencies: &Vec<Vec<usize>>, input_parts: &HashSet<usize>, output_parts: &HashSet<usize>) -> () {
+
+    let distance_to_inputs = distance_to_source_set(input_parts.into_iter().copied(), adjacencies);
+    let distance_to_outputs = distance_to_source_set(output_parts.into_iter().copied(), adjacencies);
+
+    // make the preorder
+    let part_to_preorder: Vec<(usize, usize)> = (0..adjacencies.len()).map(|key| (distance_to_inputs[key], distance_to_outputs[key])).collect();
+
+    let edges: Vec<(usize, usize)> = adjacencies.into_iter().enumerate()
+                    .flat_map( |(idx, part)| part.into_iter().copied().map(move |x| (idx, x)))
+                    .filter(|(a, b)| a < b)
+                    .collect();
+    let fuzzy: Vec<bool> = edges.iter()
+                    .map(|&(a, b)| !lt(part_to_preorder[a], part_to_preorder[b]) && !lt(part_to_preorder[b], part_to_preorder[a]))
+                    .collect();
+    
+    let init_direction: Vec<usize> = edges.iter()
+                    .map(|&(a, b)| if lt(part_to_preorder[a], part_to_preorder[b]) {2} else if lt(part_to_preorder[b], part_to_preorder[a]) {1} else {0} )
+                    .collect();
+    
+    write_dzn("data.dzn", adjacencies, &edges, &fuzzy, &init_direction, input_parts, output_parts); 
+}
+
 pub fn write_dzn<P: AsRef<Path>>(
     path: P,
     adjacency: &[Vec<usize>],
     edges: &[(usize, usize)],
     fuzzy: &[bool],
+    init_direction: &[usize],
     s_input: &HashSet<usize>,
     s_output: &HashSet<usize>,
 ) -> std::io::Result<()> {
@@ -37,6 +64,14 @@ pub fn write_dzn<P: AsRef<Path>>(
 
     writeln!(writer, "fuzzy = [")?;
     for (idx, val) in fuzzy.into_iter().enumerate() {
+        if idx != 0 {write!(writer, ",")?;}
+        write!(writer, "{}", val)?;
+    }
+    writeln!(writer, "];")?;
+    writeln!(writer)?;
+
+    writeln!(writer, "init_direction = [")?;
+    for (idx, val) in init_direction.into_iter().enumerate() {
         if idx != 0 {write!(writer, ",")?;}
         write!(writer, "{}", val)?;
     }
