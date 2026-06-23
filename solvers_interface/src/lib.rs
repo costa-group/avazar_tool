@@ -7,6 +7,8 @@ pub mod nia_z3_interface;
 pub mod z3_interface;
 pub mod parallel_interface;
 mod smt2_utils;
+use indexmap::IndexMap;
+
 use std::collections::HashMap;
 
 use std::collections::{HashSet, LinkedList};
@@ -318,7 +320,7 @@ impl EquivalenceVerification{
 pub struct CorrectnessVerification {
     pub template_name: String,
     pub original_file: String,
-    pub signals_1: Vec<usize>,
+    pub signals_1: LinkedList<usize>,
     pub signals_2: Vec<String>,
     pub inputs_1: Vec<usize>,
     pub outputs_1: Vec<usize>,
@@ -326,12 +328,12 @@ pub struct CorrectnessVerification {
     pub outputs_2: Vec<String>,
     pub constraints_1: Vec<Constraint<usize>>,
     pub constraints_2: Vec<String>,
-    pub implications_equivalence: Vec<(Vec<usize>, Vec<String>)>,
+    pub implications_equivalence: Vec<(Vec<(usize, String)>, Vec<(usize, String)>)>,
     pub field: BigInt,
     pub verification_timeout: u64,
     pub added_nodes: HashSet<usize>,
     pub verbose: bool,
-    pub macros: Vec<String>,
+    pub macros: IndexMap<String, String>,
 }
 
 impl CorrectnessVerification{
@@ -339,7 +341,7 @@ impl CorrectnessVerification{
     pub fn new(
         template_name: &String,
         original_file: &String,
-        signals_1: Vec<usize>,
+        signals_1: LinkedList<usize>,
         signals_2: Vec<String>,
         inputs_1: Vec<usize>,
         inputs_2:Vec<String>,
@@ -347,11 +349,11 @@ impl CorrectnessVerification{
         outputs_2:Vec<String>,
         constraints_1: Vec<Constraint<usize>>,
         constraints_2: Vec<String>,
-        implications_equivalence: Vec<(Vec<usize>, Vec<String>)>,
+        implications_equivalence: Vec<(Vec<(usize, String)>, Vec<(usize, String)>)>,
         field: &BigInt,
         verification_timeout: u64, 
         verbose: bool,
-        macros:  Vec<String>,
+        macros:  IndexMap<String, String>,
     ) -> CorrectnessVerification {
         let mut fixed_constraints_1 = Vec::new();
         for mut c in constraints_1{

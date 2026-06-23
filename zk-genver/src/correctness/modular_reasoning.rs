@@ -1,15 +1,30 @@
-use solvers_interface::{EquivalenceVerification, PossibleResult, PossibleSolver, cvc5_interface, ffsol_interface, nia_z3_interface, parallel_interface, yices_interface, z3_interface};
+use solvers_interface::{CorrectnessVerification, PossibleResult, PossibleSolver, cvc5_interface, ffsol_interface, nia_z3_interface, parallel_interface, yices_interface, z3_interface};
 type Constraint = circom_algebra::algebra::Constraint<usize>;
 use circom_algebra::num_bigint::BigInt;
-use utils::read_specification::SpecificationInfo;
 use std::collections::LinkedList;
 use std::time::{Instant, Duration};
 use utils::structure::NodeInfo;
 use std::collections::{HashSet,HashMap};
+use crate::correctness::correctness_check::ResultInfoCorrectness;
 use crate::equivalence::equivalence_check::ResultInfoEquivalence;
+use indexmap::IndexMap;
+use utils::read_specification::MacroDef;
+use crate::correctness::processing_correctness_utils::{
+    get_all_signals_macro,
+    get_input_signals_macro,
+    get_equivalent_signal_in_macro,
+    build_macros,
+    get_equivalent_subcomponent_signal_in_macro,
+    build_call_macro
+    
+};
+use std::collections::BTreeMap;
 
 
-pub type EquivalenceImplication = (Vec<(usize, usize)>, Vec<(usize, usize)>);
+pub type CorrectnessImplication = (Vec<(usize, String)>, Vec<(usize, String)>);
+
+
+
 
     pub fn check_node(
         node_info: &NodeInfo,
@@ -18,35 +33,57 @@ pub type EquivalenceImplication = (Vec<(usize, usize)>, Vec<(usize, usize)>);
         node_list: &Vec<NodeInfo>,
         nodeid2pos: &HashMap<usize, usize>,
         constraint_list: &Vec<Constraint>,
-        specification: &SpecificationInfo,
+        macros: &IndexMap<String, MacroDef>,
+        correspondence_nodeid_macros: &HashMap<usize, String>,
+        signal_to_name: &BTreeMap<usize, String>,
         solver: PossibleSolver,
         apply_deduction_assigned: bool,
         include_niaz3_in_all: bool,
         apply_predecessors:bool,
         apply_bidirectional: bool,
         no_abstract_fails:bool,
-        results:&ResultInfoEquivalence,
+        results:&ResultInfoCorrectness,
         extra_rounds: usize,
         verbose: bool,
         original_file: &str,
     ) 
     -> (PossibleResult, f64, usize, bool, Vec<String>, HashSet<usize>){
 
-        let node_name = node_info.node_name;
-        let node_specification_info = specification.get(&node_name).unwrap();
-        
-        let signals_1: LinkedList<usize> = node_info.signals.clone().into_iter().collect(); 
-        let signals_2: LinkedList<String> = node_specification_info.signals.clone().into_iter().collect(); 
+        let node_name = node_info.node_name.clone();
+        let node_id = node_info.node_id;
+        println!("Considering {}", node_id);
+        println!("{:?}", correspondence_nodeid_macros);
+        let macro_name = correspondence_nodeid_macros.get(&node_id).unwrap();
+        let macro_spec = macros.get(macro_name).unwrap();
 
-        let mut constraints = Vec::new();
-        for c in &node_info.constraints{
-            constraints.push(constraint_list[*c].clone());
+
+        let signals_1: LinkedList<usize> = node_info.signals.clone().into_iter().collect(); 
+        let signals_2: Vec<String> = get_all_signals_macro(macro_spec); 
+
+        let inputs_1 = node_info.input_signals.clone();
+        let inputs_2 = get_input_signals_macro( inputs_1.len(), macro_spec);
+
+        let outputs_1 = node_info.output_signals.clone();
+        let mut outputs_2 = Vec::new();
+        for out in &outputs_1 {
+            outputs_2.push(get_equivalent_signal_in_macro(*out, macro_spec, signal_to_name));
         }
+
+        let mut constraints_1 = Vec::new();
+        for c in &node_info.constraints{
+            constraints_1.push(constraint_list[*c].clone());
+        }
+        let constraints_2 = vec![macro_spec.formula.clone()];
+        
+
+        let mut macros_to_include = HashSet::new();
+        macros_to_include.insert(macro_name.clone());
+        let unpacked_macros = build_macros(macros, &macros_to_include);
 
         let mut logs =  Vec::new();
         let mut n_rounds = 0;
         let mut unknown_rounds = 0;
-        let implications_safety: Vec<EquivalenceImplication> = Vec::new();
+        let implications_safety: Vec<CorrectnessImplication> = Vec::new();
 
 
         let node_name = if node_info.node_name.is_empty() {
@@ -54,41 +91,42 @@ pub type EquivalenceImplication = (Vec<(usize, usize)>, Vec<(usize, usize)>);
         } else {
             node_info.node_name.clone()
         };
+
+
+
         let mut verification = CorrectnessVerification::new(
             &node_name,
             &original_file.to_string(),
             signals_1,
             signals_2,
-            node_info.input_signals.clone(),
-            node_specification_info.input_signals.clone(),
-            node_info.output_signals.clone(),
-            node_specification_info.output_signals.clone(),
-            constraints_1.clone(),
-            constraints_2.clone(),
+            inputs_1,
+            inputs_2,
+            outputs_1,
+            outputs_2,
+            constraints_1,
+            constraints_2,
             implications_safety,
             field,
             verification_timeout,
-            apply_deduction_assigned,
-            verbose
+            verbose,
+            unpacked_macros
         );
 
         let mut to_check_next=Vec::new();
         if !apply_predecessors || apply_bidirectional{
-            let mut to_check = generate_and_add_node_info(&node_info.successors, &mut verification, node_list, nodeid2pos, constraint_list_1, constraint_list_2, results, apply_bidirectional, no_abstract_fails);
+            let mut to_check = generate_and_add_node_info(&node_info.successors, &mut verification, node_list, nodeid2pos, constraint_list, macro_spec, macros,correspondence_nodeid_macros, signal_to_name, results, apply_bidirectional, no_abstract_fails);
             to_check_next.append(&mut to_check);
         } 
         if apply_predecessors || apply_bidirectional{
-            let mut to_check = generate_and_add_node_info(&node_info.predecessors, &mut verification, node_list, nodeid2pos, constraint_list_1, constraint_list_2, results, apply_bidirectional, false);
+            let mut to_check = generate_and_add_node_info(&node_info.predecessors, &mut verification, node_list, nodeid2pos, constraint_list, macro_spec, macros,correspondence_nodeid_macros,signal_to_name, results, apply_bidirectional, false);
             to_check_next.append(&mut to_check);
         }
 
         
         logs.push(format!("Checking template {}\n", node_info.node_id));
-        logs.push(format!("Number of signals in the first version (i,int,o): {}\n", node_info.signals_1.len()));      
-        logs.push(format!("Number of signals in the second version (i,int,o): {}\n", node_info.signals_2.len()));      
+        logs.push(format!("Number of signals in the first version (i,int,o): {}\n", node_info.signals.len()));      
 
-        logs.push(format!("Number of constraints in the first template: {}\n", node_info.constraints_1.len()));
-        logs.push(format!("Number of constraints in the second template: {}\n", node_info.constraints_2.len()));
+        logs.push(format!("Number of constraints in the first template: {}\n", node_info.constraints.len()));
 
         let inicio = Instant::now();
 
@@ -119,7 +157,7 @@ pub type EquivalenceImplication = (Vec<(usize, usize)>, Vec<(usize, usize)>);
 
                     let pos = nodeid2pos[node_id];
                     let node = &node_list[pos];
-                    let result_add_components = add_info_component(node, &mut verification, node_list, nodeid2pos, constraint_list_1, constraint_list_2, results, apply_predecessors, apply_bidirectional, no_abstract_fails);                    
+                    let result_add_components = add_info_component(node, &mut verification, node_list, nodeid2pos, constraint_list, macro_spec, macros, correspondence_nodeid_macros, signal_to_name, results, apply_predecessors, apply_bidirectional, no_abstract_fails);                    
                     if result_add_components.is_some(){
                         to_check_next.append(&mut result_add_components.unwrap());
                     }
@@ -162,38 +200,43 @@ pub type EquivalenceImplication = (Vec<(usize, usize)>, Vec<(usize, usize)>);
 
     fn add_info_component(
         info: &NodeInfo, 
-        verification: &mut EquivalenceVerification, 
+        verification: &mut CorrectnessVerification, 
         node_list: &Vec<NodeInfo>, 
         nodeid2pos: &HashMap<usize, usize>, 
         constraint_list_1: &Vec<Constraint>,
-        constraint_list_2: &Vec<Constraint>,
-        results:&ResultInfoEquivalence,
+        father_macro: &MacroDef,
+        macros: &IndexMap<String, MacroDef>,
+        correspondence_nodeid_macros: &HashMap<usize, String>,
+        signal_to_name: &BTreeMap<usize, String>,
+        results:&ResultInfoCorrectness,
         apply_predecessors: bool,
         apply_bidirectional: bool,
         no_abstract_fails: bool
     )-> Option<Vec<usize>>{
 
-            for c in &info.constraints_1{
+            for c in &info.constraints{
                 verification.constraints_1.push(constraint_list_1[*c].clone());
             }
-            for s in &info.signals_1{
+
+            // add the macro
+            let node_id = &info.node_id;
+            let macro_child_name = correspondence_nodeid_macros.get(node_id).unwrap();
+            let macro_info = macros.get(macro_child_name).unwrap();
+            let macro_formula = build_call_macro(macro_child_name, &macro_info.params, macro_info.formula.clone());
+            verification.macros.insert(macro_child_name.clone(), macro_formula);
+
+            for s in &info.signals{
                 verification.signals_1.push_back(*s);
-            }
-            for c in &info.constraints_2{
-                verification.constraints_2.push(constraint_list_2[*c].clone());
-            }
-            for s in &info.signals_2{
-                verification.signals_2.push_back(*s);
             }
             let mut to_check_next: Vec<usize> = Vec::new();
             if !apply_predecessors || apply_bidirectional{
-                let mut to_check = generate_and_add_node_info(&info.successors, verification, node_list, nodeid2pos, constraint_list_1, constraint_list_2,  results, apply_bidirectional, no_abstract_fails);
+                let mut to_check = generate_and_add_node_info(&info.successors, verification, node_list, nodeid2pos, constraint_list_1, father_macro, macros, correspondence_nodeid_macros, signal_to_name,  results, apply_bidirectional, no_abstract_fails);
                 to_check_next.append(&mut to_check);
             } 
             if apply_predecessors || apply_bidirectional{
                             //println!("Entra pred");
 
-                let mut to_check = generate_and_add_node_info(&info.predecessors, verification, node_list, nodeid2pos, constraint_list_1, constraint_list_2, results, apply_bidirectional, false);
+                let mut to_check = generate_and_add_node_info(&info.predecessors, verification, node_list, nodeid2pos, constraint_list_1, father_macro, macros, correspondence_nodeid_macros, signal_to_name, results, apply_bidirectional, false);
                 to_check_next.append(&mut to_check);
             }
 
@@ -202,23 +245,25 @@ pub type EquivalenceImplication = (Vec<(usize, usize)>, Vec<(usize, usize)>);
 
     fn generate_and_add_node_info(
         node_ids: &[usize], 
-        verification: &mut EquivalenceVerification, 
+        verification: &mut CorrectnessVerification, 
         node_list: &Vec<NodeInfo>, 
         nodeid2pos: &HashMap<usize, usize>, 
         constraint_list_1: &Vec<Constraint>,
-        constraint_list_2: &Vec<Constraint>,
-        results:&ResultInfoEquivalence, 
+        father_macro: &MacroDef,
+        macros: &IndexMap<String, MacroDef>,
+        correspondence_nodeid_macros: &HashMap<usize, String>,
+        signal_to_name: &BTreeMap<usize, String>,        
+        results:&ResultInfoCorrectness, 
         apply_bidirectional: bool,
         no_abstract_fails: bool,
     ) -> Vec<usize> {
         let mut to_check_next = Vec::new();
         for node_id in node_ids {
-            println!("node_id {}", node_id);
             let pos = nodeid2pos[node_id];
-            let subtree_child = &node_list[pos];
-            let (mut new_signals_1, mut new_signals_2, new_implications_safety) = generate_info_subtree(subtree_child);
+            let subtree_child: &NodeInfo = &node_list[pos];
+            
+            let (mut new_signals_1, new_implications_safety) = generate_info_subtree(subtree_child, father_macro, signal_to_name);
             verification.signals_1.append(&mut new_signals_1);
-            verification.signals_2.append(&mut new_signals_2);
 
             if no_abstract_fails && results.studied_nodes.contains_key(node_id){
                     let result = results.studied_nodes.get(node_id).unwrap();
@@ -231,7 +276,7 @@ pub type EquivalenceImplication = (Vec<(usize, usize)>, Vec<(usize, usize)>);
                             if !verification.added_nodes.contains(node_id) { 
                                 let pos = nodeid2pos[node_id];
                                 let node = &node_list[pos];
-                                let result_add_components = add_info_component(node, verification, node_list, nodeid2pos, constraint_list_1, constraint_list_2, results,  false, false, no_abstract_fails);                    
+                                let result_add_components = add_info_component(node, verification, node_list, nodeid2pos, constraint_list_1, father_macro, macros,correspondence_nodeid_macros,signal_to_name, results,  false, false, no_abstract_fails);                    
                                 if result_add_components.is_some(){
                                     for aux in result_add_components.unwrap(){
                                         to_check_next.push(aux);
@@ -250,42 +295,44 @@ pub type EquivalenceImplication = (Vec<(usize, usize)>, Vec<(usize, usize)>);
         to_check_next
     }
 
-    fn generate_info_subtree(info: &NodeInfo)-> (LinkedList<usize>, LinkedList<usize>, EquivalenceImplication){
-        let (io_signals_1, io_signals_2) = generate_io_signals(info);
+    fn generate_info_subtree(
+        info: &NodeInfo,
+        macro_info: &MacroDef,
+        signal_to_name: &BTreeMap<usize, String>,     
+    )-> (LinkedList<usize>, CorrectnessImplication){
+        let io_signals_1 = generate_io_signals(info);
         ( 
             io_signals_1,
-            io_signals_2,
-            generate_implications_safety(info)
+            generate_implications_safety(info, macro_info, signal_to_name)
         )
     }
 
-    fn generate_io_signals(info: &NodeInfo)-> (LinkedList<usize>, LinkedList<usize>){
+    fn generate_io_signals(info: &NodeInfo)->  LinkedList<usize>{
         let mut signals_1 = LinkedList::new();
-        for s in &info.input_signals_1{
+        for s in &info.input_signals{
             signals_1.push_back(*s);
         }
-        for s in &info.output_signals_1{
+        for s in &info.output_signals{
             signals_1.push_back(*s);
-        }  
-        let mut signals_2 = LinkedList::new();
-        for s in &info.input_signals_2{
-            signals_2.push_back(*s);
         }
-        for s in &info.output_signals_2{
-            signals_2.push_back(*s);
-        }  
-        (signals_1, signals_2)
+        signals_1
     }
     
-    fn generate_implications_safety(info: &NodeInfo)-> EquivalenceImplication{
+    fn generate_implications_safety(
+        info: &NodeInfo,
+        macro_info: &MacroDef,
+        signal_to_name: &BTreeMap<usize, String>,     
+    )-> CorrectnessImplication{
         let mut list_inputs = Vec::new();
         let mut list_outputs = Vec::new();
 
-        for i in 0..info.output_signals_1.len(){
-            list_outputs.push((info.output_signals_1[i], info.output_signals_2[i]));
+        for out in &info.output_signals{
+            let out_name: String = get_equivalent_subcomponent_signal_in_macro(*out, macro_info, signal_to_name);
+            list_outputs.push((*out, out_name));
         }
-        for i in 0..info.input_signals_1.len(){
-            list_inputs.push((info.input_signals_1[i], info.input_signals_2[i]));
+        for inp in &info.input_signals{
+            let inp_name: String = get_equivalent_subcomponent_signal_in_macro(*inp, macro_info, signal_to_name);
+            list_inputs.push((*inp, inp_name));
         }
         (list_inputs, list_outputs)
     }
@@ -304,30 +351,32 @@ pub type EquivalenceImplication = (Vec<(usize, usize)>, Vec<(usize, usize)>);
 
 
     fn prove_equivalence(
-        problem: &EquivalenceVerification,
+        problem: &CorrectnessVerification,
         solver: PossibleSolver,
     )-> (PossibleResult, Vec<String>) {
         match solver{
             PossibleSolver::FFSOL=>{
-                ffsol_interface::study_equivalence(
+                ffsol_interface::study_correctness(
                     problem,
                     &ffsol_interface::FfsolConfig::default(problem.verification_timeout, problem.verbose),
                 )
             },
             PossibleSolver::CVC5=>{
-                cvc5_interface::study_equivalence(problem)
+                cvc5_interface::study_correctness(problem)
             },
             PossibleSolver::YICES=>{
-                yices_interface::study_equivalence(problem)
+                yices_interface::study_correctness(problem)
             },
             PossibleSolver::NIAZ3=>{
-                nia_z3_interface::study_equivalence(problem)
+                nia_z3_interface::study_correctness(problem)
             },
+            /* 
             PossibleSolver::Z3=>{
-                z3_interface::study_equivalence(problem)
+                z3_interface::study_correctness(problem)
             },
+            */
             PossibleSolver::ALL=>{
-                parallel_interface::study_equivalence(problem)
+                parallel_interface::study_correctness(problem)
             },
             _ => unreachable!()
         }

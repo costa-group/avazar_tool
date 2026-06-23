@@ -70,13 +70,6 @@ pub fn prove_equivalence(user_input: Input) -> Result<(), ()> {
 
     let field = user_input.prime.clone();
 
-    let equivalence_mode = match user_input.equivalence_mode{
-        0 => EquivalenceMode::None,
-        1 => EquivalenceMode::Local,
-        2 => EquivalenceMode::Total,
-        _ => unreachable!()
-    };
-
     let (
         nodeid2pos, 
         local_equivalence_classes, 
@@ -84,9 +77,6 @@ pub fn prove_equivalence(user_input: Input) -> Result<(), ()> {
         mut max_node_id
     ) = process_equivalence_structure(&structure);
 
-
-    let clustering_size = user_input.clustering_size;
-    let target_size = user_input.target_size;
 
     
     let mut results = ResultInfoEquivalence{
@@ -118,39 +108,6 @@ pub fn prove_equivalence(user_input: Input) -> Result<(), ()> {
             &original_file,
         );
     }
-    /* 
-    let mut to_study_again = if clustering_size != 0{
-        reconsider_big_nodes(&structure, &nodeid2pos, &mut results, clustering_size)
-    } else{
-        Vec::new()
-    };
-
-    while !to_study_again.is_empty(){
-        for node_id in to_study_again{
-            decompose_and_study(
-                node_id,
-                &mut structure,
-                &constraints,
-                &mut nodeid2pos,
-                &mut max_node_id,
-                &field, 
-                timeout, 
-                user_input.solver_option,
-                equivalence_mode,
-                target_size,
-                apply_deduction_assigned,
-                include_niaz3_in_all,
-                apply_predecessors,
-                apply_bidirectional,
-                &mut results,
-                user_input.extra_rounds,
-                user_input.limit_size,
-                user_input.flag_verbose
-            );
-        }
-        to_study_again = reconsider_big_nodes(&structure, &nodeid2pos, &mut results, clustering_size);
-    }
-    */
 
     // print the results
     print_pretty_results(&results, &structure, &nodeid2pos);
@@ -284,203 +241,6 @@ fn process_node(
 
 }
 
-/* 
-fn decompose_and_study(
-    node_id: usize,
-    structure: &mut EquivalenceStructureInfo,
-    constraints_1: &Vec<Constraint<usize>>,
-    constraints_2: &Vec<Constraint<usize>>,
-    nodeid2pos: &mut HashMap<usize, usize>,
-    max_node_id: &mut usize,
-    field: &BigInt,
-    timeout: u64,
-    solver: PossibleSolver,
-    equivalence_mode: EquivalenceMode,
-    target_size: usize,
-    apply_deduction_assigned: bool,
-    include_niaz3_in_all: bool,
-    apply_predecessors: bool,
-    apply_bidirectional: bool,
-    results: &mut ResultInfoEquivalence,
-    extra_rounds: usize,
-    limit_size: usize,
-    verbose: bool
-) {
-    println!("LOG: Reconsidering again node {}", node_id);
-    let node_info = structure.nodes.get(*nodeid2pos.get(&node_id).unwrap()).unwrap();
-
-    //print_node_info(node_info, constraints);
-    let mut constraints_original_index = Vec::new();
-    let mut constraints_copy = Vec::new();
-    for c_id in &node_info.constraints_1{
-        let c = &constraints_1[*c_id];
-        let interface_aux_constraint = (
-            c.a().clone(),
-            c.b().clone(),
-            c.c().clone()
-        );
-        constraints_original_index.push(*c_id);
-        constraints_copy.push(
-            interface_aux_constraint
-        );
-    }
-
-    let mut constraints_2_original_index = Vec::new();
-    let mut constraints_2_copy = Vec::new();
-    for c_id in &node_info.constraints_2{
-        let c = &constraints_2[*c_id];
-        let interface_aux_constraint = (
-            c.a().clone(),
-            c.b().clone(),
-            c.c().clone()
-        );
-        constraints_2_original_index.push(*c_id);
-        constraints_2_copy.push(
-            interface_aux_constraint
-        );
-    }
-
-    let decompose_options = DecomposeOptions {
-        target_size: Some(target_size as f64),
-        equivalence_mode: equivalence_mode,
-        inverse_coni_mapping: Some(&constraints_original_index),
-        ..Default::default()
-    };
-
-    let structure_reader = decompose_node(
-        field, 
-        &constraints_copy, 
-        &node_info.input_signals, 
-        &node_info.output_signals,
-        decompose_options
-    );  
-
-
-    let mut new_structure = transform_structure_reader(structure_reader);
-    let (new_nodeid2pos, 
-        local_equivalence_classes, 
-        structural_equivalence_classes,
-        new_max_node_id
-    ) = process_structure(&new_structure);
-
-    println!("LOG: node decomposed in {} new nodes", new_nodeid2pos.len());
-
-    let mut new_results = ResultInfoDeterminism{
-        verified_nodes: HashSet::new(),
-        failed_nodes: HashSet::new(),
-        unknown_nodes: HashSet::new(),
-        unknown_undivisible_nodes: HashSet::new(),
-        studied_nodes: HashMap::new(),
-        total_constraints: 0,
-        verified_constraints: 0,
-        fails_original_templates: None,
-        number_unverified_orig_constraints: None,
-        number_unverified_orig_constraints_noreps: None,
-        unverified_nodes_to_templates:None,
-        unverified_nodes_to_nodes:None,
-
-    };
-
-    if new_structure.nodes.len() == 1{
-        // in this case the clustering is not performing any changes -> add as unknown and do not divide
-		println!("LOG: case node not divided, no studying again");
-        results.studied_nodes.insert(node_id, PossibleResult::UNKNOWN);
-		results.unknown_undivisible_nodes.insert(node_id);
-        return;
-    }
-
-    for node in &new_structure.nodes{
-        if node.constraints.len() == 0{
-            //println!("LOG: printing info node with 0 constraints");
-            //print_node_info(node, constraints);
-        }
-
-        process_node(node, 
-            &new_structure, 
-            &constraints, 
-            &local_equivalence_classes,
-            &structural_equivalence_classes,
-            &new_nodeid2pos, 
-            &field, 
-            timeout, 
-            solver,
-            apply_deduction_assigned,
-            include_niaz3_in_all,
-            apply_predecessors,
-            apply_bidirectional,
-            &mut new_results,
-            extra_rounds,
-            limit_size,
-            verbose
-        );
-    }
-
-    println!("LOG: studied the new nodes -> verified {}", new_results.verified_nodes.len());
-
-    let mut index = 0;
-    for (node_id, result) in new_results.studied_nodes{
-        // add the new nodes to the initial structure
-        let pos_id = *new_nodeid2pos.get(&node_id).unwrap();
-
-        let node_info = new_structure.nodes.get_mut(pos_id).unwrap();
-        let new_node_id = node_info.node_id + *max_node_id;  // to get a unique node id
-        node_info.node_id = new_node_id;
-        nodeid2pos.insert(new_node_id, structure.nodes.len() + index);
-        index += 1;
-
-        // add the new results to the previous ones
-        results.studied_nodes.insert(new_node_id, result.clone());
-		match result{
-			PossibleResult::VERIFIED =>{
-				results.verified_nodes.insert(new_node_id);
-			},
-			PossibleResult::FAILED =>{
-				results.failed_nodes.insert(new_node_id);
-			},
-			PossibleResult::UNKNOWN =>{
-				results.unknown_nodes.insert(new_node_id);
-			},
-			_ => unreachable!(),
-		}	
-    }   
-    structure.nodes.append(&mut new_structure.nodes);
-
-
-    *max_node_id += new_max_node_id;
-
-    //println!("Added the info to the results");
-
-}
-
-// To get the nodes that were too big and need to be studied again
-fn reconsider_big_nodes(
-    structure: &StructureInfo,
-    nodeid2pos: &HashMap<usize, usize>,
-    results: &mut ResultInfoDeterminism,
-    clustering_size: usize
-) -> Vec<usize>{
-
-    // TODO: only insert one for the equivalent ones
-    println!("Reconsidering again searching big nodes");
-    let mut to_study_again = Vec::new();
-    for node_id in &results.unknown_nodes{
-        let node_info = &structure.nodes[nodeid2pos[node_id]];
-        let number_constraints = node_info.constraints.len();
-        //println!("Studying node {} of {} constraints", node_id, number_constraints);
-        if number_constraints > clustering_size {
-            to_study_again.push(*node_id);
-        }
-    }
-
-    // Remove from the studied nodes as we will consider again
-    for node_id in &to_study_again{
-        results.studied_nodes.remove(node_id);
-        results.unknown_nodes.remove(node_id);
-    }
-
-    to_study_again
-}
-*/
 
 fn update_result_for_class(node_result: &PossibleResult, equiv_class: &Vec<usize>, results: &mut ResultInfoEquivalence){
 	for node in equiv_class{
