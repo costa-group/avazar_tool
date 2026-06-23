@@ -2,27 +2,46 @@ use z3::{Optimize, ast::Bool, ast::Int, ast::Set, Sort, SatResult::Sat};
 use std::collections::{HashSet};
 use std::time::{Instant};
 
+use utils::small_utilities::distance_to_source_set;
+
 pub fn dag_from_partition_solver(
     adjacencies: &Vec<Vec<usize>>, input_parts: &HashSet<usize>, output_parts: &HashSet<usize>, debug: usize) -> (Vec<(usize, usize)>, Vec<usize>, Vec<usize>) {    
     
     let encoding_timer = Instant::now();
-
     let n_parts = adjacencies.len();
 
     // Building this according to Cosntraint Optimisation intuition -- need to get people more familiar with SMT to take a look at it.
     let edges: Vec<(usize, usize)> = adjacencies.iter().enumerate().flat_map(|(i, adj)| adj.into_iter().copied().map(move |v| (i, v)) ).filter(|(a, b)| a < b).collect();
     let m_edges: usize = edges.len();
 
+    // Precalculate distances for some early local information
+    let distance_to_inputs = distance_to_source_set(input_parts.into_iter().copied(), adjacencies);
+    let distance_to_outputs = distance_to_source_set(output_parts.into_iter().copied(), adjacencies);
+    
+    let edge_is_fuzzy = |e: usize| {
+        // edge_is fuzzy if x_ord.1 - x_ord.0 == x_ord.0 - x_ord.1
+        let x_ord = (distance_to_inputs[edges[e].0], distance_to_outputs[edges[e].0]);
+        let y_ord = (distance_to_inputs[edges[e].1], distance_to_outputs[edges[e].1]);
+        x_ord.1.wrapping_sub(x_ord.0) == y_ord.1.wrapping_sub(y_ord.0) // wrapping doesn't matter here since we're interested in equality
+    };
+
     let mut incidence: Vec<Vec<usize>> = (0..n_parts).into_iter().map(|_| Vec::new()).collect();
     for (i, &(u, v)) in edges.iter().enumerate() {incidence[u].push(i);incidence[v].push(i);}
 
     let optimiser = Optimize::new();
 
+    // default fixed vars reused to save number of vars
     let int_idxs: Vec<Int> = (0..n_parts).into_iter().map(|i| Int::from_u64(i as u64)).collect();
-    let empty: Set = Set::empty(&Sort::int());
+    let empty: Set = Set::empty(&Sort::int()); let bool_false: Bool = Bool::from_bool(false); let bool_true: Bool = Bool::from_bool(true); 
+    let bool_to_Bool = |x: bool| if x {&bool_true} else {&bool_false};
 
     // For each edge (not arc) we have a boolean decision variable about whether or not that edge is 'fused'
     let fused: Vec<Bool> = (0..m_edges).into_iter().map(|e| Bool::new_const(format!("f_{e}"))).collect();
+
+    // \forall e : fused[e] => edge_is_fuzzy(e)
+    for e in 0..m_edges {optimiser.assert(
+        fused[e].implies(bool_to_Bool(edge_is_fuzzy(e)))
+    );}
 
     // We map each vertex and edge to a tree T in 0..max_trees (with 0 being not in a tree)
     let v_trees: Vec<Int> = (0..n_parts).into_iter().map(|v| Int::new_const(format!("vt_{v}"))).collect();
@@ -73,6 +92,7 @@ pub fn dag_from_partition_solver(
     //  init values set to 0
     //  edges bound either 1 increment, or equality
     //  tightness is an exact 1 increment -- enforce tightness in each tree
+    let original_distances: [&Vec<usize>; 2] = [&distance_to_inputs, &distance_to_outputs];
     let inits: [&HashSet<usize>; 2] = [input_parts, output_parts];
     let distances: [Vec<Int>; 2] = [(0..n_parts).into_iter().map(|x| Int::new_const(format!("d1_{x}"))).collect(),
                                     (0..n_parts).into_iter().map(|x| Int::new_const(format!("d2_{x}"))).collect()];
@@ -82,6 +102,14 @@ pub fn dag_from_partition_solver(
     for dir in 0..2 {
         // initialise
         for v in inits[dir].into_iter().copied() {optimiser.assert(distances[dir][v].eq(&int_idxs[0]));}
+
+        // general upper bounds (original distances) 0 <= d_v <= init_dist(v)
+        for v in 0..n_parts {optimiser.assert(
+            Bool::and(&[
+                distances[dir][v].ge(&int_idxs[0]),
+                distances[dir][v].le(&int_idxs[original_distances[dir][v]])
+            ])
+        );}
 
         // edge bounds
         for e in 0..m_edges {optimiser.assert(
@@ -121,24 +149,10 @@ pub fn dag_from_partition_solver(
     }
 
     // Fuzziness Calculations
+    let fuzzy = |e: usize| 
+        Int::sub(&[&distances[1][edges[e].0], &distances[0][edges[e].0]]).eq(Int::sub(&[&distances[1][edges[e].1], &distances[0][edges[e].1]]));
 
-    let comp = |u: usize, v: usize| Bool::or(&[
-        Bool::and(&[
-            distances[0][u].lt(&distances[0][v]),
-            distances[1][u].ge(&distances[1][v])
-        ]),
-        Bool::and(&[
-            distances[0][u].eq(&distances[0][v]),
-            distances[1][u].gt(&distances[1][v])
-        ])
-    ]);
-
-    let fuzzy = |e: usize| Bool::and(&[
-        comp(edges[e].0, edges[e].1).not(),
-        comp(edges[e].1, edges[e].0).not()
-    ]);
-
-    // Not fuzzy unfused edges
+    // No fuzzy unfused edges
     for e in 0..m_edges {optimiser.assert(fuzzy(e).implies(&fused[e]));}
 
     let num_fused_edges = Int::add(&(0..m_edges).into_iter().map(|e| bool_to_int(&fused[e])).collect::<Vec<_>>());
