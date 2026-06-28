@@ -8,7 +8,7 @@ use utils::union_find::{UnionFind};
 
 pub fn lt(x: (usize, usize), y: (usize, usize)) -> bool {x.0 < y.0 && (y.1 <= x.1) || x.0 == y.0 && (y.1 < x.1)}
 
-pub fn merge_parts_and_adjacencies(partition: Vec<Vec<usize>>, adjacencies: Vec<Vec<usize>>, input_parts: HashSet<usize>, output_parts: HashSet<usize>, mut undirected_components: UnionFind) -> 
+pub fn merge_parts_and_adjacencies(partition: &Vec<Vec<usize>>, adjacencies: &Vec<Vec<usize>>, input_parts: &HashSet<usize>, output_parts: &HashSet<usize>, mut undirected_components: UnionFind) -> 
     (Vec<Vec<usize>>, Vec<Vec<usize>>, HashSet<usize>, HashSet<usize>, HashMap<usize, usize>)
 {
     let components = undirected_components.get_components();
@@ -16,8 +16,8 @@ pub fn merge_parts_and_adjacencies(partition: Vec<Vec<usize>>, adjacencies: Vec<
 
     let mut merged_partition : Vec<Vec<usize>> = vec![Vec::new(); parent_to_newidx.len()];
     let mut merged_adjacencies : Vec<Vec<usize>> = vec![Vec::new(); parent_to_newidx.len()];
-    let merged_inputs: HashSet<usize> = input_parts.into_iter().map(|x| parent_to_newidx[&undirected_components.find(x)]).collect();
-    let merged_outputs: HashSet<usize> = output_parts.into_iter().map(|x| parent_to_newidx[&undirected_components.find(x)]).collect();
+    let merged_inputs: HashSet<usize> = input_parts.into_iter().copied().map(|x| parent_to_newidx[&undirected_components.find(x)]).collect();
+    let merged_outputs: HashSet<usize> = output_parts.into_iter().copied().map(|x| parent_to_newidx[&undirected_components.find(x)]).collect();
 
     for part in components.into_iter() {
         let newidx = parent_to_newidx[&undirected_components.find(part[0])];

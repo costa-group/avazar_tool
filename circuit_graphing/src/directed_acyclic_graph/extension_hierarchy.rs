@@ -214,7 +214,7 @@ pub fn extension_hierarchy<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
             break
         } 
         println!("merging: {:?}", count_ints(equal_distance.get_components().into_iter().map(|part| part.len())));
-        (partition, adjacencies, input_parts, output_parts, _) = merge_parts_and_adjacencies(partition, adjacencies, input_parts, output_parts, equal_distance);
+        (partition, adjacencies, input_parts, output_parts, _) = merge_parts_and_adjacencies(&partition, &adjacencies, &input_parts, &output_parts, equal_distance);
         n_parts = partition.len()
     }
 

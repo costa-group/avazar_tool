@@ -174,7 +174,7 @@ fn optimisation_hierarchy<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
     }
     for v in 0..partition.len() {undirected_components.find(v);}
 
-    let (merged_partition, merged_adjacencies, merged_inputs, merged_outputs, parent_to_newidx) = merge_parts_and_adjacencies(partition, adjacencies, input_parts, output_parts, undirected_components);
+    let (merged_partition, merged_adjacencies, merged_inputs, merged_outputs, parent_to_newidx) = merge_parts_and_adjacencies(&partition, &adjacencies, &input_parts, &output_parts, undirected_components);
     let n_parts = merged_partition.len();
 
     let mut distance_to_inputs = vec![usize::MAX; n_parts];
