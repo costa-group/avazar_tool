@@ -3,7 +3,6 @@ use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet};
 
 use utils::structure::NodeInfo;
-use utils::small_utilities::merge_sorted_vecs;
 use circuits_and_constraints::constraint::Constraint;
 use circuits_and_constraints::circuit::Circuit;
 
@@ -14,7 +13,8 @@ pub mod iterated_label_propagation;
 pub mod export_to_dzn;
 pub mod satisfiability_hierarchy;
 pub mod dag_utils;
-pub mod extension_hierarchy;
+// pub mod extension_hierarchy;
+pub mod mixed_graph;
 
 pub struct DAGNode<'a, C: Constraint + 'a, S: Circuit<C> + 'a> {
     circ : &'a S,

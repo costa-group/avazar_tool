@@ -1,10 +1,8 @@
 use combinatorial::Combinations;
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_hash::{FxHashMap};
 use std::time::{Instant};
 use itertools::Itertools;
 
-use graphrs::IdentityIndexer;
-use graphrs::{Graph as RSGraph, GraphSpecs};
 use xgraph::{Graph as XGraph};
 
 use circuits_and_constraints::circuit::Circuit;

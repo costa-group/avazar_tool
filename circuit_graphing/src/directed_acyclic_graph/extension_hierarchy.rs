@@ -18,6 +18,7 @@ use utils::small_utilities::{distance_to_source_set, merge_sorted_vecs};
 use utils::union_find::{UnionFind};
 use super::dag_utils::{lt, add_arc_to_nodes, merge_parts_and_adjacencies};
 use super::export_to_dzn::write_dzn;
+use super::mixed_graph::MixedGraph;
 
 // If a vertex has exactly two un-oriented edges - and no others - and there is an adjacent vertex with an increasing index we orient toward that increasing distance
 fn exactly_two_edges_stairs(dir_adjacencies: &mut Vec<HashSet<usize>>, adjacencies: &Vec<Vec<usize>>, input_parts: &HashSet<usize>, output_parts: &HashSet<usize>, part_to_preorder: &Vec<(usize, usize)>) {
@@ -176,29 +177,21 @@ fn iteratively_update_distances_under_preorder(dir_adjacencies: &mut Vec<HashSet
     current_preorder.unwrap()
 }
 
-pub fn extension_hierarchy<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
-    circ: &'a S, mut partition: Vec<Vec<usize>>, node_id_generator: &mut dyn Iterator<Item = usize>,
-    mut adjacencies: Vec<Vec<usize>>, mut input_parts: HashSet<usize>, mut output_parts: HashSet<usize>, 
-    timer: Instant, debug: usize) -> HashMap<usize, DAGNode<'a, C, S>> {
+pub fn merge_equivalence_classes_by_distance(mut graph: MixedGraph) ->
+    (MixedGraph, Vec<(usize, usize)>, Vec<(usize, usize)>) {
     
-    let mut n_parts = partition.len();
+    let mut part_to_preorder: Vec<(usize, usize)> = Vec::new();
+
     // merge equivalence classes into layers
     let exists_nontrivial_equivalence_classes = true;
-    let mut part_to_preorder: Vec<(usize, usize)> = Vec::new(); let mut num_fuzzy_edges: usize = 0; let mut edges: Vec<(usize, usize)> = Vec::new();
-
     while exists_nontrivial_equivalence_classes {
 
         println!("---------------------------------------");
+        let distance_to_inputs = distance_to_source_set(graph.input_parts.iter().copied(), &graph.adjacencies);
+        let distance_to_outputs = distance_to_source_set(graph.output_parts.iter().copied(), &graph.adjacencies);
+        part_to_preorder = (0..graph.n).map(|key| (distance_to_inputs[key], distance_to_outputs[key])).collect();
 
-        let distance_to_inputs = distance_to_source_set(input_parts.iter().copied(), &adjacencies);
-        let distance_to_outputs = distance_to_source_set(output_parts.iter().copied(), &adjacencies);
-        part_to_preorder = (0..n_parts).map(|key| (distance_to_inputs[key], distance_to_outputs[key])).collect();
-        edges = adjacencies.iter().enumerate()
-                        .flat_map( |(idx, part)| part.into_iter().copied().map(move |x| (idx, x)))
-                        .filter(|(a, b)| a < b)
-                        .collect();
-
-        num_fuzzy_edges = edges.iter().map(|&(a, b)| if !lt(part_to_preorder[a], part_to_preorder[b]) && !lt(part_to_preorder[b], part_to_preorder[a]) {1} else {0}).sum();
+        let num_fuzzy_edges: usize = graph.edges.iter().map(|&(a, b)| if !lt(part_to_preorder[a], part_to_preorder[b]) && !lt(part_to_preorder[b], part_to_preorder[a]) {1} else {0}).sum();
         println!("num_fuzzy: {:?}", num_fuzzy_edges);
 
         // Merge equivalence class
@@ -211,13 +204,24 @@ pub fn extension_hierarchy<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
 
         use utils::small_utilities::count_ints;
         if equal_distance.get_components().len() == partition.len() {
-            break
-        } 
+            break;
+        }
+
         println!("merging: {:?}", count_ints(equal_distance.get_components().into_iter().map(|part| part.len())));
-        (partition, adjacencies, input_parts, output_parts, _) = merge_parts_and_adjacencies(&partition, &adjacencies, &input_parts, &output_parts, equal_distance);
-        n_parts = partition.len()
+        graph = graph.merge(equal_distance);
+        
     }
 
+    (graph, part_to_preorder)
+}
+
+pub fn extension_hierarchy<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
+    circ: &'a S, partition: Vec<Vec<usize>>, node_id_generator: &mut dyn Iterator<Item = usize>,
+    adjacencies: Vec<Vec<usize>>, input_parts: HashSet<usize>, output_parts: HashSet<usize>, 
+    timer: Instant, debug: usize) -> HashMap<usize, DAGNode<'a, C, S>> {
+    
+    let (partition, adjacencies, input_parts, output_parts, part_to_preorder, edges) = merge_equivalence_classes_by_distance(partition, adjacencies, input_parts, output_parts);
+    let n_parts = partition.len();
     let mut dir_adjacencies: Vec<HashSet<usize>> = adjacencies.iter().enumerate().map(|(v, part)| part.into_iter().copied().filter(|&u| lt(part_to_preorder[v], part_to_preorder[u])).collect() ).collect();
     
     //let part_to_preorder = iteratively_update_distances_under_preorder(&mut dir_adjacencies, &adjacencies, &edges, &input_parts, &output_parts, &part_to_preorder);
