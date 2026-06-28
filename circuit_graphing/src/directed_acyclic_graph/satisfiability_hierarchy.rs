@@ -3,6 +3,8 @@ use std::collections::{HashSet};
 use std::time::{Instant};
 
 use utils::small_utilities::distance_to_source_set;
+use utils::union_find::UnionFind;
+use super::dag_utils::merge_parts_and_adjacencies;
 
 pub fn dag_from_partition_solver(
     adjacencies: &Vec<Vec<usize>>, input_parts: &HashSet<usize>, output_parts: &HashSet<usize>, debug: usize) -> (Vec<(usize, usize)>, Vec<usize>, Vec<usize>) {    
@@ -15,15 +17,35 @@ pub fn dag_from_partition_solver(
     let m_edges: usize = edges.len();
 
     // Precalculate distances for some early local information
-    let distance_to_inputs = distance_to_source_set(input_parts.into_iter().copied(), adjacencies);
-    let distance_to_outputs = distance_to_source_set(output_parts.into_iter().copied(), adjacencies);
+    //   - Maximum Distance is when no edges are contracted
+    //   - Minimum Distance is when all fuzzy edges are contracted
+    
+    let max_distance_to_inputs = distance_to_source_set(input_parts.into_iter().copied(), adjacencies);
+    let max_distance_to_outputs = distance_to_source_set(output_parts.into_iter().copied(), adjacencies);
     
     let edge_is_fuzzy = |e: usize| {
         // edge_is fuzzy if x_ord.1 - x_ord.0 == x_ord.0 - x_ord.1
-        let x_ord = (distance_to_inputs[edges[e].0], distance_to_outputs[edges[e].0]);
-        let y_ord = (distance_to_inputs[edges[e].1], distance_to_outputs[edges[e].1]);
+        let x_ord = (max_distance_to_inputs[edges[e].0], max_distance_to_outputs[edges[e].0]);
+        let y_ord = (max_distance_to_inputs[edges[e].1], max_distance_to_outputs[edges[e].1]);
         x_ord.1.wrapping_sub(x_ord.0) == y_ord.1.wrapping_sub(y_ord.0) // wrapping doesn't matter here since we're interested in equality
     };
+
+    let mut total_fuse = UnionFind::new(false);
+    for e in 0..m_edges {if edge_is_fuzzy(e) {total_fuse.union([edges[e].0, edges[e].1].into_iter());} else {total_fuse.find(edges[e].0); total_fuse.find(edges[e].1);}}
+    let (merged_partition, merged_adjacencies, merged_inputs, merged_outputs, _) = merge_parts_and_adjacencies(&(0..n_parts).into_iter().map(|x| vec![x]).collect(), adjacencies, input_parts, output_parts, total_fuse);
+
+    let merged_distance_to_inputs = distance_to_source_set(merged_inputs.into_iter(), &merged_adjacencies);
+    let merged_distance_to_outputs = distance_to_source_set(merged_outputs.into_iter(), &merged_adjacencies);
+
+    let mut min_distance_to_inputs = vec![usize::MAX; n_parts];
+    let mut min_distance_to_outputs = vec![usize::MAX; n_parts];
+
+    for (i, part) in merged_partition.into_iter().enumerate() {
+        for vertex in part.into_iter() {
+            min_distance_to_inputs[vertex] = merged_distance_to_inputs[i];
+            min_distance_to_outputs[vertex] = merged_distance_to_outputs[i];
+        }
+    }
 
     let mut incidence: Vec<Vec<usize>> = (0..n_parts).into_iter().map(|_| Vec::new()).collect();
     for (i, &(u, v)) in edges.iter().enumerate() {incidence[u].push(i);incidence[v].push(i);}
@@ -92,7 +114,8 @@ pub fn dag_from_partition_solver(
     //  init values set to 0
     //  edges bound either 1 increment, or equality
     //  tightness is an exact 1 increment -- enforce tightness in each tree
-    let original_distances: [&Vec<usize>; 2] = [&distance_to_inputs, &distance_to_outputs];
+    let min_distances: [Vec<usize>; 2] = [min_distance_to_inputs, min_distance_to_outputs];
+    let max_distances: [Vec<usize>; 2] = [max_distance_to_inputs, max_distance_to_outputs];
     let inits: [&HashSet<usize>; 2] = [input_parts, output_parts];
     let distances: [Vec<Int>; 2] = [(0..n_parts).into_iter().map(|x| Int::new_const(format!("d1_{x}"))).collect(),
                                     (0..n_parts).into_iter().map(|x| Int::new_const(format!("d2_{x}"))).collect()];
@@ -103,11 +126,11 @@ pub fn dag_from_partition_solver(
         // initialise
         for v in inits[dir].into_iter().copied() {optimiser.assert(distances[dir][v].eq(&int_idxs[0]));}
 
-        // general upper bounds (original distances) 0 <= d_v <= init_dist(v)
+        // general upper bounds (original distances) min_dist(v) <= d_v <= max_dist(v)
         for v in 0..n_parts {optimiser.assert(
             Bool::and(&[
-                distances[dir][v].ge(&int_idxs[0]),
-                distances[dir][v].le(&int_idxs[original_distances[dir][v]])
+                distances[dir][v].ge(&int_idxs[min_distances[dir][v]]),
+                distances[dir][v].le(&int_idxs[max_distances[dir][v]])
             ])
         );}
 
