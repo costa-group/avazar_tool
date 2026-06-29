@@ -1,4 +1,4 @@
-use z3::{Optimize, ast::Bool, ast::Int, ast::Set, Sort, SatResult};
+use z3::{Optimize, ast::Bool, ast::Int, SatResult};
 use std::collections::{HashSet};
 use std::time::{Instant};
 
@@ -68,7 +68,7 @@ pub fn dag_from_partition_solver(
 
     // default fixed vars reused to save number of vars
     let int_idxs: Vec<Int> = (0..graph.n).into_iter().map(|i| Int::from_u64(i as u64)).collect();
-    let empty: Set = Set::empty(&Sort::int()); let bool_false: Bool = Bool::from_bool(false); let bool_true: Bool = Bool::from_bool(true); 
+    let bool_false: Bool = Bool::from_bool(false); let bool_true: Bool = Bool::from_bool(true); 
     let bool_to_Bool = |x: bool| if x {&bool_true} else {&bool_false};
 
     // For each edge (not arc) we have a boolean decision variable about whether or not that edge is 'fused'

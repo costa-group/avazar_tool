@@ -11,7 +11,7 @@ use circuits_and_constraints::utils::signals_to_constraints_with_them;
 use utils::small_utilities::{HierarchyMode};
 use utils::union_find::{UnionFind};
 use super::satisfiability_hierarchy::dag_from_partition_solver;
-// use super::extension_hierarchy::{extension_hierarchy, merge_equivalence_classes_by_distance};
+use super::extension_hierarchy::{extension_hierarchy};
 use super::mixed_graph::MixedGraph;
 
 fn get_intial_components<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
@@ -103,11 +103,11 @@ fn conservative_hierarchy<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
 
 fn optimisation_hierarchy<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
     circ: &'a S, node_id_generator: &mut dyn Iterator<Item = usize>,
-    mut graph: MixedGraph, timer: Instant, debug: usize) -> HashMap<usize, DAGNode<'a, C, S>> {
+    mut graph: MixedGraph, _timer: Instant, debug: usize) -> HashMap<usize, DAGNode<'a, C, S>> {
     
     // Preprocessing Step: Merge all equivalence class together
     // Calculate Distances and Orient Edges
-    graph.merge_equivalence_classes_by_distance_and_orient();
+    graph.merge_equivalence_classes_by_distance_and_orient(debug);
 
     // Have SAT Solver decide on other fuses
     let to_merge = dag_from_partition_solver(&graph, debug);
@@ -144,9 +144,8 @@ pub fn dag_from_partition<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
         HierarchyMode::Optimisation => optimisation_hierarchy(
             circ, node_id_generator, graph, 
             timer, debug),
-        HierarchyMode::Extension => {panic!("Extension is currently unimplemented awaiting retooling");}
-        // HierarchyMode::Extension => extension_hierarchy(
-        //     circ, node_id_generator, graph, 
-        //     timer, debug)
+        HierarchyMode::Extension => extension_hierarchy(
+            circ, node_id_generator, graph, 
+            timer, debug)
     }
 }
