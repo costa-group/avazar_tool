@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::borrow::Borrow;
 use itertools::Itertools;
 
@@ -8,6 +8,7 @@ use circuits_and_constraints::constraint::Constraint;
 use circuits_and_constraints::circuit::Circuit;
 use super::{DAGNode};
 use super::dag_utils::{lt, add_arc_to_nodes};
+use super::export_to_dzn::write_dzn;
 
 pub struct MixedGraph {
     pub n: usize, pub m: usize,
@@ -81,6 +82,61 @@ impl MixedGraph {
         part_to_preorder
     }
 
+    // TODO: convince self that this will never lower the number of oriented edges
+    // This is technically better than nothing (assuming the above) but it doesn't seem to help at all
+    //      the hard case is when do we decide to go downstairs and doesn't help.
+    //      Does help in general with repeated clusters -- though this structure hasn't been problematic otherwise.
+    pub fn iterative_orient_by_partial_order(&mut self) -> Vec<(usize, usize)> {
+
+        // A version of BFS that only allows distances if they follow oriented arc directions correctly
+        fn distance_to_source_set_under_preorder(source_set: impl Iterator<Item = usize>, adjacencies: &Vec<Vec<usize>>, lt: impl Fn(usize, usize) -> Option<bool>) -> Vec<usize> {
+
+            let mut distance: Vec<usize> = vec![usize::MAX; adjacencies.len()];
+            let mut queue: VecDeque<usize> = source_set.collect();
+            for idx in queue.iter() {distance[*idx] = 0;}
+
+            while queue.len() > 0 {
+                let curr = queue.pop_front().unwrap();
+                let next_distance = distance[curr] + 1;
+                for adj in adjacencies[curr].iter().copied().filter(|&adj| lt(curr, adj).is_none_or( |x| x ) ) {
+                    if distance[adj] == usize::MAX {
+                        queue.push_back(adj);
+                        distance[adj] = next_distance;
+                    }
+                }
+            }
+
+            distance
+        }
+
+        let mut updated_at_least_one_arc = true;
+        let mut current_preorder: Vec<(usize, usize)> = self.orient_by_partial_order();
+
+        fn compare(x:usize, y:usize, part_to_preorder: &Vec<(usize, usize)>) -> Option<bool> {
+            let x_ord = part_to_preorder[x]; let y_ord = part_to_preorder[y];
+            if lt(x_ord, y_ord) {Some(true)} else if lt(y_ord, x_ord) {Some(false)} else {None}
+        }
+
+        let mut oriented_edges: usize = self.dir_adjacencies.iter().map(|x| x.len()).sum();
+        println!("oriented_edges: {:?}", oriented_edges);
+
+        while updated_at_least_one_arc {
+            
+            let distance_to_inputs = distance_to_source_set_under_preorder(self.input_parts.iter().copied(), &self.adjacencies, |x, y| compare(x, y, &current_preorder));
+            let distance_to_outputs = distance_to_source_set_under_preorder(self.output_parts.iter().copied(), &self.adjacencies, |x, y| compare(y, x, &current_preorder));
+
+            current_preorder = (0..self.n).into_iter().map(|x| (distance_to_inputs[x], distance_to_outputs[x])).collect();
+            let new_oriented_edges = self.edges.iter().filter(|&&(x, y)| compare(x, y, &current_preorder).is_some() ).count();
+            
+            updated_at_least_one_arc = new_oriented_edges > oriented_edges;
+            oriented_edges = new_oriented_edges;
+            println!("oriented_edges: {:?}", oriented_edges);
+        }
+
+        self.dir_adjacencies = self.adjacencies.iter().enumerate().map(|(v, part)| part.into_iter().copied().filter(|&u| compare(v, u, &current_preorder).is_some_and(|x| x) ).collect()).collect();
+        current_preorder
+    }
+
     pub fn orient_leaf_parts(&mut self) -> () {
 
         // leafs that are not two adjacent leafs are directed towards the leaf
@@ -117,22 +173,20 @@ impl MixedGraph {
         (nodes, part_to_signals_arr, idx_to_nodeid)
     }
 
-    pub fn merge_equivalence_classes_by_distance_and_orient(&mut self) -> ()
+    pub fn merge_equivalence_classes_by_distance_and_orient(&mut self, debug: usize) ->  Vec<(usize, usize)>
     {
         
         let mut part_to_preorder: Vec<(usize, usize)>;
         // TODO: check if this will only ever take 1 iteration
 
         // merge equivalence classes into layers
-        let exists_nontrivial_equivalence_classes = true;
-        while exists_nontrivial_equivalence_classes {
-
-            println!("---------------------------------------");
+        loop {
+            if debug > 1 {println!("---------------------------------------");}
             // TODO: convince self that this wont create cycle
             part_to_preorder = self.orient_by_partial_order();
 
             let num_fuzzy_edges: usize = (0..self.m).filter(|&e| !self.edge_oriented(e)).count();
-            println!("num_fuzzy: {:?}", num_fuzzy_edges);
+           if debug > 1 {println!("num_fuzzy: {:?}", num_fuzzy_edges);}
 
             // Merge equivalence class
             let mut equal_distance = UnionFind::new(false);
@@ -147,9 +201,24 @@ impl MixedGraph {
                 break;
             }
 
-            println!("merging: {:?}", count_ints(equal_distance.get_components().into_iter().map(|part| part.len())));
+            if debug > 1 {println!("merging: {:?}", count_ints(equal_distance.get_components().into_iter().map(|part| part.len())));}
             *self = self.merge(equal_distance);
         }
-}
+
+        part_to_preorder
+    }
+
+    pub fn export_to_dzn(&mut self) -> () {
+    
+        let fuzzy: Vec<bool> = self.edges.iter()
+                        .map(|&(a, b)| !self.pair_oriented(a, b))
+                        .collect();
+        
+        let init_direction: Vec<usize> = self.edges.iter()
+                        .map(|&(a, b)| if self.dir_adjacencies[a].contains(&b) {2} else if self.dir_adjacencies[b].contains(&a) {1} else {0} )
+                        .collect();
+        
+        write_dzn("data.dzn", &self.adjacencies, &self.edges, &fuzzy, &init_direction, &self.input_parts, &self.output_parts); 
+    }
 
 }

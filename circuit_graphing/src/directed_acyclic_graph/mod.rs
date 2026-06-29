@@ -13,7 +13,7 @@ pub mod iterated_label_propagation;
 pub mod export_to_dzn;
 pub mod satisfiability_hierarchy;
 pub mod dag_utils;
-// pub mod extension_hierarchy;
+pub mod extension_hierarchy;
 pub mod mixed_graph;
 
 pub struct DAGNode<'a, C: Constraint + 'a, S: Circuit<C> + 'a> {
