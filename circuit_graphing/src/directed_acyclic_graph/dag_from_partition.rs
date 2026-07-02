@@ -14,53 +14,6 @@ use super::satisfiability_hierarchy::dag_from_partition_solver;
 use super::extension_hierarchy::{extension_hierarchy};
 use super::mixed_graph::MixedGraph;
 
-fn get_intial_components<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
-        circ: &'a S, partition: Vec<Vec<usize>>,
-        dead_ends_as_outputs: bool, _debug: usize
-    ) -> MixedGraph {
-    // have partitions keep Vec<Vec<usize>>, index by vec index throughout until we make the DAGNodes
-    // sorted arr signal list
-    let n_parts = partition.len();
-    let part_to_signals_arr: Vec<Vec<usize>> = partition.iter().map(|part|
-        part.iter().copied().flat_map(|idx| circ.get_constraints()[idx].borrow().signals()).sorted_unstable().dedup().collect()
-    ).collect();
-
-    let input_parts: HashSet<usize> = (0..n_parts).filter(|key| part_to_signals_arr[*key].iter().any(|sig| circ.signal_is_input(sig))).collect();
-    let mut output_parts: HashSet<usize> = (0..n_parts).filter(|key| part_to_signals_arr[*key].iter().any(|sig| circ.signal_is_output(sig))).collect();
-
-    const NO_PART: usize = usize::MAX;
-    let mut coni_to_part: Vec<usize> = vec![NO_PART; circ.n_constraints()];
-    for (idx, part) in partition.iter().enumerate() {
-        for coni in part.iter().copied() {
-            match coni_to_part[coni] {
-                NO_PART => {coni_to_part[coni] = idx;}
-                _ => {panic!("Given partition has overlapping parts");}
-            }
-        }
-    }
-
-    // get the signal indices
-    let sig_to_coni = signals_to_constraints_with_them(circ.get_constraints(), None, None);
-    
-    let mut last_seen_at: Vec<usize> = vec![0;n_parts];
-    // note that this is not sorted
-    let adjacencies: Vec<Vec<usize>> = (0..n_parts).map(|idx| 
-        {let mut neighbours =  Vec::new();
-        for part in part_to_signals_arr[idx].iter().copied().flat_map(|sig| sig_to_coni[&sig].iter().copied().map(|coni| coni_to_part[coni])).filter(|opart_id| *opart_id != idx) {
-            if last_seen_at[part] != idx + 1 {
-                last_seen_at[part] = idx + 1;
-                neighbours.push(part);
-            }
-        }
-        neighbours}
-    ).collect();
-
-    // include dead-ends as outputs
-    if dead_ends_as_outputs{ output_parts.extend((0..n_parts).filter(|parti| !input_parts.contains(parti) && adjacencies[*parti].len() == 1)); }
-    
-    MixedGraph::new(partition, adjacencies, input_parts, output_parts)
-}
-
 fn conservative_hierarchy<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
     circ: &'a S, node_id_generator: &mut dyn Iterator<Item = usize>,
     mut graph: MixedGraph, timer: Instant, debug: usize) -> HashMap<usize, DAGNode<'a, C, S>> {
@@ -132,7 +85,7 @@ pub fn dag_from_partition<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
 
     let timer = Instant::now();
 
-    let graph = get_intial_components(circ, partition, dead_ends_as_outputs, debug);
+    let graph = MixedGraph::from_circuit(circ, partition, dead_ends_as_outputs);
 
     if debug > 1 { println!("LOG: Total-edges {:?}, max-edges {:?}", graph.adjacencies.iter().map(|set| set.len()).sum::<usize>() >> 1, graph.adjacencies.iter().map(|set| set.len()).max()); }
     if debug > 1 { println!("LOG: Adjacency preprocessing done in {:?}", timer.elapsed().as_secs_f32()); }

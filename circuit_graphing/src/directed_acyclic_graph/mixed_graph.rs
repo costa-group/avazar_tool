@@ -9,6 +9,7 @@ use circuits_and_constraints::circuit::Circuit;
 use super::{DAGNode};
 use super::dag_utils::{lt, add_arc_to_nodes};
 use super::export_to_dzn::write_dzn;
+use circuits_and_constraints::utils::signals_to_constraints_with_them;
 
 pub struct MixedGraph {
     pub n: usize, pub m: usize,
@@ -24,7 +25,54 @@ pub struct MixedGraph {
 // NOTE: this struct doesn't handle correctness -- correctness is handled by the user
 impl MixedGraph {
 
-    pub fn new(partition: Vec<Vec<usize>>, adjacencies:Vec<Vec<usize>>, input_parts: HashSet<usize>, output_parts: HashSet<usize>) -> MixedGraph {
+    pub fn from_circuit<C: Constraint, S: Circuit<C>>(
+        circ: &S, partition: Vec<Vec<usize>>,
+        dead_ends_as_outputs: bool
+    ) -> MixedGraph {
+        // have partitions keep Vec<Vec<usize>>, index by vec index throughout until we make the DAGNodes
+        // sorted arr signal list
+        let n_parts = partition.len();
+        let part_to_signals_arr: Vec<Vec<usize>> = partition.iter().map(|part|
+            part.iter().copied().flat_map(|idx| circ.get_constraints()[idx].borrow().signals()).sorted_unstable().dedup().collect()
+        ).collect();
+
+        let input_parts: HashSet<usize> = (0..n_parts).filter(|key| part_to_signals_arr[*key].iter().any(|sig| circ.signal_is_input(sig))).collect();
+        let mut output_parts: HashSet<usize> = (0..n_parts).filter(|key| part_to_signals_arr[*key].iter().any(|sig| circ.signal_is_output(sig))).collect();
+
+        const NO_PART: usize = usize::MAX;
+        let mut coni_to_part: Vec<usize> = vec![NO_PART; circ.n_constraints()];
+        for (idx, part) in partition.iter().enumerate() {
+            for coni in part.iter().copied() {
+                match coni_to_part[coni] {
+                    NO_PART => {coni_to_part[coni] = idx;}
+                    _ => {panic!("Given partition has overlapping parts");}
+                }
+            }
+        }
+
+        // get the signal indices
+        let sig_to_coni = signals_to_constraints_with_them(circ.get_constraints(), None, None);
+        
+        let mut last_seen_at: Vec<usize> = vec![0;n_parts];
+        // note that this is not sorted
+        let adjacencies: Vec<Vec<usize>> = (0..n_parts).map(|idx| 
+            {let mut neighbours =  Vec::new();
+            for part in part_to_signals_arr[idx].iter().copied().flat_map(|sig| sig_to_coni[&sig].iter().copied().map(|coni| coni_to_part[coni])).filter(|opart_id| *opart_id != idx) {
+                if last_seen_at[part] != idx + 1 {
+                    last_seen_at[part] = idx + 1;
+                    neighbours.push(part);
+                }
+            }
+            neighbours}
+        ).collect();
+
+        // include dead-ends as outputs
+        if dead_ends_as_outputs{ output_parts.extend((0..n_parts).filter(|parti| !input_parts.contains(parti) && adjacencies[*parti].len() == 1)); }
+        
+        Self::new(partition, adjacencies, input_parts, output_parts)
+    }
+
+    pub fn new(partition: Vec<Vec<usize>>, adjacencies:Vec<Vec<usize>>, input_parts: HashSet<usize>, output_parts: HashSet<usize>) -> Self {
         let edges: Vec<(usize, usize)> = adjacencies.iter().enumerate()
                         .flat_map( |(idx, part)| part.into_iter().copied().map(move |x| (idx, x)))
                         .filter(|(a, b)| a < b)
