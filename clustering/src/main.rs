@@ -28,6 +28,7 @@ use crate::decompose_circuit::decompose_circuit;
 use crate::argument_parsing::{Args};
 use utils::small_utilities::{DecomposeOptions, FileType};
 use utils::read_r1cs::{R1CSData};
+use circuits_and_constraints::generic::{AIRDataWrapper};
 use circuits_and_constraints::acir::{ACIRCircuit};
 use circuits_and_constraints::circuit::Circuit;
 
@@ -94,6 +95,11 @@ fn start(args: Args) -> Result<(), Box<dyn Error>> {
             },
         FileType::ACIR =>{
             let circuit = ACIRCircuit::parse_file(&args.filepath)?;
+            if args.debug > 0 { println!("Took {:?} to parse", circuit_parsing_timer.elapsed()); }
+            decompose_circuit(&circuit, decompose_options)
+            }
+        FileType::Generic =>{
+            let circuit = AIRDataWrapper::parse_file(&args.filepath)?;
             if args.debug > 0 { println!("Took {:?} to parse", circuit_parsing_timer.elapsed()); }
             decompose_circuit(&circuit, decompose_options)
             }

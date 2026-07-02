@@ -56,7 +56,9 @@ pub enum FileType {
     #[default]
     R1CS,
     #[strum(serialize = "acir")]
-    ACIR
+    ACIR,
+    #[strum(serialize = "generic")]
+    Generic
 }
 
 #[derive(Debug, Clone, Default)]

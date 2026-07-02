@@ -30,25 +30,33 @@ pub fn correctness_problem_to_smt2(problem: &CorrectnessVerification)->LinkedLis
         
     }
 
+
+    // include the macros!!!
+    for (_, macro_info) in &problem.macros{
+        smt2_problem.push_back(
+            macro_info.to_string()
+        );
+    }
+
+
     for constraint in &problem.constraints_2 {
 
         smt2_problem.push_back(
-            format!("{}",
+            format!("(assert {})",
                 constraint
             )
         );
         
     }
 
-
-    // for imp in &problem.implications_equivalence{
-    //     let new_imp = implication_to_smt2(imp,&signal_to_name,&signal_to_name_aux);
-    //     smt2_problem.push_back(
-    //         format!("(assert {})",
-    //             new_imp
-    //         )
-    //     );
-    // }
+    for imp in &problem.implications_equivalence{
+        let new_imp = correctness_implication_to_smt2(imp,&signal_to_name);
+        smt2_problem.push_back(
+            format!("(assert {})",
+                new_imp
+            )
+        );
+    }
 
     smt2_problem.push_back(
         format!("(assert {})",
@@ -121,14 +129,14 @@ pub fn equivalence_problem_to_smt2(problem: &EquivalenceVerification,use_old_syn
     }
 
 
-    // for imp in &problem.implications_equivalence{
-    //     let new_imp = implication_to_smt2(imp,&signal_to_name,&signal_to_name_aux);
-    //     smt2_problem.push_back(
-    //         format!("(assert {})",
-    //             new_imp
-    //         )
-    //     );
-    // }
+    for imp in &problem.implications_equivalence{
+        let new_imp = equivalence_implication_to_smt2(imp,&signal_to_name,&signal_to_name_aux);
+        smt2_problem.push_back(
+            format!("(assert {})",
+                new_imp
+            )
+        );
+    }
 
     smt2_problem.push_back(
         format!("(assert {})",
@@ -253,6 +261,72 @@ pub fn safety_implication_to_smt2(imp: &(Vec<usize>, Vec<usize>), signal_to_name
         let mut aux = "(and ".to_string();
         for s in &imp.1{
             aux = format!("{} (= {} {}) ", aux, signal_to_names[s], signal_to_names_aux[s]);
+        }
+        aux = format!("{})",aux);
+        aux
+    };
+
+    format!("(=> {} {})", left, right)
+
+}
+
+pub fn equivalence_implication_to_smt2(imp: &(Vec<(usize, usize)>, Vec<(usize, usize)>), signal_to_names: &HashMap<usize,String>, signal_to_names_aux: &HashMap<usize,String>) -> String{
+    let left: String = if imp.0.len() == 0{
+        "true".to_string()
+    } else if imp.0.len() == 1{
+        let (s1, s2) = imp.0[0];
+        format!("(= {} {})", signal_to_names[&s1], signal_to_names_aux[&s2])
+    } else{
+        let mut aux = "(and ".to_string();
+        for (s1, s2) in &imp.0{
+            aux = format!("{} (= {} {}) ", aux, signal_to_names[s1], signal_to_names_aux[s2]);
+        }
+        aux = format!("{})",aux);
+        aux
+    };
+
+    let right = if imp.1.len() == 0{
+        "true".to_string()
+    } else if imp.1.len() == 1{
+        let (s1, s2) = imp.1[0];
+        format!("(= {} {})", signal_to_names[&s1], signal_to_names_aux[&s2])
+    } else{
+        let mut aux = "(and ".to_string();
+        for (s_1, s_2) in &imp.1{
+            aux = format!("{} (= {} {}) ", aux, signal_to_names[s_1], signal_to_names_aux[s_2]);
+        }
+        aux = format!("{})",aux);
+        aux
+    };
+
+    format!("(=> {} {})", left, right)
+
+}
+
+pub fn correctness_implication_to_smt2(imp: &(Vec<(usize, String)>, Vec<(usize, String)>), signal_to_names: &HashMap<usize,String>) -> String{
+    let left: String = if imp.0.len() == 0{
+        "true".to_string()
+    } else if imp.0.len() == 1{
+        let (s1, s2) = &imp.0[0];
+        format!("(= {} {})", signal_to_names[&s1], s2)
+    } else{
+        let mut aux = "(and ".to_string();
+        for (s1, s2) in &imp.0{
+            aux = format!("{} (= {} {}) ", aux, signal_to_names[s1], s2);
+        }
+        aux = format!("{})",aux);
+        aux
+    };
+
+    let right = if imp.1.len() == 0{
+        "true".to_string()
+    } else if imp.1.len() == 1{
+        let (s1, s2) = &imp.1[0];
+        format!("(= {} {})", signal_to_names[&s1], s2)
+    } else{
+        let mut aux = "(and ".to_string();
+        for (s_1, s_2) in &imp.1{
+            aux = format!("{} (= {} {}) ", aux, signal_to_names[s_1], s_2);
         }
         aux = format!("{})",aux);
         aux

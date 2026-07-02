@@ -16,3 +16,4 @@ pub fn read_original_structure<P: AsRef<Path>>(path: P) -> Result<BTreeMap<usize
     Ok(u)
 
 }
+

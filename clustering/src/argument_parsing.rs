@@ -21,7 +21,7 @@ pub struct Args {
     #[arg(short, long, value_enum, default_value_t=GraphBackend::GraphRS)]
     pub graph_backend: GraphBackend,
 
-    #[arg(short, long="equivalence", value_enum, default_value_t=EquivalenceMode::Structural)]
+    #[arg(short, long="equivalence", value_enum, default_value_t=EquivalenceMode::None)]
     pub equivalence_mode: EquivalenceMode,
 
     #[arg(short, long="preprocessing", value_enum, default_value_t=ClusteringPreprocessing::None)]

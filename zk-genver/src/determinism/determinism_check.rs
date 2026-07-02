@@ -11,10 +11,12 @@ use crate::determinism::modular_reasoning::check_tags;
 use clustering::decompose_circuit::decompose_node;
 use utils::small_utilities::{GraphBackend, EquivalenceMode, ClusteringPreprocessing};
 use crate::processing_utils::*;
+use crate::report;
 use solvers_interface::PossibleResult::VERIFIED;
 
 
 pub struct ResultInfoDeterminism{
+    previously_verified_nodes: HashSet<usize>,
     verified_nodes: HashSet<usize>,
     failed_nodes: HashSet<usize>,
     unknown_nodes: HashSet<usize>,
@@ -30,7 +32,13 @@ pub struct ResultInfoDeterminism{
 
 }
 
-pub fn prove_safety(user_input: Input) -> Result<(), ()> {    
+pub fn prove_safety(user_input: Input) -> Result<(), ()> {
+    let original_file = user_input.input_r1cs
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("")
+        .to_string();
+
     let (constraints,
         signals,
         n_outputs,
@@ -54,6 +62,7 @@ pub fn prove_safety(user_input: Input) -> Result<(), ()> {
 
     let timeout: u64 = user_input.timeout;
     let apply_deduction_assigned: bool = user_input.apply_deduction_assigned;
+    let include_niaz3_in_all: bool = user_input.include_niaz3_in_all;
     let apply_predecessors: bool = user_input.apply_predecessors;
     let apply_bidirectional: bool = user_input.apply_bidirectional;
 
@@ -67,7 +76,7 @@ pub fn prove_safety(user_input: Input) -> Result<(), ()> {
         None
     };
 
-    let field = user_input.prime;
+    let field = user_input.prime.clone();
 
     let equivalence_mode = match user_input.equivalence_mode{
         0 => EquivalenceMode::None,
@@ -82,6 +91,7 @@ pub fn prove_safety(user_input: Input) -> Result<(), ()> {
 
     
     let mut results = ResultInfoDeterminism{
+        previously_verified_nodes: HashSet::new(),
         verified_nodes: HashSet::new(),
         failed_nodes: HashSet::new(),
         unknown_nodes: HashSet::new(),
@@ -97,21 +107,24 @@ pub fn prove_safety(user_input: Input) -> Result<(), ()> {
     };
 
     for node in structure.nodes.iter().rev(){
-        process_node(&node, 
-            &structure, 
-            &constraints, 
+        process_node(&node,
+            &structure,
+            &constraints,
             &local_equivalence_classes,
             &structural_equivalence_classes,
-            &nodeid2pos, 
-            &field, 
-            timeout, 
+            &nodeid2pos,
+            &field,
+            timeout,
             user_input.solver_option,
             apply_deduction_assigned,
+            include_niaz3_in_all,
             apply_predecessors,
             apply_bidirectional,
             &mut results,
             user_input.extra_rounds,
-            user_input.flag_verbose
+            user_input.limit_size,
+            user_input.flag_verbose,
+            &original_file,
         );
     }
 
@@ -129,17 +142,20 @@ pub fn prove_safety(user_input: Input) -> Result<(), ()> {
                 &constraints,
                 &mut nodeid2pos,
                 &mut max_node_id,
-                &field, 
-                timeout, 
+                &field,
+                timeout,
                 user_input.solver_option,
                 equivalence_mode,
                 target_size,
                 apply_deduction_assigned,
+                include_niaz3_in_all,
                 apply_predecessors,
                 apply_bidirectional,
                 &mut results,
                 user_input.extra_rounds,
-                user_input.flag_verbose
+                user_input.limit_size,
+                user_input.flag_verbose,
+                &original_file,
             );
         }
         to_study_again = reconsider_big_nodes(&structure, &nodeid2pos, &mut results, clustering_size);
@@ -159,8 +175,14 @@ pub fn prove_safety(user_input: Input) -> Result<(), ()> {
         );
     }
 
-    // print the results    
+    // print the results
     print_pretty_results(&results);
+
+    if let Some(report_path) = &user_input.report_output {
+        let rep = build_determinism_report(&user_input, &results, &structure, &nodeid2pos);
+        report::write_report(&rep, report_path);
+    }
+
     Result::Ok(())
 }
 
@@ -176,22 +198,41 @@ fn process_node(
     timeout: u64,
     solver: PossibleSolver,
     apply_deduction_assigned: bool,
+    include_niaz3_in_all: bool,
     apply_predecessors: bool,
     apply_bidirectional: bool,
     results: &mut ResultInfoDeterminism,
     extra_rounds: usize,
-    verbose: bool
+    limit_size: usize,
+    verbose: bool,
+    original_file: &str,
 ) {
 
     // To not study the custom templates
     if node.is_custom{
+        println!("Not studying node {}: {} --> custom template ", node.node_id, node.node_name);
         results.studied_nodes.insert(node.node_id, PossibleResult::NOTHING);
+        return;
+    }
+
+    // To add the templates already verified 
+    if node.is_deterministic{
+        println!("Not studying node {}: {} --> already verified ", node.node_id, node.node_name);
+        results.studied_nodes.insert(node.node_id, PossibleResult::VERIFIED);
+        results.previously_verified_nodes.insert(node.node_id);
+
         return;
     }
 
     if results.studied_nodes.contains_key(&node.node_id) {
         // If the node has already been studied, we skip it.
         return;
+    }
+
+    if node.constraints.len() > limit_size{
+        println!("Not considering node {} because it is too big", node.node_id);
+        results.studied_nodes.insert(node.node_id, PossibleResult::UNKNOWN);
+        results.unknown_nodes.insert(node.node_id);
     }
 
     println!("LOG: Considering node {} with {} constraints", node.node_id, node.constraints.len());
@@ -203,21 +244,23 @@ fn process_node(
         &field,
         timeout,
         &structure.nodes,
-        &nodeid2pos, 
-        &constraints ,
+        &nodeid2pos,
+        &constraints,
         solver,
         apply_deduction_assigned,
+        include_niaz3_in_all,
         apply_predecessors,
         apply_bidirectional,
         no_abstract_fails,
         results,
         extra_rounds,
-        verbose
+        verbose,
+        original_file,
     );
         
-        //for log in logs{
-        //    println!("{}", log);
-        //}
+        for log in logs{
+            println!("{}", log);
+        }
 
     // check if one of the children is verified using the parent. If so, do not generalize to any class
     let mut verified_child = false;
@@ -285,11 +328,14 @@ fn decompose_and_study(
     equivalence_mode: EquivalenceMode,
     target_size: usize,
     apply_deduction_assigned: bool,
+    include_niaz3_in_all: bool,
     apply_predecessors: bool,
     apply_bidirectional: bool,
     results: &mut ResultInfoDeterminism,
     extra_rounds: usize,
-    verbose: bool
+    limit_size: usize,
+    verbose: bool,
+    original_file: &str,
 ) {
     println!("LOG: Reconsidering again node {}", node_id);
     let node_info = structure.nodes.get(*nodeid2pos.get(&node_id).unwrap()).unwrap();
@@ -336,6 +382,7 @@ fn decompose_and_study(
     println!("LOG: node decomposed in {} new nodes", new_nodeid2pos.len());
 
     let mut new_results = ResultInfoDeterminism{
+        previously_verified_nodes: HashSet::new(),
         verified_nodes: HashSet::new(),
         failed_nodes: HashSet::new(),
         unknown_nodes: HashSet::new(),
@@ -361,25 +408,28 @@ fn decompose_and_study(
 
     for node in &new_structure.nodes{
         if node.constraints.len() == 0{
-            println!("LOG: printing info node with 0 constraints");
-            print_node_info(node, constraints);
+            //println!("LOG: printing info node with 0 constraints");
+            //print_node_info(node, constraints);
         }
 
-        process_node(node, 
-            &new_structure, 
-            &constraints, 
+        process_node(node,
+            &new_structure,
+            &constraints,
             &local_equivalence_classes,
             &structural_equivalence_classes,
-            &new_nodeid2pos, 
-            &field, 
-            timeout, 
+            &new_nodeid2pos,
+            &field,
+            timeout,
             solver,
             apply_deduction_assigned,
+            include_niaz3_in_all,
             apply_predecessors,
             apply_bidirectional,
             &mut new_results,
             extra_rounds,
-            verbose
+            limit_size,
+            verbose,
+            original_file,
         );
     }
 
@@ -416,7 +466,7 @@ fn decompose_and_study(
 
     *max_node_id += new_max_node_id;
 
-    println!("Added the info to the results");
+    //println!("Added the info to the results");
 
 }
 // To get the nodes that were too big and need to be studied again
@@ -587,20 +637,98 @@ fn compute_info_fails_original_template(
 
 }
 
+fn build_determinism_report(
+    input: &crate::Input,
+    results: &ResultInfoDeterminism,
+    structure: &StructureInfo,
+    nodeid2pos: &HashMap<usize, usize>,
+) -> report::VerificationReport {
+    let total_verified = results.verified_nodes.len() + results.previously_verified_nodes.len();
+    let total_timeout  = results.unknown_nodes.len() + results.unknown_undivisible_nodes.len();
+
+    let overall = report::compute_overall(
+        results.failed_nodes.is_empty(),
+        total_timeout == 0,
+    );
+
+    let verified_pct = if results.total_constraints > 0 {
+        (results.verified_constraints as f64 / results.total_constraints as f64) * 100.0
+    } else {
+        0.0
+    };
+
+    let summary = report::ReportSummary {
+        total_nodes: results.studied_nodes.len(),
+        verified_nodes: total_verified,
+        previously_verified_nodes: Some(results.previously_verified_nodes.len()),
+        failed_nodes: results.failed_nodes.len(),
+        timeout_nodes: total_timeout,
+        total_constraints: Some(results.total_constraints),
+        verified_constraints: Some(results.verified_constraints),
+        verified_constraints_pct: Some(verified_pct),
+    };
+
+    let mut nodes: Vec<report::NodeResult> = results.studied_nodes.iter().map(|(node_id, result)| {
+        let (node_name, num_constraints) = nodeid2pos.get(node_id)
+            .and_then(|&pos| structure.nodes.get(pos))
+            .map(|n| (n.node_name.clone(), n.constraints.len()))
+            .unwrap_or_else(|| (String::new(), 0));
+        report::NodeResult {
+            node_id: *node_id,
+            node_name,
+            result: report::possible_result_str(result).to_string(),
+            num_constraints: Some(num_constraints),
+            previously_verified: Some(results.previously_verified_nodes.contains(node_id)),
+        }
+    }).collect();
+    nodes.sort_by_key(|n| n.node_id);
+
+    
+    let names: std::collections::HashSet<String> = results.failed_nodes.iter()
+            .chain(results.unknown_nodes.iter())
+            .chain(results.unknown_undivisible_nodes.iter())
+            .filter_map(|node_id| {
+                nodeid2pos.get(node_id)
+                    .and_then(|&pos| structure.nodes.get(pos))
+                    .map(|n| n.node_name.clone())
+            })
+            .filter(|name| !name.is_empty())
+            .collect();
+    let failed_templates = if names.is_empty() {
+            None
+        } else {
+            let mut v: Vec<String> = names.into_iter().collect();
+            v.sort();
+            Some(v)
+        };
+
+    report::VerificationReport {
+        check_type: report::CheckType::Determinism,
+        input_circuit: input.input_r1cs.display().to_string(),
+        second_circuit: None,
+        solver: report::solver_to_str(input.solver_option).to_string(),
+        timeout_ms: input.timeout,
+        overall_result: overall,
+        summary,
+        nodes,
+        failed_templates,
+    }
+}
+
 fn print_pretty_results(results: &ResultInfoDeterminism){
 
     println!();
 
     println!("--------------------------------------------");
     println!("--------------------------------------------");
-    println!("------ ZK-GENVER VERIFICATION RESULTS ------");
+    println!("------- AVAZAR VERIFICATION RESULTS --------");
     println!("--------------------------------------------");
     println!("--------------------------------------------\n");
 
     if results.failed_nodes.is_empty() && results.unknown_nodes.is_empty() && results.unknown_undivisible_nodes.is_empty(){
         println!("-> All nodes satisfy determinism :)");
     } else{
-    	println!("-> ZK-GENVER could not verify determinism of all components");
+    	println!("-> AVAZAR could not verify determinism of all components");
     	if !results.failed_nodes.is_empty(){
         	println!("Nodes that do not satisfy determinism: ");
         	for c in &results.failed_nodes{
@@ -617,7 +745,13 @@ fn print_pretty_results(results: &ResultInfoDeterminism){
     		}
         }
     }
-    println!("  * Number of verified nodes (determinism): {}",  results.verified_nodes.len());
+    println!("  * Number of verified nodes (determinism): {}",  results.verified_nodes.len() + results.previously_verified_nodes.len());
+    if results.previously_verified_nodes.len() > 0{
+        println!("    - Number of nodes that were verified previously (syntactic analysis): {}", results.previously_verified_nodes.len());
+    }
+    if results.verified_nodes.len() > 0{
+        println!("    - Number of nodes that were verified by AVAZAR tool: {}", results.verified_nodes.len());
+    } 
     println!("  * Number of failed nodes (determinism): {}",  results.failed_nodes.len());        
     println!("  * Number of timeout nodes (determinism): {}",  results.unknown_nodes.len()+results.unknown_undivisible_nodes.len());
     println!("  * Percentage of constraints that are in verified nodes : {}%", (results.verified_constraints as f64 / results.total_constraints as f64) * 100.0);

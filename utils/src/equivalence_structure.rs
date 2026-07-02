@@ -30,20 +30,21 @@ impl AddAssign for TimingInfo {
 pub struct NodeInfo{
     pub node_id: usize,
     pub node_name:String,
-    pub component_name: String,
-    pub constraints: Vec<usize>, //ids of the constraints
-    pub input_signals: Vec<usize>,
-    pub output_signals: Vec<usize>,
-    pub signals: Vec<usize>, 
+    pub constraints_1: Vec<usize>, //ids of the constraints
+    pub constraints_2: Vec<usize>, //ids of the constraints
+    pub input_signals_1: Vec<usize>,
+    pub input_signals_2: Vec<usize>,
+    pub output_signals_1: Vec<usize>,
+    pub output_signals_2: Vec<usize>,
+    pub signals_1: Vec<usize>, 
+    pub signals_2: Vec<usize>, 
     pub is_custom: bool,
-    pub is_deterministic: bool,
     pub predecessors: Vec<usize>, //ids of the predecessors
     pub successors: Vec<usize> //ids of the successors 
-
 }
 
 #[derive(Deserialize, Serialize, Debug)]
-pub struct StructureInfo {
+pub struct EquivalenceStructureInfo {
     pub timing: TimingInfo,
     pub nodes: Vec<NodeInfo>, //all the nodes of the circuit, position of the node is not the position.
     pub local_equivalency: Vec<Vec<usize>>, //equivalence classes, each inner vector is a class
@@ -63,22 +64,8 @@ pub struct WeightedArcs<T> {
     pub arcs: Vec<(T, T, f64)>
 }
 
-pub fn print_node_info(node: &NodeInfo, constraints: &Vec<Constraint<usize>>){
-    println!("Input signals: {:?}", node.input_signals);
-    println!("Output signals: {:?}", node.output_signals);
-    println!("Signals: {:?}", node.signals);
-    println!("Successors: {:?}", node.successors);
-    println!("Is custom: {}", node.is_custom);
-    println!("Is deterministic: {}", node.is_deterministic);
 
-
-    for c in &node.constraints{
-        let c = &constraints[*c];
-        c.print_pretty_constraint();
-    }
-}
-
-pub fn read_structure<P: AsRef<Path>>(path: P) -> Result<StructureInfo, Box<dyn Error>> {
+pub fn read_equivalence_structure<P: AsRef<Path>>(path: P) -> Result<EquivalenceStructureInfo, Box<dyn Error>> {
     // Open the file in read-only mode with buffer.
     let file = File::open(path)?;
     let reader = BufReader::new(file);
@@ -91,7 +78,7 @@ pub fn read_structure<P: AsRef<Path>>(path: P) -> Result<StructureInfo, Box<dyn 
 
 pub fn transform_structure_reader(
     u: StructureReader
-) -> StructureInfo{
+) -> EquivalenceStructureInfo{
     let mut local_equivalence = Vec::new();
     if u.equivalency_local.is_some() { 
     	local_equivalence = u.equivalency_local.unwrap(); 
@@ -109,7 +96,7 @@ pub fn transform_structure_reader(
     	structural_equivalence = local_equivalence.clone();
     }
 
-    StructureInfo {
+    EquivalenceStructureInfo {
         timing: u.timing,
         nodes: u.nodes,
         local_equivalency: local_equivalence,
@@ -119,12 +106,16 @@ pub fn transform_structure_reader(
 }
 
 
-pub fn generate_empty_structure(
+pub fn generate_empty_equivalence_structure(
     n_constraints: usize, 
+    n_constraints_2: usize,
     n_signals:usize,
+    n_signals_2:usize,
     n_outputs: usize,
-    n_inputs: usize
-) -> StructureInfo{
+    n_outputs_2: usize,
+    n_inputs: usize,
+    n_inputs_2: usize
+) -> EquivalenceStructureInfo{
     
 
     let aux_timing = TimingInfo{
@@ -137,18 +128,20 @@ pub fn generate_empty_structure(
 
     let node = NodeInfo{
         node_name: "main".to_string(),
-        component_name:  "main".to_string(),
         node_id: 0,
-        constraints: (0..n_constraints).collect(),
-        output_signals: (1.. n_outputs + 1).collect(),
-        input_signals: (n_outputs + 1..n_outputs + n_inputs + 1).collect(),
-        signals: (1..n_signals).collect(),
+        constraints_1: (0..n_constraints).collect(),
+        constraints_2: (0..n_constraints_2).collect(),
+        output_signals_1: (1.. n_outputs + 1).collect(),
+        output_signals_2: (1.. n_outputs_2 + 1).collect(),
+        input_signals_1: (n_outputs + 1..n_outputs + n_inputs + 1).collect(),
+        input_signals_2: (n_outputs_2 + 1..n_outputs_2 + n_inputs_2 + 1).collect(),
+        signals_1: (1..n_signals).collect(),
+        signals_2: (1..n_signals_2).collect(),
         is_custom: false,
-        is_deterministic: false,
         predecessors: vec![],
         successors: vec![]
     };
-    StructureInfo{
+    EquivalenceStructureInfo{
         timing: aux_timing,
         nodes: vec![node],
         local_equivalency: vec![vec![0]],

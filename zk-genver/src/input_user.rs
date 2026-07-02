@@ -7,20 +7,25 @@ use crate::BigInt;
 pub struct Input {
     pub input_r1cs: PathBuf,
     pub input_structure: Option<PathBuf>,
+    pub input_correspondence: Option<PathBuf>,
+
     pub timeout: u64,
     pub original_structure: Option<PathBuf>,
     pub solver_option: PossibleSolver,
     pub flag_verbose: bool,
     pub apply_deduction_assigned: bool,
+    pub include_niaz3_in_all: bool,
     pub apply_predecessors: bool,
     pub apply_bidirectional: bool,
     pub prime: BigInt,
     pub clustering_size: usize,
     pub equivalence_mode: usize,
     pub target_size: usize,
+    pub limit_size: usize,
     pub extra_rounds: usize,
     pub check_equivalence: Option<PathBuf>,
-    pub check_correctness: Option<PathBuf>
+    pub check_correctness: Option<PathBuf>,
+    pub report_output: Option<PathBuf>,
 }
 
 
@@ -29,6 +34,7 @@ impl Input {
         let matches = input_processing::view();
         let input_r1cs = input_processing::get_input_r1cs(&matches)?;
         let input_structure = input_processing::get_input_structure(&matches)?;
+        let input_correspondence = input_processing::get_input_correspondence(&matches)?;
         let timeout =  input_processing::get_timeout(&matches)?;
         let original_structure = input_processing::get_original_structure(&matches)?;
         let solver_option = input_processing::get_solver(&matches)?;
@@ -36,6 +42,7 @@ impl Input {
         let prime = input_processing::get_prime(&matches)?;
         let clustering_size = input_processing::get_clustering_size(&matches)?;
         let desactivate_deduction_assigned = input_processing::get_apply_deduction_assigned(&matches);
+        let include_niaz3_in_all = input_processing::get_include_niaz3_in_all(&matches);
         let apply_predecessors = input_processing::get_apply_predecessors(&matches);
         let apply_bidirectional = input_processing::get_apply_bidirectional(&matches);
 
@@ -44,11 +51,13 @@ impl Input {
         let extra_rounds = input_processing::get_extra_rounds(&matches)?;
         let check_equivalence = input_processing::get_check_equivalence(&matches)?;
         let check_correctness = input_processing::get_check_correctness(&matches)?;
-
+        let limit_size = input_processing::get_limit_size(&matches)?;
+        let report_output = input_processing::get_report_output(&matches);
 
         Result::Ok(Input {
             input_r1cs,
             input_structure,
+            input_correspondence,
             timeout,
             original_structure,
             solver_option,
@@ -56,13 +65,16 @@ impl Input {
             prime,
             clustering_size,
             apply_deduction_assigned: !desactivate_deduction_assigned,
+            include_niaz3_in_all,
             apply_predecessors,
             apply_bidirectional,
             equivalence_mode,
             target_size,
             extra_rounds,
+            limit_size,
             check_equivalence,
-            check_correctness
+            check_correctness,
+            report_output,
         })
     }
 }
@@ -88,6 +100,19 @@ mod input_processing {
     pub fn get_input_structure(matches: &ArgMatches) -> Result<Option<PathBuf>, ()> {
         if matches.is_present("input_structure"){
             let route = Path::new(matches.value_of("input_structure").unwrap()).to_path_buf();
+            if route.is_file() {
+                Result::Ok(Some(route))
+            } else {
+                Result::Err(eprintln!("{}", Colour::Red.paint("invalid input structure")))
+            }
+        } else{
+            Ok(None)
+        }
+    }
+
+    pub fn get_input_correspondence(matches: &ArgMatches) -> Result<Option<PathBuf>, ()> {
+        if matches.is_present("correspondence"){
+            let route = Path::new(matches.value_of("correspondence").unwrap()).to_path_buf();
             if route.is_file() {
                 Result::Ok(Some(route))
             } else {
@@ -155,6 +180,10 @@ mod input_processing {
     pub fn get_apply_deduction_assigned(matches: &ArgMatches) -> bool {
         matches.is_present("desactivate_deduction_assigned")
     }
+
+    pub fn get_include_niaz3_in_all(matches: &ArgMatches) -> bool {
+        matches.is_present("include_niaz3_in_all")
+    }
     
     pub fn get_apply_predecessors(matches: &ArgMatches) -> bool {
         matches.is_present("apply_predecessors")
@@ -185,30 +214,51 @@ mod input_processing {
             Result::Err(eprintln!("{}", Colour::Red.paint("invalid clustering size")))
         }
     }
+
+    pub fn get_limit_size(matches: &ArgMatches) -> Result<usize, ()> {
+        let limit_size_argument = matches.value_of("limit_size").unwrap();
+        let limit_size = usize::from_str_radix(limit_size_argument, 10);
+        if let Result::Ok(size) = limit_size { 
+           Ok(size)
+        }
+        else { 
+            Result::Err(eprintln!("{}", Colour::Red.paint("invalid limit size")))
+        }
+    }
     
     pub fn get_solver(matches: &ArgMatches) -> Result<PossibleSolver,()> {
         use solvers_interface::PossibleSolver::*;
         match matches.is_present("solver"){
-            true => 
-               {
-                   let solver = matches.value_of("solver").unwrap().to_ascii_lowercase();
-                   if solver == "civer"{
-                        Ok(CIVER)
-                    } else if solver == "picus"{
-                        Ok(PICUS)
-                    } else if solver == "ffsol"{
-                        Ok(FFSOL)
-                    } else if solver == "cvc5"{
-                        Ok(CVC5)
-                    } else if solver == "z3"{
-                        Ok(Z3)
-                    } else if solver == "all"{
-                        Ok(ALL)
-                    }else{
-                        Result::Err(eprintln!("{}", Colour::Red.paint("invalid solver")))
-                    }
-               }
-               
+            true => {
+                let solver = matches.value_of("solver").unwrap().to_ascii_lowercase();
+                let solver_enum = if solver == "civer" {
+                    Ok(CIVER)
+                } else if solver == "picus" {
+                    Ok(PICUS)
+                } else if solver == "ffsol" {
+                    Ok(FFSOL)
+                } else if solver == "cvc5" {
+                    Ok(CVC5)
+                } else if solver == "yices" {
+                    Ok(YICES)
+                } else if solver == "niaz3" || solver == "nia-z3" {
+                    Ok(NIAZ3)
+                } else if solver == "z3" {
+                    Ok(Z3)
+                } else if solver == "all" {
+                    Ok(ALL)
+                } else {
+                    Result::Err(eprintln!("{}", Colour::Red.paint("invalid solver")))
+                }?;
+
+                if solver_enum != ALL && !solver_enum.is_available() {
+                    let binary = solver_enum.required_binary().unwrap();
+                    return Result::Err(eprintln!("{}", Colour::Red.paint(
+                        format!("solver '{}' requires '{}' which was not found in PATH", solver, binary)
+                    )));
+                }
+                Ok(solver_enum)
+            }
             false => Ok(CIVER),
         }
     }
@@ -248,12 +298,16 @@ mod input_processing {
     pub fn get_extra_rounds(matches: &ArgMatches) -> Result<usize, ()> {
         let timeout_argument = matches.value_of("extra_rounds").unwrap();
         let timeout = usize::from_str_radix(timeout_argument, 10);
-        if let Result::Ok(time) = timeout { 
+        if let Result::Ok(time) = timeout {
            Ok(time)
         }
-        else { 
+        else {
             Result::Err(eprintln!("{}", Colour::Red.paint("invalid extra_rounds")))
         }
+    }
+
+    pub fn get_report_output(matches: &ArgMatches) -> Option<PathBuf> {
+        matches.value_of("report").map(|s| PathBuf::from(s))
     }
 
     pub fn view() -> ArgMatches<'static> {
@@ -282,6 +336,14 @@ mod input_processing {
                     .display_order(460)
             )
             .arg(
+                Arg::with_name("correspondence")
+                    .long("correspondence")
+                    .hidden(false)
+                    .takes_value(true)
+                    .help("The correspondence between the witness signals and the original names in the circom program")
+                    .display_order(460)
+            )
+            .arg(
                 Arg::with_name("check_equivalence")
                     .long("check_equivalence")
                     .hidden(false)
@@ -305,6 +367,15 @@ mod input_processing {
                     .default_value("5000")
                     .help("Timeout for the solvers")
                     .display_order(500)
+            )
+            .arg(
+                Arg::with_name("limit_size")
+                    .long("limit_size")
+                    .takes_value(true)
+                    .hidden(false)
+                    .default_value("500000")
+                    .help("Limit size of the nodes -> not sending to the solvers nodes with more than this limit. Decomposing instead.")
+                    .display_order(876)
             )
             .arg(
                 Arg::with_name("desactivate_deduction_assigned")
@@ -339,11 +410,19 @@ mod input_processing {
                     .display_order(600)
             )
             .arg(
+                Arg::with_name("include_niaz3_in_all")
+                    .long("include_niaz3_in_all")
+                    .takes_value(false)
+                    .hidden(false)
+                    .help("When using --solver all, also run the NIA-Z3 backend")
+                    .display_order(600)
+            )
+            .arg(
                 Arg::with_name("solver")
                     .long("solver")
                     .takes_value(true)
                     .hidden(false)
-                        .help("Solver to be used for the verification of the circuit. ZK-GENVER allows ffsol, cvc5, z3, picus, civer (default), and ALL")
+                        .help("Solver to be used for the verification of the circuit. ZK-GENVER allows ffsol, cvc5, yices, niaz3, z3, picus, civer (default), and ALL")
                     .display_order(480)
             )
             .arg(
@@ -391,6 +470,14 @@ mod input_processing {
                     .help("To choose the number of extra rounds of adding successors/predecessors when a node makes timeout. The default value is 0."),
             )
             
+            .arg(
+                Arg::with_name("report")
+                    .long("report")
+                    .takes_value(true)
+                    .hidden(false)
+                    .help("Path to write a JSON report with all results and statistics")
+                    .display_order(900)
+            )
             .get_matches()
     }
 
