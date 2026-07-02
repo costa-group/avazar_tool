@@ -17,7 +17,8 @@ pub struct MixedGraph {
     pub dir_adjacencies: Vec<HashSet<usize>>,
     pub edges: Vec<(usize, usize)>,
     pub input_parts: HashSet<usize>,
-    pub output_parts: HashSet<usize>
+    pub output_parts: HashSet<usize>,
+    dir_adjacencies_is_outgoing: bool
 }
 
 // NOTE: this struct doesn't handle correctness -- correctness is handled by the user
@@ -31,7 +32,7 @@ impl MixedGraph {
 
         let dir_adjacencies = vec![HashSet::new(); partition.len()];
 
-        Self {n: partition.len(), m: edges.len(), partition, adjacencies, dir_adjacencies, edges, input_parts, output_parts}
+        Self {n: partition.len(), m: edges.len(), partition, adjacencies, dir_adjacencies, edges, input_parts, output_parts, dir_adjacencies_is_outgoing: true}
     }
 
     pub fn merge(&self, mut undirected_components: UnionFind) -> MixedGraph {
@@ -59,9 +60,10 @@ impl MixedGraph {
                         .filter(|(a, b)| a < b)
                         .collect();
 
-        Self { n: merged_partition.len(), m: edges.len(), partition: merged_partition, adjacencies: merged_adjacencies, dir_adjacencies: merged_dir_adjacencies, edges, input_parts: merged_inputs, output_parts: merged_outputs }
+        Self { n: merged_partition.len(), m: edges.len(), partition: merged_partition, adjacencies: merged_adjacencies, dir_adjacencies: merged_dir_adjacencies, edges, input_parts: merged_inputs, output_parts: merged_outputs, dir_adjacencies_is_outgoing: true }
     }
 
+    pub fn invert_edge_direction(&mut self) -> bool {self.dir_adjacencies_is_outgoing = !self.dir_adjacencies_is_outgoing; self.dir_adjacencies_is_outgoing}
     pub fn pair_oriented(&self, u: usize, v: usize) -> bool { self.dir_adjacencies[u].contains(&v) || self.dir_adjacencies[v].contains(&u) }
     pub fn edge_oriented(&self, e: usize) -> bool { self.dir_adjacencies[self.edges[e].0].contains(&self.edges[e].1) || self.dir_adjacencies[self.edges[e].1].contains(&self.edges[e].0) }
 
@@ -75,8 +77,10 @@ impl MixedGraph {
         for e in 0..self.m {
             if self.edge_oriented(e) {continue;}
             let (u, v) = self.edges[e];
-            if lt(part_to_preorder[u], part_to_preorder[v]) {self.dir_adjacencies[u].insert(v);}
-            else if lt(part_to_preorder[v], part_to_preorder[u]) {self.dir_adjacencies[v].insert(u);}
+            let direction: Option<(usize, usize)> = if lt(part_to_preorder[u], part_to_preorder[v]) {Some((u,v))}
+            else if lt(part_to_preorder[v], part_to_preorder[u]) {Some((v,u))} else {None};
+            direction.map(|(u,v)| if self.dir_adjacencies_is_outgoing {(u,v)} else {(v,u)});
+            if let Some((parent, child)) = direction {self.dir_adjacencies[parent].insert(child);}
         }
 
         part_to_preorder
@@ -133,7 +137,7 @@ impl MixedGraph {
             println!("oriented_edges: {:?}", oriented_edges);
         }
 
-        self.dir_adjacencies = self.adjacencies.iter().enumerate().map(|(v, part)| part.into_iter().copied().filter(|&u| compare(v, u, &current_preorder).is_some_and(|x| x) ).collect()).collect();
+        self.dir_adjacencies = self.adjacencies.iter().enumerate().map(|(v, part)| part.into_iter().copied().filter(|&u| compare(v, u, &current_preorder).is_some_and(|x| x == self.dir_adjacencies_is_outgoing) ).collect()).collect();
         current_preorder
     }
 
@@ -143,7 +147,8 @@ impl MixedGraph {
         for v in (0..self.n).filter(|&v| self.adjacencies[v].len() == 1 && self.adjacencies[self.adjacencies[v][0]].len() != 1) {
             let u = self.adjacencies[v][0];
             if self.pair_oriented(u, v) {continue;}
-            self.dir_adjacencies[u].insert(v);
+            if self.dir_adjacencies_is_outgoing {self.dir_adjacencies[u].insert(v);}
+            else {self.dir_adjacencies[v].insert(u);}
         }
     }
 
@@ -166,8 +171,8 @@ impl MixedGraph {
                 None, None))
         }).collect();
       
-        for (v, outgoing) in self.dir_adjacencies.iter().enumerate() {for u in outgoing.into_iter().copied() {
-            add_arc_to_nodes((u, v), &idx_to_nodeid, &part_to_signals_arr, &mut nodes);
+        for (v, arcs) in self.dir_adjacencies.iter().enumerate() {for u in arcs.into_iter().copied() {
+            add_arc_to_nodes(if self.dir_adjacencies_is_outgoing {(v,u)} else {(u,v)}, &idx_to_nodeid, &part_to_signals_arr, &mut nodes);
         }}
 
         (nodes, part_to_signals_arr, idx_to_nodeid)
@@ -214,8 +219,10 @@ impl MixedGraph {
                         .map(|&(a, b)| !self.pair_oriented(a, b))
                         .collect();
         
+        let contains_value: usize = if self.dir_adjacencies_is_outgoing {2} else {1};
+
         let init_direction: Vec<usize> = self.edges.iter()
-                        .map(|&(a, b)| if self.dir_adjacencies[a].contains(&b) {2} else if self.dir_adjacencies[b].contains(&a) {1} else {0} )
+                        .map(|&(a, b)| if self.dir_adjacencies[a].contains(&b) {contains_value} else if self.dir_adjacencies[b].contains(&a) {3 - contains_value} else {0} )
                         .collect();
         
         write_dzn("data.dzn", &self.adjacencies, &self.edges, &fuzzy, &init_direction, &self.input_parts, &self.output_parts); 
