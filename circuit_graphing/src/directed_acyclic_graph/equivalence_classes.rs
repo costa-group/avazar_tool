@@ -104,7 +104,7 @@ fn fingerprint_subcircuits<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
         [(1, nodes[&indices[idx]].get_output_signals().into_iter().copied().collect()),
         (2, nodes[&indices[idx]].get_input_signals().into_iter().copied().collect()),
         (3, nodes[&indices[idx]].get_constraint_indices().flat_map(
-            |coni| circ.get_constraints()[coni].borrow().signals()).collect::<HashSet<usize>>().into_iter().filter(
+            |coni| circ.get_constraint(coni).signals()).collect::<HashSet<usize>>().into_iter().filter(
             |sig| !nodes[&indices[idx]].get_input_signals().contains(sig) && !nodes[&indices[idx]].get_output_signals().contains(sig)
             ).collect()
         )
@@ -146,12 +146,11 @@ fn dagnode_equivalency_preprocessing<'a, C: Constraint + 'a, S: Circuit<C> + 'a>
 
     let circ = nodes.values().next().unwrap().get_circ();
     let prime = circ.prime();
-    let constraints = circ.get_constraints();
 
     let normalised_constraints_by_id: HashMap<usize, Vec<C>> = nodes.iter().map(
-        |(key, node)| (*key, node.get_constraint_indices().flat_map(|coni| constraints[coni].borrow().normalise(prime)).collect())
+        |(key, node)| (*key, node.get_constraint_indices().flat_map(|coni| circ.get_constraint(coni).normalise(prime)).collect())
     ).collect();
-    let sig_to_normi_by_id: HashMap<usize, HashMap<usize, Vec<usize>>> = nodes.keys().map(|key| (*key, signals_to_constraints_with_them(&normalised_constraints_by_id[key], None, None))).collect();
+    let sig_to_normi_by_id: HashMap<usize, HashMap<usize, Vec<usize>>> = nodes.keys().map(|key| (*key, signals_to_constraints_with_them::<C>(&normalised_constraints_by_id[key], None, None))).collect();
 
     (normalised_constraints_by_id, sig_to_normi_by_id)
 }

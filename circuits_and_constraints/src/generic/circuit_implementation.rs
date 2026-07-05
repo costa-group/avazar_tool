@@ -50,12 +50,8 @@ impl Circuit<ExpressionWrapper> for AIRDataWrapper {
     fn n_constraints(&self) -> usize {self.constraints.len()}
     fn n_wires(&self) -> usize {self.signals.len()}
     
-    fn get_constraints(&self) -> &Vec<impl Borrow<ExpressionWrapper>> {&self.constraints}
-
-    fn normalise_constraints(&self) -> Vec<ExpressionWrapper> {
-        self.get_constraints().into_iter().flat_map(|cons| cons.borrow().normalise(self.prime()).into_iter()).collect()
-    }
-
+    fn constraints(&self) -> Vec<&ExpressionWrapper> {self.constraints.iter().collect::<Vec<_>>()}
+    fn get_constraint(&self, idx: usize) -> &ExpressionWrapper {&self.constraints[idx]}
     fn n_inputs(&self) -> usize {self.inputs.len()}
     fn n_outputs(&self) -> usize {self.outputs.len()}
     fn signal_is_input(&self, signal: &usize) -> bool {self.inputs.contains(signal)}
@@ -98,11 +94,10 @@ impl Circuit<ExpressionWrapper> for AIRDataWrapper {
             outputs = signal_mapping.keys().copied().filter(|sig| self.signal_is_output(sig)).collect();
             (input_signals_unwrapped, output_signals_unwrapped) = (&inputs, &outputs);
         }
-        let self_constraints = self.get_constraints();
 
         LightweightCircuit::from(
             self.prime(),
-            constraint_subset.into_iter().copied().map(|coni| self_constraints[coni].borrow()),
+            constraint_subset.into_iter().copied().map(|coni| self.get_constraint(coni)),
             input_signals_unwrapped,
             output_signals_unwrapped
         )

@@ -16,7 +16,7 @@ pub fn signals_to_constraints_with_them<C: Constraint>(
     
     let mut signal_to_cons = _signal_to_cons.unwrap_or_else(HashMap::new);
 
-    for (i, con) in names.map(|v| Either::Left(v.iter().copied())).unwrap_or_else(|| Either::Right(0..cons.len())).zip(cons.iter()) {
+    for (i, con) in names.map(|v| Either::Left(v.iter().copied())).unwrap_or_else(|| Either::Right(0..cons.len())).zip(cons.into_iter()) {
         for signal in con.borrow().signals() { // hmmm copied copied...
             signal_to_cons.entry(signal).or_insert_with(Vec::new).push(i)
         }

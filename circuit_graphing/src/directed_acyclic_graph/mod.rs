@@ -43,7 +43,7 @@ impl<'a, C: Constraint + 'a, S: Circuit<C> + 'a> DAGNode<'a, C, S> {
     }
 
     pub fn signals(&self) -> HashSet<usize> {
-        self.get_constraint_indices().flat_map(|coni| self.circ.get_constraints()[coni].borrow().signals()).collect()
+        self.get_constraint_indices().flat_map(|coni| self.circ.get_constraint(coni).signals()).collect()
     }
 
     pub fn add_successors(&mut self, to_add: impl Iterator<Item = usize>) -> () {
@@ -89,7 +89,7 @@ impl<'a, C: Constraint + 'a, S: Circuit<C> + 'a> DAGNode<'a, C, S> {
     pub fn to_json(self, inverse_constraint_mapping: Option<&[usize]>, inverse_signal_mapping: Option<&[usize]>) -> NodeInfo {
         let signal_mapping = |sig: usize| if inverse_signal_mapping.is_none() {sig} else {inverse_signal_mapping.unwrap()[sig]};
         let constraint_mapping = |coni: usize| if inverse_constraint_mapping.is_none() {coni} else {inverse_constraint_mapping.unwrap()[coni]};
-        let signals: Vec<usize> = self.constraints.iter().flat_map(|x| self.circ.get_constraints()[*x].borrow().signals()).collect::<HashSet<usize>>().into_iter().map(signal_mapping).collect();
+        let signals: Vec<usize> = self.constraints.iter().flat_map(|x| self.circ.get_constraint(*x).signals()).collect::<HashSet<usize>>().into_iter().map(signal_mapping).collect();
 
         NodeInfo {
             node_name: format!("node_{}",self.id),

@@ -35,9 +35,8 @@ impl<'a, C: Constraint> Circuit<C> for LightweightCircuit<'a, C> {
     }
     fn n_wires(&self) -> usize {self.signals.len()}
     
-    fn get_constraints(&self) -> &Vec<impl Borrow<C>> {
-        &self.constraints
-    }
+    fn constraints(&self) -> Vec<&C> {self.constraints.clone()}
+    fn get_constraint(&self, idx: usize) -> &C {self.constraints[idx]}
 
     fn n_inputs(&self) -> usize {self.inputs.len()}
     fn n_outputs(&self) -> usize {self.outputs.len()}

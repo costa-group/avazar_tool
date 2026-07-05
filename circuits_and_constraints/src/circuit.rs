@@ -12,10 +12,11 @@ pub trait Circuit<C: Constraint> {
     fn n_constraints(&self) -> usize;
     fn n_wires(&self) -> usize;
     
-    fn get_constraints(&self) -> &Vec<impl Borrow<C>>;
+    fn constraints(&self) -> Vec<&C>;
+    fn get_constraint(&self, idx: usize) -> &C;
 
     fn normalise_constraints(&self) -> Vec<C> {
-        self.get_constraints().into_iter().flat_map(|cons| cons.borrow().normalise(self.prime()).into_iter()).collect()
+        self.constraints().into_iter().flat_map(|cons| cons.normalise(self.prime()).into_iter()).collect()
     }
 
     fn n_inputs(&self) -> usize;

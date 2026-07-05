@@ -45,7 +45,7 @@ pub fn undo_clique_clusters<C: Constraint>(circ: &impl Circuit<C>, partition: Ve
 fn get_weighted_arcs<C: Constraint>(circ: &impl Circuit<C>, clique_cluster_size: Option<usize>, debug: usize) -> ( FxHashMap<[usize;2], usize>, Vec<Vec<usize>> ) {
 
     let signal_to_coni_timer = Instant::now();
-    let signal_to_coni = signals_to_constraints_with_them(&circ.get_constraints(), None, None);
+    let signal_to_coni = signals_to_constraints_with_them::<C>(&circ.constraints(), None, None);
     if debug > 1 {println!("LOG: finished signal_to_coni calculation in {:?}s", signal_to_coni_timer.elapsed().as_secs_f32());}
     let mut weights: FxHashMap<[usize;2], usize> = FxHashMap::default();
 

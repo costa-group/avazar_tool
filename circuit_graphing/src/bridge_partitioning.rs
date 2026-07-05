@@ -21,14 +21,13 @@ pub fn bridge_partitioning<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(circ: &'a
     let mut nonbridge_connectedness = UnionFind::new(false);
 
     let prime = circ.prime();
-    let constraints = circ.get_constraints();
-    let signal_to_coni = signals_to_constraints_with_them(circ.get_constraints(), None, None);
+    let signal_to_coni = signals_to_constraints_with_them::<C>(&circ.constraints(), None, None);
     
     if debug > 1 {println!("LOG: Finished signal to coni in {:?}", signal_to_coni_timer.elapsed());}
     let nonbridge_connectedness_timer = Instant::now();
 
     for adjacent in signal_to_coni.values() {
-        nonbridge_connectedness.union(adjacent.iter().copied().filter(|coni| !constraints[*coni].borrow().is_bridge_constraint(prime, strict_bridge)));
+        nonbridge_connectedness.union(adjacent.iter().copied().filter(|coni| !circ.get_constraint(*coni).is_bridge_constraint(prime, strict_bridge)));
     }
 
     if debug > 1 {println!("LOG: Finished nonbridge unionfind in {:?}", nonbridge_connectedness_timer.elapsed());}
@@ -38,7 +37,7 @@ pub fn bridge_partitioning<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(circ: &'a
     let mut node_to_coni: Vec<Vec<usize>> = nonbridge_connectedness.get_components();
     let mut signal_to_node: HashMap<usize, usize> = HashMap::new();
 
-    for (parti, part) in node_to_coni.iter().enumerate() {for signal in part.iter().copied().flat_map(|coni| constraints[coni].borrow().signals().into_iter()).collect::<HashSet<usize>>().into_iter() {
+    for (parti, part) in node_to_coni.iter().enumerate() {for signal in part.iter().copied().flat_map(|coni| circ.get_constraint(coni).signals().into_iter()).collect::<HashSet<usize>>().into_iter() {
         signal_to_node.insert(signal, parti); // by connectedness this can never overlap
     }}
 
@@ -48,14 +47,14 @@ pub fn bridge_partitioning<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(circ: &'a
     // for bridge nodes if they are between two, keep separate -- otherwise add to part
 
     let mut bridge_connectedness = UnionFind::new(false);
-    for con in constraints.into_iter().filter(|&con| con.borrow().is_bridge_constraint(prime, strict_bridge)) { 
+    for con in circ.constraints().into_iter().filter(|&con| con.is_bridge_constraint(prime, strict_bridge)) { 
         bridge_connectedness.union(
-            con.borrow().signals().into_iter().flat_map(|signal| signal_to_coni[&signal].iter().copied()).collect::<HashSet<usize>>().into_iter().filter(|coni| constraints[*coni].borrow().is_bridge_constraint(prime, strict_bridge))
+            con.signals().into_iter().flat_map(|signal| signal_to_coni[&signal].iter().copied()).collect::<HashSet<usize>>().into_iter().filter(|coni| circ.get_constraint(*coni).is_bridge_constraint(prime, strict_bridge))
         );
     }
 
     for component in bridge_connectedness.get_components().into_iter() {
-        let adjacent_nodes: HashSet<usize> = component.iter().copied().flat_map(|coni| constraints[coni].borrow().signals().into_iter().flat_map(|signal| signal_to_node.get(&signal).copied().into_iter())).collect();
+        let adjacent_nodes: HashSet<usize> = component.iter().copied().flat_map(|coni| circ.get_constraint(coni).signals().into_iter().flat_map(|signal| signal_to_node.get(&signal).copied().into_iter())).collect();
         if adjacent_nodes.len() == 1 {node_to_coni[adjacent_nodes.into_iter().next().unwrap()].extend(component.into_iter());}
         else {node_to_coni.push(component);}
     }

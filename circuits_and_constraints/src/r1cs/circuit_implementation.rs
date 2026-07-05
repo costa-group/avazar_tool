@@ -15,9 +15,8 @@ impl Circuit<R1CSConstraint> for R1CSData {
     fn prime(&self) -> &BigInt {&self.header_data.field}
     fn n_constraints(&self) -> usize {self.header_data.number_of_constraints}
     fn n_wires(&self) -> usize {self.header_data.total_wires}
-    
-    
-    fn get_constraints(&self) -> &Vec< impl Borrow<R1CSConstraint>> {&self.constraints}
+    fn constraints(&self) -> Vec<&R1CSConstraint> {self.constraints.iter().collect::<Vec<_>>()}
+    fn get_constraint(&self, idx: usize) -> &R1CSConstraint {&self.constraints[idx]}
     fn n_inputs(&self) -> usize {self.header_data.public_inputs + self.header_data.private_inputs}
     fn n_outputs(&self) -> usize {self.header_data.public_outputs}
     fn signal_is_input(&self, signal: &usize) -> bool {let sig = *signal; self.header_data.public_outputs < sig && sig <= self.header_data.public_inputs + self.header_data.private_inputs + self.header_data.public_outputs} 
@@ -53,11 +52,10 @@ impl Circuit<R1CSConstraint> for R1CSData {
             outputs = signal_mapping.keys().copied().filter(|sig| self.signal_is_output(sig)).collect();
             (input_signals_unwrapped, output_signals_unwrapped) = (&inputs, &outputs);
         }
-        let self_constraints = self.get_constraints();
 
         LightweightCircuit::from(
             self.prime(),
-            constraint_subset.into_iter().copied().map(|coni| self_constraints[coni].borrow()),
+            constraint_subset.into_iter().copied().map(|coni| self.get_constraint(coni)),
             input_signals_unwrapped,
             output_signals_unwrapped
         )

@@ -14,7 +14,7 @@ fn merge_under_property<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
     arc_property: fn(&DAGNode<'a, C, S>, &DAGNode<'a, C, S>, bool) -> usize
 ) -> () {
 
-    let sig_to_coni = signals_to_constraints_with_them(circ.get_constraints(), None, None);
+    let sig_to_coni = signals_to_constraints_with_them::<C>(&circ.constraints(), None, None);
     let mut coni_to_node: Vec<usize> = vec![0; circ.n_constraints()];
 
     for (coni, node_id) in nodes.values().flat_map(|node| node.constraints.iter().map(|coni| (coni, node.id))) { coni_to_node[*coni] = node_id };
@@ -89,7 +89,7 @@ pub fn merge_passthrough<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
         node.get_input_signals().contains(signal) && node.get_output_signals().contains(signal)
     }
 
-    let sig_to_coni = signals_to_constraints_with_them(circ.get_constraints(), None, None);
+    let sig_to_coni = signals_to_constraints_with_them::<C>(&circ.constraints(), None, None);
     let mut coni_to_node: Vec<usize> = vec![0; circ.n_constraints()];
     for (coni, node_id) in nodes.values().flat_map(|node| node.constraints.iter().map(|coni| (coni, node.id))) { coni_to_node[*coni] = node_id };
     

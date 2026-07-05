@@ -52,7 +52,8 @@ impl Circuit<ACIRConstraint> for ACIRCircuit{
     fn prime(&self) -> &BigInt {&self.prime}
     fn n_constraints(&self) -> usize {self.constraints.len()}
     fn n_wires(&self) -> usize {self.signals.len()}
-    fn get_constraints(&self) -> &Vec<impl Borrow<ACIRConstraint>> {&self.constraints}
+    fn constraints(&self) -> Vec<&ACIRConstraint> {self.constraints.iter().collect::<Vec<_>>()}
+    fn get_constraint(&self, idx: usize) -> &ACIRConstraint {&self.constraints[idx]}
     fn n_inputs(&self) -> usize {self.input_signals.len()}
     fn n_outputs(&self) -> usize {self.output_signals.len()}
     fn signal_is_input(&self, signal: &usize) -> bool {self.input_signals.contains(signal)}
@@ -128,11 +129,10 @@ impl Circuit<ACIRConstraint> for ACIRCircuit{
             outputs = signal_mapping.keys().copied().filter(|sig| self.signal_is_output(sig)).collect();
             (input_signals_unwrapped, output_signals_unwrapped) = (&inputs, &outputs);
         }
-        let self_constraints = self.get_constraints();
 
         LightweightCircuit::from(
             self.prime(),
-            constraint_subset.into_iter().copied().map(|coni| self_constraints[coni].borrow()),
+            constraint_subset.into_iter().copied().map(|coni| self.get_constraint(coni)),
             input_signals_unwrapped,
             output_signals_unwrapped
         )

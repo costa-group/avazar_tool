@@ -114,7 +114,6 @@ fn decompose_circuit_over_dagnodes<'a, C: Constraint, S: Circuit<C>>(
 ) -> HashMap<usize, DAGNode<'a, C, S>> {
 
     let mut node_id_generator = 0..;
-    let constraints = circuit.get_constraints();
     let mut new_dagnodes: HashMap<usize, DAGNode<'a, C, S>> = HashMap::new();
     let mut previd_to_newids: HashMap<usize, HashSet<usize>> = HashMap::new();
 
@@ -130,7 +129,7 @@ fn decompose_circuit_over_dagnodes<'a, C: Constraint, S: Circuit<C>>(
             
         let lwcirc = LightweightCircuit::<C>::from(
             circuit.prime(), 
-            node.get_constraint_indices().map(|coni| constraints[coni].borrow()).collect::<Vec<_>>(), 
+            node.get_constraint_indices().map(|coni| circuit.get_constraint(coni)).collect::<Vec<_>>(), 
             node.get_input_signals(), 
             node.get_output_signals()
         );

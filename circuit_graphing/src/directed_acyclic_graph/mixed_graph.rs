@@ -33,7 +33,7 @@ impl MixedGraph {
         // sorted arr signal list
         let n_parts = partition.len();
         let part_to_signals_arr: Vec<Vec<usize>> = partition.iter().map(|part|
-            part.iter().copied().flat_map(|idx| circ.get_constraints()[idx].borrow().signals()).sorted_unstable().dedup().collect()
+            part.iter().copied().flat_map(|idx| circ.get_constraint(idx).signals()).sorted_unstable().dedup().collect()
         ).collect();
 
         let input_parts: HashSet<usize> = (0..n_parts).filter(|key| part_to_signals_arr[*key].iter().any(|sig| circ.signal_is_input(sig))).collect();
@@ -51,7 +51,7 @@ impl MixedGraph {
         }
 
         // get the signal indices
-        let sig_to_coni = signals_to_constraints_with_them(circ.get_constraints(), None, None);
+        let sig_to_coni = signals_to_constraints_with_them::<C>(&circ.constraints(), None, None);
         
         let mut last_seen_at: Vec<usize> = vec![0;n_parts];
         // note that this is not sorted
@@ -205,7 +205,7 @@ impl MixedGraph {
     ) -> (HashMap<usize, DAGNode<'a, C, S>>, Vec<Vec<usize>>, Vec<usize>) {
 
         let part_to_signals_arr: Vec<Vec<usize>> = self.partition.iter().map(|part|
-            part.into_iter().copied().flat_map(|idx| circ.get_constraints()[idx].borrow().signals()).sorted_unstable().dedup().collect()
+            part.into_iter().copied().flat_map(|idx| circ.get_constraint(idx).signals()).sorted_unstable().dedup().collect()
         ).collect();
         let idx_to_nodeid: Vec<usize> = node_id_generator.take(self.n).collect();
         let mut nodes : HashMap<usize, DAGNode<'a, C, S>> = self.partition.clone().into_iter().enumerate().map(|(idx, part)| {
