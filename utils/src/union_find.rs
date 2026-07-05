@@ -38,7 +38,7 @@ impl UnionFind {
         }
     }
 
-    pub fn get_components(&mut self) -> Vec<Vec<usize>> {
+    pub fn get_component_as_hashmap(&mut self) -> HashMap<usize, Vec<usize>> {
         let mut components: HashMap<usize, Vec<usize>> = HashMap::new();
         let keys: Vec<_> = self.parent.keys().copied().collect();
 
@@ -46,6 +46,10 @@ impl UnionFind {
             components.entry(self.find(parti)).or_insert(Vec::new()).push(parti);
         }
 
-        components.into_values().collect()
+        components
+    }
+
+    pub fn get_components(&mut self) -> Vec<Vec<usize>> {
+        self.get_component_as_hashmap().into_values().collect()
     }
 }

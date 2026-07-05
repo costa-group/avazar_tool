@@ -161,6 +161,33 @@ pub fn dfs_merge_in_dag(parent: &usize, child: &usize, adjacencies: &HashMap<usi
     can_reach_t.into_iter().filter(|(_, val)| *val).map(|(k, _)| k).copied().collect()
 }
 
+pub fn dfs_merge_set_in_dag(target_set: &[usize], adjacencies: &Vec<HashSet<usize>>) -> HashSet<usize> {
+
+    let mut can_reach_t: HashMap<usize, bool> = target_set.into_iter().copied().map(|v| (v, true)).collect();
+    let mut stack: Vec<usize> = target_set.into_iter().copied().flat_map(|v| adjacencies[v].iter().copied()).collect();
+
+    while stack.len() > 0 {
+
+        let curr: usize = *stack.last().unwrap();
+        if can_reach_t.contains_key(&curr) {
+            stack.pop();
+            continue;
+        };
+
+        stack.extend(adjacencies[curr].iter().copied().filter(|adj| can_reach_t.get(adj).is_none()));
+
+        if adjacencies[curr].iter().copied().any(|adj| can_reach_t.get(&adj).copied().unwrap_or(false) ) {
+            can_reach_t.entry(curr).or_insert(true);
+        } else if adjacencies[curr].iter().copied().all(|adj| !can_reach_t.get(&adj).copied().unwrap_or(true) ) {
+            can_reach_t.entry(curr).or_insert(false);
+        }
+
+    }
+
+    can_reach_t.into_iter().filter(|(_, val)| *val).map(|(k, _)| k).collect()
+}
+
+
 pub fn count_ints<T: Hash + Eq + Ord>(source: impl IntoIterator<Item = T>) -> Vec<(T, usize)> {
     let mut counter: HashMap<T, usize> = HashMap::new();
     for num in source.into_iter() {

@@ -14,6 +14,7 @@ use std::collections::HashMap;
 use std::collections::{HashSet, LinkedList};
 use std::path::Path;
 use num_bigint_dig::BigInt;
+use serde::{Serialize,Deserialize};
 
 use circom_algebra::algebra::Constraint;
 
@@ -69,7 +70,7 @@ impl PossibleSolver {
 }
 
 
-#[derive(PartialEq, Eq, Clone, Copy, Debug)] 
+#[derive(PartialEq, Eq, Clone, Copy, Debug, Serialize, Deserialize)] 
 pub enum PossibleResult{
     VERIFIED, UNKNOWN, FAILED, NOSTUDIED, NOTHING
 } impl PossibleResult {

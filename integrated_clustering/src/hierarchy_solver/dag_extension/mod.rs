@@ -1,0 +1,1 @@
+pub mod minizinc_interface;
