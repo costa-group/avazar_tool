@@ -83,7 +83,7 @@ impl MixedGraph {
         Self {n: partition.len(), m: edges.len(), partition, adjacencies, dir_adjacencies, edges, input_parts, output_parts, dir_adjacencies_is_outgoing: true}
     }
 
-    pub fn merge(&self, mut undirected_components: UnionFind) -> MixedGraph {
+    pub fn merge(&self, undirected_components: &mut UnionFind) -> (MixedGraph, HashMap<usize, usize>) {
 
         let components = undirected_components.get_components();
         let parent_to_newidx: HashMap<usize, usize> = components.iter().enumerate().map(|(idx, part)| (undirected_components.find(part[0]), idx)).collect();
@@ -108,12 +108,29 @@ impl MixedGraph {
                         .filter(|(a, b)| a < b)
                         .collect();
 
-        Self { n: merged_partition.len(), m: edges.len(), partition: merged_partition, adjacencies: merged_adjacencies, dir_adjacencies: merged_dir_adjacencies, edges, input_parts: merged_inputs, output_parts: merged_outputs, dir_adjacencies_is_outgoing: true }
+        (
+            Self { n: merged_partition.len(), m: edges.len(), partition: merged_partition, adjacencies: merged_adjacencies, dir_adjacencies: merged_dir_adjacencies, edges, input_parts: merged_inputs, output_parts: merged_outputs, dir_adjacencies_is_outgoing: true },
+            parent_to_newidx
+        )
     }
 
     pub fn invert_edge_direction(&mut self) -> bool {self.dir_adjacencies_is_outgoing = !self.dir_adjacencies_is_outgoing; self.dir_adjacencies_is_outgoing}
     pub fn pair_oriented(&self, u: usize, v: usize) -> bool { self.dir_adjacencies[u].contains(&v) || self.dir_adjacencies[v].contains(&u) }
     pub fn edge_oriented(&self, e: usize) -> bool { self.dir_adjacencies[self.edges[e].0].contains(&self.edges[e].1) || self.dir_adjacencies[self.edges[e].1].contains(&self.edges[e].0) }
+
+    fn orient_arc(&mut self, u: usize, v:usize) -> () {
+        let (u,v) = if self.dir_adjacencies_is_outgoing {(u,v)} else {(v,u)};
+        self.dir_adjacencies[u].insert(v);
+    }
+
+    pub fn orient_by_arcs(&mut self, arcs: &[(usize, usize)]) -> () {
+
+        for &(u, v) in arcs.into_iter() {
+            if self.pair_oriented(u, v) {continue;}
+            self.orient_arc(u, v);
+        }
+
+    }
 
     pub fn orient_by_partial_order(&mut self) -> Vec<(usize, usize)> {
 
@@ -125,10 +142,8 @@ impl MixedGraph {
         for e in 0..self.m {
             if self.edge_oriented(e) {continue;}
             let (u, v) = self.edges[e];
-            let direction: Option<(usize, usize)> = if lt(part_to_preorder[u], part_to_preorder[v]) {Some((u,v))}
-            else if lt(part_to_preorder[v], part_to_preorder[u]) {Some((v,u))} else {None};
-            direction.map(|(u,v)| if self.dir_adjacencies_is_outgoing {(u,v)} else {(v,u)});
-            if let Some((parent, child)) = direction {self.dir_adjacencies[parent].insert(child);}
+            if lt(part_to_preorder[u], part_to_preorder[v]) {self.orient_arc(u, v);}
+            else if lt(part_to_preorder[v], part_to_preorder[u]) {self.orient_arc(v,u);}
         }
 
         part_to_preorder
@@ -192,11 +207,11 @@ impl MixedGraph {
     pub fn orient_leaf_parts(&mut self) -> () {
 
         // leafs that are not two adjacent leafs are directed towards the leaf
-        for v in (0..self.n).filter(|&v| self.adjacencies[v].len() == 1 && self.adjacencies[self.adjacencies[v][0]].len() != 1) {
+        for v in 0..self.n {
+            if self.adjacencies[v].len() != 1 || self.adjacencies[self.adjacencies[v][0]].len() == 1 {continue;}
             let u = self.adjacencies[v][0];
             if self.pair_oriented(u, v) {continue;}
-            if self.dir_adjacencies_is_outgoing {self.dir_adjacencies[u].insert(v);}
-            else {self.dir_adjacencies[v].insert(u);}
+            self.orient_arc(u, v);
         }
     }
 
@@ -255,7 +270,8 @@ impl MixedGraph {
             }
 
             if debug > 1 {println!("merging: {:?}", count_ints(equal_distance.get_components().into_iter().map(|part| part.len())));}
-            *self = self.merge(equal_distance);
+            let (merged_graph, _) = self.merge(&mut equal_distance);
+            *self = merged_graph;
         }
 
         part_to_preorder

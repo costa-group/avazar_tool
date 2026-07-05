@@ -27,7 +27,7 @@ pub fn dag_from_partition_solver(
 
     let mut total_fuse = UnionFind::new(false);
     for e in 0..graph.m {if edge_is_fuzzy(e) {total_fuse.union([graph.edges[e].0, graph.edges[e].1].into_iter());} else {total_fuse.find(graph.edges[e].0); total_fuse.find(graph.edges[e].1);}}
-    let fused_graph = graph.merge(total_fuse);
+    let (fused_graph, _) = graph.merge(&mut total_fuse);
 
     let max_part = graph.partition.iter().map(|part| part.iter().copied().max().unwrap() ).max().unwrap();
     let mut coni_to_part = vec![usize::MAX; max_part+1];

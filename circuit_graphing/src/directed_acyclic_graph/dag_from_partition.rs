@@ -71,7 +71,8 @@ fn optimisation_hierarchy<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
     }
     for v in 0..graph.n {undirected_components.find(v);}
 
-    graph = graph.merge(undirected_components);
+    let (merged_graph, _) = graph.merge(&mut undirected_components);
+    graph = merged_graph;
     graph.orient_by_partial_order();
 
     if (0..graph.m).into_iter().filter(|&e| !graph.edge_oriented(e)).count() > 0 {panic!("Fusing left following unoriented edges (max 100 shown): {:?}", (0..graph.m).into_iter().filter(|&e| !graph.edge_oriented(e)).map(|e| graph.edges[e]).take(100).collect::<Vec<_>>())}
