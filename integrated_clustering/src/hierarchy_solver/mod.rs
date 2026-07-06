@@ -53,6 +53,7 @@ pub enum PreprocessingMethods {
 #[derive(Debug, Default, Display, Copy, Clone, ValueEnum, PartialEq)]
 pub enum DAGExtensionMethod {
     #[default]
+    CyclesCover,
     MiniZinc
 }
 
@@ -189,20 +190,23 @@ pub fn hierarchy_solver<C: Constraint, S: Circuit<C> + Sync, P: SMTFormula + Sen
         }
 
         if debug > 0 {println!("LOG: finished solving for all-outs {:?}", last_instant.elapsed().as_secs_f32()); last_instant = Instant::now();}
+        if debug > 1 {println!("LOG: found {:?} viable arcs", viable_arcs.len());}
 
         // STEP 2: Orient maximum possible edges as DAG and apply these
         let chosen_arcs = match dag_extension_method {
+            DAGExtensionMethod::CyclesCover => { crate::hierarchy_solver::dag_extension::cycles_cover_interface::extend_dag_cycles_cover(&mut graph, viable_arcs) },
             DAGExtensionMethod::MiniZinc => { crate::hierarchy_solver::dag_extension::minizinc_interface::extend_dag_minizinc(&graph, viable_arcs) }
             _ => {panic!("DAGExtensionMethod {dag_extension_method} has no implementation");}
         };
+
+        if debug > 0 {println!("LOG: finished solving max arcs in {:?}", last_instant.elapsed().as_secs_f32()); last_instant = Instant::now();}
+        if debug > 1 {println!("LOG: managed to orient {:?} viable arcs", chosen_arcs.len());}
 
         if chosen_arcs.len() == 0 {break;}
 
         // update parts_to_attempt with parts that had new input
         graph.orient_by_arcs(&chosen_arcs);
         parts_to_attempt = chosen_arcs.into_iter().map(|(_, v)| v).sorted().dedup().collect();
-
-        if debug > 0 {println!("LOG: finished solving max arcs in {:?}", last_instant.elapsed().as_secs_f32()); last_instant = Instant::now();}
     }
 
     }

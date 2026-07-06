@@ -91,7 +91,7 @@ pub fn extend_dag_minizinc(graph: &MixedGraph, viable_arcs: Vec<(usize, usize)>)
     let out = Command::new("minizinc").arg("--solver").arg("gecode").arg("../integrated_clustering/src/hierarchy_solver/dag_extension/hierarchy-dag.mzn").arg("data.dzn").arg("--json-stream").output().expect("error when running minizinc");
     let mut results: Vec<Value> = serde_json::Deserializer::from_slice(&out.stdout).into_iter().filter(|x| x.is_ok()).map(|x| x.unwrap()).collect();
     // ugly as all hell line but its just extracting the solution from the minizinc output format
-    let optimal_solution = results.swap_remove(results.len() - 2).as_object().unwrap()["output"].as_object().unwrap()["raw"].as_str().unwrap().chars().into_iter().filter_map(|x| match x {'1' => Some(true), '0' => Some(false), _ => None}).collect();
+    let optimal_solution: Vec<bool> = results.swap_remove(results.len() - 2).as_object().unwrap()["output"].as_object().unwrap()["raw"].as_str().unwrap().chars().into_iter().filter_map(|x| match x {'1' => Some(true), '0' => Some(false), _ => None}).collect();
     let chosen_arcs = viable_arcs.into_iter().enumerate().filter(|(x, _)| optimal_solution[*x]).map(|(_, e)| e).collect();
     chosen_arcs
 

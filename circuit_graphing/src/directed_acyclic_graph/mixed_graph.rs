@@ -123,6 +123,11 @@ impl MixedGraph {
         self.dir_adjacencies[u].insert(v);
     }
 
+    pub fn deorient_arc(&mut self, u:usize, v:usize) -> () {
+        let (u,v) = if self.dir_adjacencies_is_outgoing {(u,v)} else {(v,u)};
+        self.dir_adjacencies[u].remove(&v);
+    }
+
     pub fn orient_by_arcs(&mut self, arcs: &[(usize, usize)]) -> () {
 
         for &(u, v) in arcs.into_iter() {
@@ -130,6 +135,11 @@ impl MixedGraph {
             self.orient_arc(u, v);
         }
 
+    }
+
+    pub fn deorient_arcs(&mut self, arcs: &[(usize, usize)]) -> () {
+
+        for &(u, v) in arcs.into_iter() {self.deorient_arc(u, v);}
     }
 
     pub fn orient_by_partial_order(&mut self) -> Vec<(usize, usize)> {
