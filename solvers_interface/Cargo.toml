@@ -8,7 +8,6 @@ edition = "2018"
 [dependencies]
 circuits_constraints_and_algebra = {path = "../circuits_constraints_and_algebra"}
 utils = {path = "../utils"}
-clap = "2.33.0"
 ansi_term = "0.12.1"
 wast = "39.0.0"
 exitcode = "1.1.2"
@@ -18,6 +17,8 @@ rand = "0.8"
 seahash = "4.1"
 libc = "0.2"
 nix = { version = "0.30", features = ["process", "signal"] }
+clap = {version = "4.5.53", features = ["derive"] }
+strum_macros = {version = "0.27.2"}
 z3 = {version="0.20.0"}
 indexmap = { version = "2.0", features = ["serde"] }
 serde = { version = "1.0.104", features = ["derive"] }

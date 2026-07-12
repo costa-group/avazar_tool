@@ -1,7 +1,8 @@
 
 use num_bigint_dig::BigInt;
+use std::path::PathBuf;
 use std::collections::{HashMap, HashSet, BTreeMap};
-use circuits_constraints_and_algebra::r1cs::{R1CSConstraint as Constraint};
+use circuits_constraints_and_algebra::{constraint::Constraint as ClusterableConstraint, algebra::EncodableConstraint};
 use utils::read_original_structure::read_original_structure;
 use utils::structure::*;
 use utils::small_utilities::DecomposeOptions;
@@ -32,6 +33,24 @@ pub struct ResultInfoDeterminism{
 
 }
 
+pub struct DeterminismOptions<'a> {
+
+    pub original_structure: Option<PathBuf>,
+    pub timeout: u64,
+    pub include_niaz3_in_all: bool,
+    pub apply_deduction_assigned: bool,
+    pub apply_predecessors: bool,
+    pub apply_bidirectional: bool,
+    pub equivalence_mode: EquivalenceMode,
+    pub clustering_size: usize,
+    pub target_size: usize,
+    pub solver_option: PossibleSolver,
+    pub extra_rounds: usize,
+    pub limit_size: usize,
+    pub verbose: bool,
+    pub original_file: &'a str
+}
+
 pub fn prove_safety(user_input: Input) -> Result<(), ()> {
     let original_file = user_input.input_r1cs
         .file_stem()
@@ -53,43 +72,66 @@ pub fn prove_safety(user_input: Input) -> Result<(), ()> {
         generate_empty_structure(constraints.len(), signals.len(), n_outputs, n_inputs)
     };
 
-    let (
-        mut nodeid2pos, 
-        local_equivalence_classes, 
-        structural_equivalence_classes,
-        mut max_node_id
-    ) = process_structure(&structure);
+    let field = user_input.prime.clone();
 
-    let timeout: u64 = user_input.timeout;
-    let apply_deduction_assigned: bool = user_input.apply_deduction_assigned;
-    let include_niaz3_in_all: bool = user_input.include_niaz3_in_all;
-    let apply_predecessors: bool = user_input.apply_predecessors;
-    let apply_bidirectional: bool = user_input.apply_bidirectional;
+    let options = DeterminismOptions {
+        
+        original_structure: user_input.original_structure.clone(),
+        timeout: user_input.timeout,
+        apply_deduction_assigned: user_input.apply_deduction_assigned,
+        apply_predecessors: user_input.apply_predecessors,
+        apply_bidirectional: user_input.apply_bidirectional,
+        include_niaz3_in_all: user_input.include_niaz3_in_all,
+        equivalence_mode: match user_input.equivalence_mode{
+            0 => EquivalenceMode::None,
+            1 => EquivalenceMode::Local,
+            2 => EquivalenceMode::Total,
+            _ => unreachable!()
+        },
+        clustering_size: user_input.clustering_size,
+        target_size: user_input.target_size,
+        solver_option: user_input.solver_option,
+        extra_rounds: user_input.extra_rounds,
+        limit_size: user_input.limit_size,
+        verbose: user_input.flag_verbose,
+        original_file: &original_file
 
+    };
 
+    let (results, nodeid2pos) = prove_safety_internal(&constraints, &mut structure, &field, options);
 
+    // print the results
+    print_pretty_results(&results);
 
-    let starting_constraints = if user_input.original_structure.is_some(){
-        let init_constraints = read_original_structure(user_input.original_structure.as_ref().unwrap()).unwrap();
+    if let Some(report_path) = &user_input.report_output {
+        let rep = build_determinism_report(&user_input, &results, &structure, &nodeid2pos);
+        report::write_report(&rep, report_path);
+    }
+
+    Result::Ok(())
+}
+
+pub fn prove_safety_internal<'a, C: EncodableConstraint + ClusterableConstraint + Clone + Send + Sync + 'static>(
+    constraints: &Vec<C>,
+    structure: &mut StructureInfo,
+    field: &BigInt,
+    options: DeterminismOptions<'a>
+    ) -> (ResultInfoDeterminism, HashMap<usize, usize>) {
+
+    let starting_constraints = if options.original_structure.is_some(){
+        let init_constraints = read_original_structure(options.original_structure.as_ref().unwrap()).unwrap();
         Some(init_constraints)
     } else{
         None
     };
 
-    let field = user_input.prime.clone();
+    let (
+        mut nodeid2pos, 
+        local_equivalence_classes, 
+        structural_equivalence_classes,
+        mut max_node_id
+    ) = process_structure(structure);
 
-    let equivalence_mode = match user_input.equivalence_mode{
-        0 => EquivalenceMode::None,
-        1 => EquivalenceMode::Local,
-        2 => EquivalenceMode::Total,
-        _ => unreachable!()
-    };
-    
-
-    let clustering_size = user_input.clustering_size;
-    let target_size = user_input.target_size;
-
-    
     let mut results = ResultInfoDeterminism{
         previously_verified_nodes: HashSet::new(),
         verified_nodes: HashSet::new(),
@@ -108,28 +150,28 @@ pub fn prove_safety(user_input: Input) -> Result<(), ()> {
 
     for node in structure.nodes.iter().rev(){
         process_node(&node,
-            &structure,
-            &constraints,
+            structure,
+            constraints,
             &local_equivalence_classes,
             &structural_equivalence_classes,
             &nodeid2pos,
-            &field,
-            timeout,
-            user_input.solver_option,
-            apply_deduction_assigned,
-            include_niaz3_in_all,
-            apply_predecessors,
-            apply_bidirectional,
+            field,
+            options.timeout,
+            options.solver_option,
+            options.apply_deduction_assigned,
+            options.include_niaz3_in_all,
+            options.apply_predecessors,
+            options.apply_bidirectional,
             &mut results,
-            user_input.extra_rounds,
-            user_input.limit_size,
-            user_input.flag_verbose,
-            &original_file,
+            options.extra_rounds,
+            options.limit_size,
+            options.verbose,
+            options.original_file,
         );
     }
 
-    let mut to_study_again = if clustering_size != 0{
-        reconsider_big_nodes(&structure, &nodeid2pos, &mut results, clustering_size)
+    let mut to_study_again = if options.clustering_size != 0{
+        reconsider_big_nodes(structure, &nodeid2pos, &mut results, options.clustering_size)
     } else{
         Vec::new()
     };
@@ -138,58 +180,50 @@ pub fn prove_safety(user_input: Input) -> Result<(), ()> {
         for node_id in to_study_again{
             decompose_and_study(
                 node_id,
-                &mut structure,
-                &constraints,
+                structure,
+                constraints,
                 &mut nodeid2pos,
                 &mut max_node_id,
-                &field,
-                timeout,
-                user_input.solver_option,
-                equivalence_mode,
-                target_size,
-                apply_deduction_assigned,
-                include_niaz3_in_all,
-                apply_predecessors,
-                apply_bidirectional,
+                field,
+                options.timeout,
+                options.solver_option,
+                options.equivalence_mode,
+                options.target_size,
+                options.apply_deduction_assigned,
+                options.include_niaz3_in_all,
+                options.apply_predecessors,
+                options.apply_bidirectional,
                 &mut results,
-                user_input.extra_rounds,
-                user_input.limit_size,
-                user_input.flag_verbose,
-                &original_file,
+                options.extra_rounds,
+                options.limit_size,
+                options.verbose,
+                options.original_file,
             );
         }
-        to_study_again = reconsider_big_nodes(&structure, &nodeid2pos, &mut results, clustering_size);
+        to_study_again = reconsider_big_nodes(&structure, &nodeid2pos, &mut results, options.clustering_size);
     }
     
 
 
     // Just to compute extra info (constraints and original structure)
-    compute_info_constraints(&mut results, &structure, &nodeid2pos);
+    compute_info_constraints(&mut results, structure, &nodeid2pos);
 
     if starting_constraints.is_some(){
         compute_info_fails_original_template(
             &mut results, 
-            &structure, 
+            structure, 
             &nodeid2pos, 
             starting_constraints.as_ref().unwrap(),
         );
     }
 
-    // print the results
-    print_pretty_results(&results);
-
-    if let Some(report_path) = &user_input.report_output {
-        let rep = build_determinism_report(&user_input, &results, &structure, &nodeid2pos);
-        report::write_report(&rep, report_path);
-    }
-
-    Result::Ok(())
+    (results, nodeid2pos)
 }
 
-fn process_node(
+fn process_node<C: EncodableConstraint + ClusterableConstraint + Clone + Send + Sync + 'static>(
     node: &NodeInfo,
     structure: &StructureInfo,
-    constraints: &Vec<Constraint<usize>>,
+    constraints: &Vec<C>,
     local_equivalence_classes: &HashMap<usize, usize>,
     structural_equivalence_classes: &HashMap<usize, usize>,
     //studied_eq_classes: &mut HashMap<usize, PossibleResult>,
@@ -258,9 +292,11 @@ fn process_node(
         original_file,
     );
         
+    if verbose {
         for log in logs{
             println!("{}", log);
         }
+    }
 
     // check if one of the children is verified using the parent. If so, do not generalize to any class
     let mut verified_child = false;
@@ -316,10 +352,10 @@ fn process_node(
 }
 
 
-fn decompose_and_study(
+fn decompose_and_study<C: EncodableConstraint + ClusterableConstraint + Clone + Send + Sync + 'static>(
     node_id: usize,
     structure: &mut StructureInfo,
-    constraints: &Vec<Constraint<usize>>,
+    constraints: &Vec<C>,
     nodeid2pos: &mut HashMap<usize, usize>,
     max_node_id: &mut usize,
     field: &BigInt,
@@ -710,7 +746,7 @@ fn build_determinism_report(
     }
 }
 
-fn print_pretty_results(results: &ResultInfoDeterminism){
+pub fn print_pretty_results(results: &ResultInfoDeterminism){
 
     println!();
 

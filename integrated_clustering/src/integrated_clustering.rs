@@ -2,20 +2,23 @@ use std::time::{Instant};
 use std::marker::{Send, Sync};
 
 use circuits_constraints_and_algebra::algebra::EncodableConstraint;
-use utils::structure::{TimingInfo};
+use utils::structure::{TimingInfo, StructureInfo, NodeInfo};
 use utils::small_utilities::{DecomposeOptions};
-use crate::hierarchy_solver::{ResultInfo, hierarchy_solver, HierarchyOptions};
+use crate::hierarchy_solver::{hierarchy_solver, HierarchyOptions, IntegratedHierarchy, determinism::DeterminismFormula};
 use circuits_constraints_and_algebra::constraint::Constraint;
 use circuits_constraints_and_algebra::circuit::Circuit;
 use circuit_graphing::graphing_circuits::{undo_clique_clusters, shared_signal_graph};
 use circuit_graphing::leiden_clustering::{CanLeiden};
+use zkgenver::determinism::determinism_check::{prove_safety_internal, ResultInfoDeterminism, DeterminismOptions};
 
 // TODO: get first working version with determinism, then generalise to any problem with similar input/output property
 
-pub fn decompose_circuit_and_check_determinism<C: Constraint + EncodableConstraint + Send + Sync + Clone, S: Circuit<C> + Sync>(
+pub fn decompose_circuit_and_check_determinism<C: Constraint + EncodableConstraint + Send + Sync + Clone + 'static, S: Circuit<C> + Sync + 'static>(
     circuit: &S,
-    decompose_options: DecomposeOptions
-) -> ResultInfo {
+    decompose_options: DecomposeOptions,
+    hierarchy_options: HierarchyOptions,
+    determinism_options: DeterminismOptions
+) -> ResultInfoDeterminism {
 
     // Step 1: Get partition
 
@@ -54,7 +57,7 @@ pub fn decompose_circuit_and_check_determinism<C: Constraint + EncodableConstrai
         timing_info.clustering = partition_timer.elapsed().as_secs_f32();
         timing_info.total += timing_info.clustering;
         if decompose_options.debug > 0 {println!("LOG: Finished clustering in {:?}s", timing_info.clustering);}
-        if decompose_options.debug > 1{println!("LOG: Partitioned into {:?} parts", partition.len());}
+        if decompose_options.debug > 1 {println!("LOG: Partitioned into {:?} parts", partition.len());}
     } else {
         partition = decompose_options.existing_partition.unwrap();
     }
@@ -73,15 +76,45 @@ pub fn decompose_circuit_and_check_determinism<C: Constraint + EncodableConstrai
         writer.flush().expect("Error when extracting raw partition");
     }
 
-    use crate::hierarchy_solver::{PreprocessingMethods}; 
-    use crate::hierarchy_solver::determinism::DeterminismFormula;
+    // get hierarchy_from integrated_hierarchy
+    let results = hierarchy_solver::<C, S, DeterminismFormula>(circuit, partition, hierarchy_options);
+    let IntegratedHierarchy {nodes, verified_nodes, ..} = results;
 
-    let options = HierarchyOptions {
-        preprocessing: vec![PreprocessingMethods::DualDistanceOrdering, PreprocessingMethods::MergeDistanceClasses],
-        num_cores: 8,
-        debug: decompose_options.debug,
-        ..Default::default()
-    };
+    // Convert to format for determinism check
+    let constraints = circuit.constraints().into_iter().cloned().collect::<Vec<_>>();
+    let mut dagnode_info: Vec<NodeInfo> = nodes.into_values().map(|node| node.to_json(None, None)).collect();
+    for node in dagnode_info.iter_mut() {node.is_deterministic = verified_nodes.contains(&node.node_id);}
+    // TODO: refactor to be able to pass remaining information about known implications to solver
+    let dagnode_info_len = dagnode_info.len();
+    let mut structure = StructureInfo {timing: timing_info, nodes: dagnode_info, local_equivalency: (0..dagnode_info_len).map(|x| vec![x]).collect(), structural_equivalency: (0..dagnode_info_len).map(|x| vec![x]).collect()};
 
-    hierarchy_solver::<C, S, DeterminismFormula>(circuit, partition, options)
+    write_output_into_file("test.json", &structure);
+
+    let (results_info, _) = prove_safety_internal(
+        &constraints,
+        &mut structure,
+        circuit.prime(),
+        determinism_options
+    );
+
+    results_info
+}
+
+
+use std::io::BufWriter;
+use std::fs::File;
+use std::path::Path;
+use std::error::Error;
+use std::io::Write;
+fn write_output_into_file<P: AsRef<Path>>(path: P, result: &StructureInfo) -> Result<(), Box<dyn Error>> {
+    // Open the file in read-only mode with buffer.
+
+    let file = File::create(path)?;
+    let mut writer = BufWriter::new(file);
+
+    // Write the result.
+    let value = serde_json::to_string_pretty(result)?;
+    writer.write(value.as_bytes())?;
+    writer.flush()?;
+    Ok(())
 }

@@ -15,28 +15,18 @@ use itertools::Itertools;
 use std::time::{Instant};
 
 use circuits_constraints_and_algebra::algebra::EncodableConstraint;
-use solvers_interface::{PossibleResult};
-use circuit_graphing::directed_acyclic_graph::mixed_graph::MixedGraph;
+use solvers_interface::{PossibleResult, PossibleSolver};
+use circuit_graphing::directed_acyclic_graph::{DAGNode, mixed_graph::MixedGraph};
 use circuits_constraints_and_algebra::constraint::Constraint;
 use circuits_constraints_and_algebra::circuit::Circuit;
 use utils::small_utilities::dfs_merge_set_in_dag;
 use utils::union_find::{UnionFind};
 
-#[derive(Serialize, Deserialize, Default)]
-pub struct ResultInfo {
-    previously_verified_nodes: HashSet<usize>,
-    verified_nodes: HashSet<usize>,
-    failed_nodes: HashSet<usize>,
-    unknown_nodes: HashSet<usize>,
-    unknown_undivisible_nodes: HashSet<usize>,
-    pub studied_nodes: HashMap<usize, PossibleResult>,
-    total_constraints: usize,
-    verified_constraints: usize,
-    fails_original_templates: Option<HashSet<String>>,// include which constraints fail in each component or not?
-    number_unverified_orig_constraints: Option<usize>, // the number of constraints included in the unverified templates
-    number_unverified_orig_constraints_noreps: Option<usize>, // the number of constraints included in the unverified templates
-    unverified_nodes_to_templates: Option<HashMap<usize, HashSet<String>>>,
-    unverified_nodes_to_nodes: Option<HashMap<usize, HashSet<usize>>>,
+
+pub struct IntegratedHierarchy<'a, C: Constraint + EncodableConstraint + 'a, S: Circuit<C> + 'a> {
+    pub nodes: HashMap<usize, DAGNode<'a, C, S>>,
+    pub verified_nodes: HashSet<usize>,
+    pub implications_for_partially_verified_nodes: HashMap<usize, Vec<(Vec<usize>, Vec<usize>)>>
 }
 
 #[derive(Debug, Default, Display, Copy, Clone, ValueEnum, PartialEq)]
@@ -47,6 +37,7 @@ pub enum Property {
 
 #[derive(Debug, Display, Copy, Clone, ValueEnum, PartialEq)]
 pub enum PreprocessingMethods {
+    Empty,
     DualDistanceOrdering,
     MergeDistanceClasses,
 }
@@ -69,6 +60,7 @@ pub struct HierarchyOptions {
     pub property: Property,
     pub preprocessing: Vec<PreprocessingMethods>,
     pub solver_target: SolverTarget,
+    pub solver_option: PossibleSolver,
     pub dag_extension_method: DAGExtensionMethod,
     pub num_cores: usize,
     pub timeout: usize,
@@ -81,6 +73,7 @@ impl Default for HierarchyOptions {
             property: Property::default(),
             preprocessing: Vec::new(),
             solver_target: SolverTarget::default(),
+            solver_option: PossibleSolver::default(),
             dag_extension_method: DAGExtensionMethod::default(),
             num_cores: 1,
             timeout: 50,
@@ -101,10 +94,11 @@ fn apply_orientation_preprocessing(method: PreprocessingMethods, graph: &mut Mix
     match method {
         PreprocessingMethods::DualDistanceOrdering => {graph.orient_by_partial_order();}
         PreprocessingMethods::MergeDistanceClasses => {graph.merge_equivalence_classes_by_distance_and_orient(0);}
+        PreprocessingMethods::Empty => {}
     }
 }
 
-pub fn hierarchy_solver<C: Constraint + EncodableConstraint + Send + Sync + Clone, S: Circuit<C> + Sync, P: SMTFormula + Send + Sync>(circ: &S, partition: Vec<Vec<usize>>, options: HierarchyOptions) -> ResultInfo {
+pub fn hierarchy_solver<'a, C: Constraint + EncodableConstraint + Send + Sync + Clone + 'a, S: Circuit<C> + Sync + 'a, P: SMTFormula + Send + Sync>(circ: &'a S, partition: Vec<Vec<usize>>, options: HierarchyOptions) -> IntegratedHierarchy<'a, C, S> {
 
     // Initialise the Graph from Partition
     let mut graph = MixedGraph::from_circuit(circ, partition, false);
@@ -123,12 +117,8 @@ pub fn hierarchy_solver<C: Constraint + EncodableConstraint + Send + Sync + Clon
     //  Repeat until no new arcs are possible
     let mut parts_to_attempt: Vec<usize> = (0..graph.n).into_iter().filter(|&v| !graph.vertex_is_fully_oriented(v)).collect();
     let thread_pool = ThreadPoolBuilder::new().num_threads(num_cores).build().unwrap();
-    let mut results_info = ResultInfo {
-        total_constraints: circ.n_constraints(),
-        ..Default::default()
-    };
     let mut verified_parts: HashSet<usize> = HashSet::new();
-
+    let mut verified_implications: HashMap<usize, (Vec<usize>, Vec<usize>)> = HashMap::new();
 
     // Preprocess 
     thread_pool.install(
@@ -151,6 +141,8 @@ pub fn hierarchy_solver<C: Constraint + EncodableConstraint + Send + Sync + Clon
     }
 
     loop {
+        println!("{:?}", parts_to_attempt.clone());
+
         // STEP 1: Attempt to prove all outgoing for every vertex
 
         // NOTE: parts_to_attempt must be sorted here
@@ -169,18 +161,24 @@ pub fn hierarchy_solver<C: Constraint + EncodableConstraint + Send + Sync + Clon
         let args: Vec<(usize, &mut P, Vec<usize>, Vec<usize>)> = itertools::izip!(parts_to_attempt.iter().copied(), working_with.into_iter(), inputs, outputs).collect();
 
         // TODO: implement OneOutput - it will require something a little different
-        let results: Vec<PossibleResult> = args.into_par_iter().map(|(index, formula, inputs, outputs)| formula.finalise_and_check(circ, &graph, index, &inputs, &outputs, options.timeout as u64)).collect();
+        let results: Vec<(PossibleResult, Vec<usize>, Vec<usize>)> = args.into_par_iter().map(|(index, formula, inputs, outputs)| (
+            formula.finalise_and_check(circ, &graph, index, &inputs, &outputs, timeout as u64), inputs, outputs)
+        ).collect();
         let _undo: Vec<_> = create_mutable_pointers(&mut formulae, &parts_to_attempt).into_par_iter().map(|formula| formula.undo_finalise()).collect();
 
-
-        if !results.iter().any(|res| res == &PossibleResult::VERIFIED) {break;}
+        if debug > 0 {println!("LOG: finished solving for all-outs {:?}", last_instant.elapsed().as_secs_f32()); last_instant = Instant::now();}
+        if !results.iter().any(|res| res.0 == PossibleResult::VERIFIED) {break;}
 
         let mut viable_arcs: Vec<(usize, usize)> = Vec::new();
 
-        for (res_id, part_id) in parts_to_attempt.iter().copied().enumerate() {
-            if results[res_id] == PossibleResult::VERIFIED {
+        for (res_id, result) in results.into_iter().enumerate() {
+            let part_id = parts_to_attempt[res_id];
+            let (result, inputs, outputs) = result;
+            if result == PossibleResult::VERIFIED {
+                println!("Verified {}: with adjacencies {:?} and incoming {:?}", part_id, graph.adjacencies[part_id].clone(), graph.dir_adjacencies[part_id].clone());
                 verified_parts.insert(part_id);
-                results_info.verified_nodes.insert(part_id);
+                verified_implications.entry(part_id).or_insert((inputs, outputs));
+
                 viable_arcs.extend(
                     graph.adjacencies[part_id].iter().copied()
                         .filter(|odx| !graph.dir_adjacencies[part_id].contains(odx) && !graph.dir_adjacencies[*odx].contains(&part_id) )
@@ -189,7 +187,6 @@ pub fn hierarchy_solver<C: Constraint + EncodableConstraint + Send + Sync + Clon
             }
         }
 
-        if debug > 0 {println!("LOG: finished solving for all-outs {:?}", last_instant.elapsed().as_secs_f32()); last_instant = Instant::now();}
         if debug > 1 {println!("LOG: found {:?} viable arcs", viable_arcs.len());}
 
         // STEP 2: Orient maximum possible edges as DAG and apply these
@@ -237,8 +234,21 @@ pub fn hierarchy_solver<C: Constraint + EncodableConstraint + Send + Sync + Clon
 
     // Step 3.2 Merge these expanded parts
     let (merged_graph, parent_to_newidx) = graph.merge(&mut unoriented_components);
-    graph = merged_graph;
+    let (nodes, _, newidx_to_nodeid) = merged_graph.initialise_dagnodes(circ, &mut (0..).into_iter()); //TODO: handle arbitrary node_ids
 
-    // Step 4: Re-check remaining nodes -- TODO
-    unimplemented!("Don't know what to do to pass it back here");
+    let mut idx_merged: Vec<bool> = vec![false;graph.n];
+    for idx in unoriented_components.get_components().into_iter().filter(|part| part.len() > 1).flatten() {idx_merged[idx] = true;}
+
+    let mut verified_nodes: HashSet<usize> = HashSet::new();
+    let mut implications_for_partially_verified_nodes: HashMap<usize, Vec<(Vec<usize>, Vec<usize>)>> = HashMap::new();
+
+    for idx in verified_parts.into_iter() {
+        // if the cluster was not merged in the previous step AND was verified, then list it in verified_nodes (under new idx)
+        if !idx_merged[idx] {verified_nodes.insert(newidx_to_nodeid[parent_to_newidx[&idx]]);}
+
+        // if the cluster WAS merged in the previous AND was verified, then list its implications
+        else {implications_for_partially_verified_nodes.entry(newidx_to_nodeid[parent_to_newidx[&unoriented_components.find(idx)]]).or_default().push(verified_implications.remove(&idx).expect(format!("Verified Node {idx} has no associated implication").as_str()));}
+    }
+
+    IntegratedHierarchy {nodes, verified_nodes, implications_for_partially_verified_nodes}
 }

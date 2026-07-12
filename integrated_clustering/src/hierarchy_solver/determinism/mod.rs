@@ -17,7 +17,7 @@ use circuits_constraints_and_algebra::algebra::EncodableConstraint;
 impl SMTFormula for DeterminismFormula {
     // TODO: Ask clara again about preprocesing because this seems like it doesn't work
 
-    fn preprocess<C: Constraint, S: Circuit<C>>(circuit: &S, graph: &MixedGraph, index: usize) -> Self {LinkedList::new()}
+    fn preprocess<C: Constraint, S: Circuit<C>>(_circuit: &S, _graph: &MixedGraph, _index: usize) -> Self {LinkedList::new()}
     // NOTE: the following method might need to be changed if/when more properties are added
     fn finalise_and_check<C: Constraint + EncodableConstraint + Clone + Sync, S: Circuit<C>>(&mut self, circuit: &S, graph: &MixedGraph, index: usize, inputs: &[usize], outputs: &[usize], timeout: u64) -> PossibleResult {
         

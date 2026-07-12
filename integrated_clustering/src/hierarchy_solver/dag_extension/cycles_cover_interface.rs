@@ -42,7 +42,7 @@ fn greedy_hitting_set_approximation<'a, T: Hash + Eq>(sets: &'a Vec<HashSet<T>>)
         let mut affected_elems: HashSet<&T> = HashSet::new();
         for idx in uncovered_sets.into_iter() {for elem in sets[idx].iter() { affected_elems.insert(elem);elem_to_uncovered_sets.entry(elem).and_modify(|set| {set.remove(&idx);}); }}
         for elem in affected_elems.into_iter() {queue.change_priority(elem, elem_to_uncovered_sets[elem].len());}
-
+        chosen.push(next);
     }
     // Greedily choose element in the most number of uncovered sets
 

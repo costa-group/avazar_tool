@@ -1,6 +1,5 @@
 use solvers_interface::{PossibleResult, PossibleSolver, SafetyVerification, civer_interface, cvc5_interface, ffsol_interface, nia_z3_interface, parallel_interface, picus_interface, yices_interface, z3_interface};
-type Constraint = circuits_constraints_and_algebra::r1cs::R1CSConstraint<usize>;
-use circuits_constraints_and_algebra::{num_bigint::BigInt, algebra::EncodableConstraint};
+use circuits_constraints_and_algebra::{num_bigint::BigInt, algebra::EncodableConstraint, constraint::Constraint as ClusterableConstraint};
 use std::collections::LinkedList;
 use std::time::{Instant, Duration};
 use utils::structure::NodeInfo;
@@ -10,7 +9,7 @@ use crate::determinism::determinism_check::ResultInfoDeterminism;
 
 pub type SafetyImplication = (Vec<usize>, Vec<usize>);
 
-    pub fn check_tags(
+    pub fn check_tags<Constraint: EncodableConstraint + ClusterableConstraint + Clone + Send + Sync + 'static>(
         node_info: &NodeInfo,
         field: &BigInt,
         verification_timeout: u64,
@@ -134,7 +133,7 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
 
         } 
         let duration = inicio.elapsed();  
-        pretty_print_result(&mut logs, duration, n_rounds, &result_safety);
+        if verbose {pretty_print_result(&mut logs, duration, n_rounds, &result_safety);}
         let extra_rounds_helped = used_extra_rounds && result_safety == PossibleResult::VERIFIED;
         (
             result_safety,
@@ -269,7 +268,7 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
 
 
 
-    fn prove_safety(
+    fn prove_safety<Constraint: EncodableConstraint + ClusterableConstraint + Clone + Send + Sync + 'static>(
         problem: &SafetyVerification<Constraint>,
         solver: PossibleSolver,
     )-> (PossibleResult, Vec<String>) {
@@ -278,7 +277,8 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
                 civer_interface::study_safety(problem)
             },
             PossibleSolver::PICUS =>{
-                picus_interface::deduce(problem)
+                panic!("PICUS is not currently supported due to reliance on r1cs");
+                //picus_interface::deduce(problem)
             },
             PossibleSolver::FFSOL=>{
                 ffsol_interface::study_safety(

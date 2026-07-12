@@ -12,6 +12,7 @@ utils = {path = "../utils"}
 circuits_constraints_and_algebra = {path = "../circuits_constraints_and_algebra" }
 circuit_graphing = {path = "../circuit_graphing"}
 solvers_interface = {path = "../solvers_interface"}
+zkgenver = {path = "../zk-genver"}
 ansi_term = "0.12.1"
 clap = {version = "4.5.53", features = ["derive"] }
 strum_macros = {version = "0.27.2"}
