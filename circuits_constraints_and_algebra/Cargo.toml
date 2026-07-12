@@ -4,7 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+num-bigint-dig = "0.6.0"
+num-traits = "0.2.6"
 utils = {path = "../utils" }
+constant_tracking = {path = "../constant_tracking" }
+z3 = {version="0.20.0"}
 circom_algebra = {path = "../circom_algebra" }
 either = "1.15.0"
 itertools = "0.14.0"

@@ -3,6 +3,7 @@ use utils::read_r1cs::{R1CSData, Constraint as ConstraintPart, HeaderData};
 
 mod circuit_implementation;
 mod constraint_implementation;
+mod encodable_implementation;
 
 //This struct contained all the sections
 

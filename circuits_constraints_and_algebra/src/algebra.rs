@@ -1377,6 +1377,16 @@ pub trait EncodableConstraint {
     fn apply_deduction_rule_homologues(&self, solver: &z3::Solver, signals_to_smt_symbols_1: &HashMap<usize, z3::ast::Int>, signals_to_smt_symbols_2: &HashMap<usize, z3::ast::Int>, deductions: &Signal2Bounds, field: &BigInt, p: &z3::ast::Int) -> ();
 }
 
+impl<C: Default + Clone + Display + Hash + Eq> From<&(HashMap<C, BigInt>, HashMap<C, BigInt>, HashMap<C, BigInt>)> for Constraint<C> {
+    fn from(s: &(HashMap<C, BigInt>, HashMap<C, BigInt>, HashMap<C, BigInt>)) -> Self {
+        Self {
+            a: s.0.clone(),
+            b: s.1.clone(),
+            c: s.2.clone()
+        }
+    }
+}
+
 impl<C: Default + Clone + Display + Hash + Eq + std::cmp::Ord> Constraint<C> {
     pub fn take_cloned_signals_ordered(&self) -> BTreeSet<C> {
         let mut signals = BTreeSet::new();
