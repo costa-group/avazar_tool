@@ -149,13 +149,13 @@ pub fn hierarchy_solver<'a, C: Constraint + EncodableConstraint + Send + Sync + 
         let working_with = create_mutable_pointers(&mut formulae, &parts_to_attempt);
         let inputs = parts_to_attempt.iter().copied().map(
             |idx|
-            graph.dir_adjacencies[idx].iter().copied().flat_map(|part| graph.partition[part].iter().copied()).flat_map(|coni| circ.get_constraint(coni).signals().into_iter() ).collect::<HashSet<_>>().intersection(&part_to_signals[idx]).copied().collect()
+            graph.dir_adjacencies[idx].iter().copied().flat_map(|part| graph.partition[part].iter().copied()).flat_map(|coni| circ.get_constraint(coni).signals().into_iter() ).chain(circ.get_input_signals()).collect::<HashSet<_>>().intersection(&part_to_signals[idx]).copied().collect()
         );
 
         let outputs = parts_to_attempt.iter().copied().map(
             |idx|
             graph.adjacencies[idx].iter().copied().filter(|odx| !graph.dir_adjacencies[idx].contains(odx)
-                ).flat_map(|part| graph.partition[part].iter().copied()).flat_map(|coni|circ.get_constraint(coni).signals().into_iter() ).collect::<HashSet<_>>().intersection(&part_to_signals[idx]).copied().collect()
+                ).flat_map(|part| graph.partition[part].iter().copied()).flat_map(|coni|circ.get_constraint(coni).signals().into_iter() ).chain(circ.get_output_signals()).collect::<HashSet<_>>().intersection(&part_to_signals[idx]).copied().collect()
         );
 
         let args: Vec<(usize, &mut P, Vec<usize>, Vec<usize>)> = itertools::izip!(parts_to_attempt.iter().copied(), working_with.into_iter(), inputs, outputs).collect();
@@ -237,6 +237,7 @@ pub fn hierarchy_solver<'a, C: Constraint + EncodableConstraint + Send + Sync + 
     let (nodes, _, newidx_to_nodeid) = merged_graph.initialise_dagnodes(circ, &mut (0..).into_iter()); //TODO: handle arbitrary node_ids
 
     let mut idx_merged: Vec<bool> = vec![false;graph.n];
+    println!("{:?}", unoriented_components.get_components());
     for idx in unoriented_components.get_components().into_iter().filter(|part| part.len() > 1).flatten() {idx_merged[idx] = true;}
 
     let mut verified_nodes: HashSet<usize> = HashSet::new();
