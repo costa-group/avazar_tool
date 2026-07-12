@@ -4,7 +4,6 @@ use std::io::BufReader;
 use std::path::Path;
 use std::error::Error;
 use std::ops::AddAssign;
-use circuits_constraints_and_algebra::algebra::Constraint;
 
 #[derive(Deserialize,Serialize, Debug)]
 pub struct TimingInfo{
@@ -61,21 +60,6 @@ pub struct StructureReader {
 pub struct WeightedArcs<T> {
     pub original_nodes: Vec<T>,
     pub arcs: Vec<(T, T, f64)>
-}
-
-pub fn print_node_info(node: &NodeInfo, constraints: &Vec<Constraint<usize>>){
-    println!("Input signals: {:?}", node.input_signals);
-    println!("Output signals: {:?}", node.output_signals);
-    println!("Signals: {:?}", node.signals);
-    println!("Successors: {:?}", node.successors);
-    println!("Is custom: {}", node.is_custom);
-    println!("Is deterministic: {}", node.is_deterministic);
-
-
-    for c in &node.constraints{
-        let c = &constraints[*c];
-        c.print_pretty_constraint();
-    }
 }
 
 pub fn read_structure<P: AsRef<Path>>(path: P) -> Result<StructureInfo, Box<dyn Error>> {

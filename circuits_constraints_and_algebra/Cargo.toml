@@ -9,7 +9,6 @@ num-traits = "0.2.6"
 utils = {path = "../utils" }
 constant_tracking = {path = "../constant_tracking" }
 z3 = {version="0.20.0"}
-circuits_constraints_and_algebra = {path = "../circuits_constraints_and_algebra" }
 either = "1.15.0"
 itertools = "0.14.0"
 rand = "0.9.2"

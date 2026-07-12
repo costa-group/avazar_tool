@@ -1,7 +1,6 @@
 pub mod structure;
 pub mod equivalence_structure;
 pub mod read_original_structure;
-pub mod write_r1cs;
 pub mod small_utilities;
 pub mod union_find;
 pub mod assignment;
