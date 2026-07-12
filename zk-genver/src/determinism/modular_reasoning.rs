@@ -1,6 +1,6 @@
 use solvers_interface::{PossibleResult, PossibleSolver, SafetyVerification, civer_interface, cvc5_interface, ffsol_interface, nia_z3_interface, parallel_interface, picus_interface, yices_interface, z3_interface};
 type Constraint = circom_algebra::algebra::Constraint<usize>;
-use circom_algebra::num_bigint::BigInt;
+use circom_algebra::{num_bigint::BigInt, algebra::EncodableConstraint};
 use std::collections::LinkedList;
 use std::time::{Instant, Duration};
 use utils::structure::NodeInfo;
@@ -48,7 +48,7 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
         } else {
             node_info.node_name.clone()
         };
-        let mut verification = SafetyVerification::new(
+        let mut verification = SafetyVerification::<Constraint>::new(
             &node_name,
             &original_file.to_string(),
             signals,
@@ -147,12 +147,12 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
         
     }
 
-    fn add_info_component(
+    fn add_info_component<C: EncodableConstraint + Clone>(
         info: &NodeInfo, 
-        verification: &mut SafetyVerification, 
+        verification: &mut SafetyVerification<C>, 
         node_list: &Vec<NodeInfo>, 
         nodeid2pos: &HashMap<usize, usize>, 
-        constraint_list: &Vec<Constraint>,
+        constraint_list: &Vec<C>,
         results:&ResultInfoDeterminism,
         apply_predecessors: bool,
         apply_bidirectional: bool,
@@ -180,12 +180,12 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
             if to_check_next.len() > 0 {Some(to_check_next)} else {None}
     }
 
-    fn generate_and_add_node_info(
+    fn generate_and_add_node_info<C: EncodableConstraint + Clone>(
         node_ids: &[usize], 
-        verification: &mut SafetyVerification, 
+        verification: &mut SafetyVerification<C>, 
         node_list: &Vec<NodeInfo>, 
         nodeid2pos: &HashMap<usize, usize>, 
-        constraint_list: &Vec<Constraint>,
+        constraint_list: &Vec<C>,
         results:&ResultInfoDeterminism, 
         apply_bidirectional: bool,
         no_abstract_fails: bool,
@@ -270,7 +270,7 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
 
 
     fn prove_safety(
-        problem: &SafetyVerification,
+        problem: &SafetyVerification<Constraint>,
         solver: PossibleSolver,
     )-> (PossibleResult, Vec<String>) {
         match solver{
