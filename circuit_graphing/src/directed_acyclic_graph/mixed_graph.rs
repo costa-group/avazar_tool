@@ -108,7 +108,7 @@ impl MixedGraph {
                         .collect();
 
         (
-            Self { n: merged_partition.len(), m: edges.len(), partition: merged_partition, adjacencies: merged_adjacencies, dir_adjacencies: merged_dir_adjacencies, edges, input_parts: merged_inputs, output_parts: merged_outputs, dir_adjacencies_is_outgoing: true },
+            Self { n: merged_partition.len(), m: edges.len(), partition: merged_partition, adjacencies: merged_adjacencies, dir_adjacencies: merged_dir_adjacencies, edges, input_parts: merged_inputs, output_parts: merged_outputs, dir_adjacencies_is_outgoing: self.dir_adjacencies_is_outgoing },
             parent_to_newidx
         )
     }
