@@ -4,12 +4,12 @@ use itertools::Itertools;
 
 use utils::small_utilities::{distance_to_source_set};
 use utils::union_find::{UnionFind};
-use circuits_and_constraints::constraint::Constraint;
-use circuits_and_constraints::circuit::Circuit;
+use circuits_constraints_and_algebra::constraint::Constraint;
+use circuits_constraints_and_algebra::circuit::Circuit;
 use super::{DAGNode};
 use super::dag_utils::{lt, add_arc_to_nodes};
 use super::export_to_dzn::write_dzn;
-use circuits_and_constraints::utils::signals_to_constraints_with_them;
+use circuits_constraints_and_algebra::utils::signals_to_constraints_with_them;
 
 pub struct MixedGraph {
     pub n: usize, pub m: usize,

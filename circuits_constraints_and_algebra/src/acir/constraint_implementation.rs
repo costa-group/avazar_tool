@@ -1,4 +1,4 @@
-use circom_algebra::num_bigint::BigInt;
+use circuits_constraints_and_algebra::num_bigint::BigInt;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 use std::cmp::Eq;
@@ -13,7 +13,7 @@ use super::{ACIRConstraint};
 use crate::constraint::Constraint;
 use crate::normalisation::division_normalise;
 use crate::utils::FingerprintIndex;
-use circom_algebra::modular_arithmetic::{div};
+use circuits_constraints_and_algebra::modular_arithmetic::{div};
 use utils::assignment::Assignment;
 
 impl Constraint for ACIRConstraint {

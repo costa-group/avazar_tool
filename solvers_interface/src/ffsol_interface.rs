@@ -17,7 +17,7 @@ use nix::sys::signal::killpg;
 use std::fs;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
-use circom_algebra::algebra::{EncodableConstraint};
+use circuits_constraints_and_algebra::algebra::{EncodableConstraint};
 
 #[derive(Clone)]
 pub struct FfsolConfig {

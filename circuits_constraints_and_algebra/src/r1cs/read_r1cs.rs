@@ -1,9 +1,11 @@
-use circom_algebra::num_bigint::{BigInt, Sign};
+use circuits_constraints_and_algebra::num_bigint::{BigInt, Sign};
 use std::collections::HashMap;
-use circom_algebra::num_traits::ToPrimitive;
+use circuits_constraints_and_algebra::num_traits::ToPrimitive;
 use std::fs::File;
 use std::io::{BufReader, Read, Seek, SeekFrom};
 use std::fmt;
+
+use super::{R1CSConstraint, R1CSData};
 
 const SECTIONS: u8 = 5;
 const MAGIC: &[u8] = b"r1cs";
@@ -122,20 +124,8 @@ pub struct HeaderSection {
     sections: [bool; SECTIONS as usize],
 }
 
-pub struct HeaderData {
-    pub field: BigInt,
-    pub field_size: usize,
-    pub total_wires: usize,
-    pub public_outputs: usize,
-    pub public_inputs: usize,
-    pub private_inputs: usize,
-    pub number_of_labels: usize,
-    pub number_of_constraints: usize,
-}
-
-
 pub type Constraint = HashMap<usize, BigInt>;
-pub type ConstraintList = Vec<(Constraint, Constraint, Constraint)>;
+pub type ConstraintList = Vec<R1CSConstraint<usize>>;
 pub type SignalList = Vec<usize>;
 pub struct ConstraintSection {
     reader: BufReader<File>,
@@ -426,15 +416,6 @@ impl CustomGatesAppliedSection {
 }
 
 //This struct contained all the sections
-pub struct R1CSData {
-    pub header_data: HeaderData,
-    pub constraints: ConstraintList,
-    pub signals: SignalList,
-    custom_gates: bool,
-    custom_gates_used_data: Option<CustomGatesUsedData>,
-    custom_gates_applied_data: Option<CustomGatesAppliedData>,
-}
-
 impl R1CSData {
     pub fn new() -> Self {
         R1CSData {

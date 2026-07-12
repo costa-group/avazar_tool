@@ -1,5 +1,5 @@
 use std::collections::{HashMap, BTreeMap};
-use circom_algebra::algebra::Constraint;
+use circuits_constraints_and_algebra::algebra::Constraint;
 use utils::read_r1cs::read_r1cs;
 use utils::read_specification::{read_smt_specification, MacroDef, MainSection};
 

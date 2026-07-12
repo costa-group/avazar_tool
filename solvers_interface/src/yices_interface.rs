@@ -17,7 +17,7 @@ use std::fs;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 use crate::smt2_utils::{safety_problem_to_smt2, equivalence_problem_to_smt2, correctness_problem_to_smt2};
-use circom_algebra::algebra::{EncodableConstraint};
+use circuits_constraints_and_algebra::algebra::{EncodableConstraint};
 
 
 pub fn study_correctness(problem: &CorrectnessVerification) -> (PossibleResult, Vec<String>) {

@@ -8,7 +8,7 @@ use utils::write_r1cs::*;
 use num_bigint_dig::BigInt;
 use wait_timeout::ChildExt;
 use std::fs;
-use circom_algebra::algebra::{EncodableConstraint, Constraint};
+use circuits_constraints_and_algebra::algebra::{EncodableConstraint, Constraint};
 
 
 pub fn deduce(problem: &SafetyVerification<Constraint<usize>>) -> (PossibleResult, Vec<String>){

@@ -13,7 +13,7 @@ name = "avazar"
 path = "src/main.rs"
 
 [dependencies]
-circom_algebra = {path = "../circom_algebra"}
+circuits_constraints_and_algebra = {path = "../circuits_constraints_and_algebra"}
 solvers_interface = {path = "../solvers_interface"}
 utils = {path = "../utils"}
 clustering = {path = "../clustering"}

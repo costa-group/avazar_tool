@@ -1,8 +1,8 @@
 use std::collections::{HashMap};
 
 use super::{DAGNode};
-use circuits_and_constraints::constraint::Constraint;
-use circuits_and_constraints::circuit::Circuit;
+use circuits_constraints_and_algebra::constraint::Constraint;
+use circuits_constraints_and_algebra::circuit::Circuit;
 use utils::small_utilities::merge_sorted_vecs;
 
 pub fn lt(x: (usize, usize), y: (usize, usize)) -> bool {x.0 < y.0 && (y.1 <= x.1) || x.0 == y.0 && (y.1 < x.1)}

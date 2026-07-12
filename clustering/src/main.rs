@@ -28,9 +28,9 @@ use crate::decompose_circuit::decompose_circuit;
 use crate::argument_parsing::{Args};
 use utils::small_utilities::{DecomposeOptions, FileType};
 use utils::read_r1cs::{R1CSData};
-use circuits_and_constraints::generic::{AIRDataWrapper};
-use circuits_and_constraints::acir::{ACIRCircuit};
-use circuits_and_constraints::circuit::Circuit;
+use circuits_constraints_and_algebra::generic::{AIRDataWrapper};
+use circuits_constraints_and_algebra::acir::{ACIRCircuit};
+use circuits_constraints_and_algebra::circuit::Circuit;
 
 fn main() {
     let args = Args::parse();

@@ -1,5 +1,5 @@
 
-use circom_algebra::num_bigint::BigInt;
+use circuits_constraints_and_algebra::num_bigint::BigInt;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufWriter, Seek, SeekFrom, Write};

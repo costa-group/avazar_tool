@@ -6,7 +6,7 @@ edition = "2024"
 [dependencies]
 graphrs = {path = "../graphrs"}
 combinatorial = "0.2.1"
-circuits_and_constraints = {path = "../circuits_and_constraints"}
+circuits_constraints_and_algebra = {path = "../circuits_constraints_and_algebra"}
 equivalence = {path = "../equivalence"}
 utils = {path = "../utils"}
 serde = { version = "1.0.104", features = ["derive"] }

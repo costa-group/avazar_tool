@@ -2,9 +2,9 @@ use std::collections::{HashSet, HashMap};
 use std::borrow::Borrow;
 use itertools::Itertools;
 
-use circuits_and_constraints::constraint::Constraint;
-use circuits_and_constraints::circuit::Circuit;
-use circuits_and_constraints::utils::{signals_to_constraints_with_them};
+use circuits_constraints_and_algebra::constraint::Constraint;
+use circuits_constraints_and_algebra::circuit::Circuit;
+use circuits_constraints_and_algebra::utils::{signals_to_constraints_with_them};
 use equivalence::compare_circuits::compare_circuits_with_inits;
 use equivalence::fingerprinting::iterated_refinement;
 use utils::assignment::Assignment;

@@ -4,7 +4,7 @@ use std::io::BufReader;
 use std::path::Path;
 use std::error::Error;
 use std::ops::AddAssign;
-use circom_algebra::algebra::Constraint;
+use circuits_constraints_and_algebra::algebra::Constraint;
 
 #[derive(Deserialize,Serialize, Debug)]
 pub struct TimingInfo{

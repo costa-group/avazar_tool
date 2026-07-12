@@ -1,11 +1,11 @@
 [workspace]
 members = [
-    "circom_algebra",
     "constant_tracking",
     "utils",
     "zk-genver",
-    "circuits_and_constraints",
+    "circuits_constraints_and_algebra",
     "circuit_graphing",
     "clustering",
-    "equivalence"
+    "equivalence",
+    "integrated_clustering"
 ]

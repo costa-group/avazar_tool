@@ -1,4 +1,4 @@
-use circom_algebra::num_bigint::BigInt;
+use circuits_constraints_and_algebra::num_bigint::BigInt;
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash};
 use std::cmp::{Eq};

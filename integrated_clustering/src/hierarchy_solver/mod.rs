@@ -14,10 +14,11 @@ use std::borrow::Borrow;
 use itertools::Itertools;
 use std::time::{Instant};
 
+use circuits_constraints_and_algebra::algebra::EncodableConstraint;
 use solvers_interface::{PossibleResult};
 use circuit_graphing::directed_acyclic_graph::mixed_graph::MixedGraph;
-use circuits_and_constraints::constraint::Constraint;
-use circuits_and_constraints::circuit::Circuit;
+use circuits_constraints_and_algebra::constraint::Constraint;
+use circuits_constraints_and_algebra::circuit::Circuit;
 use utils::small_utilities::dfs_merge_set_in_dag;
 use utils::union_find::{UnionFind};
 
@@ -90,9 +91,9 @@ impl Default for HierarchyOptions {
 
 pub trait SMTFormula {
 
-    fn preprocess<C: Constraint, S: Circuit<C>>(circuit: &S, graph: &MixedGraph, index: usize) -> Self;
+    fn preprocess<C: Constraint + EncodableConstraint, S: Circuit<C>>(circuit: &S, graph: &MixedGraph, index: usize) -> Self;
     // NOTE: the following method might need to be changed if/when more properties are added
-    fn finalise_and_check<C: Constraint, S: Circuit<C>>(&mut self, circuit: &S, graph: &MixedGraph, index: usize, inputs: &[usize], outputs: &[usize], timeout: u64) -> PossibleResult;
+    fn finalise_and_check<C: Constraint + EncodableConstraint + Clone + Send + Sync, S: Circuit<C>>(&mut self, circuit: &S, graph: &MixedGraph, index: usize, inputs: &[usize], outputs: &[usize], timeout: u64) -> PossibleResult;
     fn undo_finalise(&mut self) -> ();
 }
 
@@ -100,11 +101,10 @@ fn apply_orientation_preprocessing(method: PreprocessingMethods, graph: &mut Mix
     match method {
         PreprocessingMethods::DualDistanceOrdering => {graph.orient_by_partial_order();}
         PreprocessingMethods::MergeDistanceClasses => {graph.merge_equivalence_classes_by_distance_and_orient(0);}
-        _ => {panic!("OrientationMethod {method} has no implementation");}
     }
 }
 
-pub fn hierarchy_solver<C: Constraint, S: Circuit<C> + Sync, P: SMTFormula + Send + Sync>(circ: &S, partition: Vec<Vec<usize>>, options: HierarchyOptions) -> ResultInfo {
+pub fn hierarchy_solver<C: Constraint + EncodableConstraint + Send + Sync + Clone, S: Circuit<C> + Sync, P: SMTFormula + Send + Sync>(circ: &S, partition: Vec<Vec<usize>>, options: HierarchyOptions) -> ResultInfo {
 
     // Initialise the Graph from Partition
     let mut graph = MixedGraph::from_circuit(circ, partition, false);
@@ -170,7 +170,7 @@ pub fn hierarchy_solver<C: Constraint, S: Circuit<C> + Sync, P: SMTFormula + Sen
 
         // TODO: implement OneOutput - it will require something a little different
         let results: Vec<PossibleResult> = args.into_par_iter().map(|(index, formula, inputs, outputs)| formula.finalise_and_check(circ, &graph, index, &inputs, &outputs, options.timeout as u64)).collect();
-        let undo: Vec<_> = create_mutable_pointers(&mut formulae, &parts_to_attempt).into_par_iter().map(|formula| formula.undo_finalise()).collect();
+        let _undo: Vec<_> = create_mutable_pointers(&mut formulae, &parts_to_attempt).into_par_iter().map(|formula| formula.undo_finalise()).collect();
 
 
         if !results.iter().any(|res| res == &PossibleResult::VERIFIED) {break;}
@@ -196,7 +196,6 @@ pub fn hierarchy_solver<C: Constraint, S: Circuit<C> + Sync, P: SMTFormula + Sen
         let chosen_arcs = match dag_extension_method {
             DAGExtensionMethod::CyclesCover => { crate::hierarchy_solver::dag_extension::cycles_cover_interface::extend_dag_cycles_cover(&mut graph, viable_arcs) },
             DAGExtensionMethod::MiniZinc => { crate::hierarchy_solver::dag_extension::minizinc_interface::extend_dag_minizinc(&graph, viable_arcs) }
-            _ => {panic!("DAGExtensionMethod {dag_extension_method} has no implementation");}
         };
 
         if debug > 0 {println!("LOG: finished solving max arcs in {:?}", last_instant.elapsed().as_secs_f32()); last_instant = Instant::now();}

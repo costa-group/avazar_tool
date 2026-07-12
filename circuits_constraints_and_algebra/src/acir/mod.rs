@@ -1,7 +1,7 @@
 mod circuit_implementation;
 mod constraint_implementation;
 
-use circom_algebra::num_bigint::BigInt;
+use circuits_constraints_and_algebra::num_bigint::BigInt;
 use std::collections::{HashSet, HashMap};
 
 pub struct ACIRConstraint {

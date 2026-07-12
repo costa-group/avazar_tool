@@ -9,9 +9,9 @@ use std::time::{Instant};
 
 use utils::small_utilities::{FileType, DecomposeOptions};
 use utils::read_r1cs::{R1CSData};
-use circuits_and_constraints::generic::{AIRDataWrapper};
-use circuits_and_constraints::acir::{ACIRCircuit};
-use circuits_and_constraints::circuit::Circuit;
+use circuits_constraints_and_algebra::generic::{AIRDataWrapper};
+use circuits_constraints_and_algebra::acir::{ACIRCircuit};
+use circuits_constraints_and_algebra::circuit::Circuit;
 use crate::hierarchy_solver::{ResultInfo};
 
 use crate::argument_parsing::{Args};

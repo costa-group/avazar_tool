@@ -1,7 +1,7 @@
 
 use num_bigint_dig::BigInt;
 use std::collections::{HashMap, HashSet, BTreeMap};
-use circom_algebra::algebra::Constraint;
+use circuits_constraints_and_algebra::algebra::Constraint;
 use utils::read_original_structure::read_original_structure;
 use utils::structure::*;
 use utils::small_utilities::DecomposeOptions;

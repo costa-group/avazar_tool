@@ -1,6 +1,6 @@
 use solvers_interface::{PossibleResult, PossibleSolver, SafetyVerification, civer_interface, cvc5_interface, ffsol_interface, nia_z3_interface, parallel_interface, picus_interface, yices_interface, z3_interface};
-type Constraint = circom_algebra::algebra::Constraint<usize>;
-use circom_algebra::{num_bigint::BigInt, algebra::EncodableConstraint};
+type Constraint = circuits_constraints_and_algebra::algebra::Constraint<usize>;
+use circuits_constraints_and_algebra::{num_bigint::BigInt, algebra::EncodableConstraint};
 use std::collections::LinkedList;
 use std::time::{Instant, Duration};
 use utils::structure::NodeInfo;

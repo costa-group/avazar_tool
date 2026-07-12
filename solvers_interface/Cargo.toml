@@ -6,7 +6,7 @@ edition = "2018"
 
 
 [dependencies]
-circom_algebra = {path = "../circom_algebra"}
+circuits_constraints_and_algebra = {path = "../circuits_constraints_and_algebra"}
 utils = {path = "../utils"}
 clap = "2.33.0"
 ansi_term = "0.12.1"

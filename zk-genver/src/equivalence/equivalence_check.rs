@@ -5,7 +5,7 @@ use crate::processing_utils::*;
 use utils::equivalence_structure::*;
 use num_bigint_dig::BigInt;
 use std::collections::{HashMap, BTreeMap};
-use circom_algebra::algebra::Constraint;
+use circuits_constraints_and_algebra::algebra::Constraint;
 use crate::equivalence::modular_reasoning::check_node;
 use solvers_interface::ffsol_interface;
 use solvers_interface::cvc5_interface;

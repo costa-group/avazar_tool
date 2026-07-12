@@ -1,4 +1,4 @@
-use circom_algebra::num_bigint::{BigInt, ParseBigIntError};
+use circuits_constraints_and_algebra::num_bigint::{BigInt, ParseBigIntError};
 use std::collections::{HashMap, HashSet};
 use serde::{Serialize,Deserialize};
 use std::borrow::Borrow;

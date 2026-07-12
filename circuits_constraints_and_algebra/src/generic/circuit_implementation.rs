@@ -1,5 +1,5 @@
 #![allow(unused_variables)]
-use circom_algebra::num_bigint::BigInt;
+use circuits_constraints_and_algebra::num_bigint::BigInt;
 
 use itertools::Itertools;
 use std::collections::{HashMap, HashSet};

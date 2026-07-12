@@ -1,5 +1,5 @@
 use crate::{PossibleResult,SafetyVerification,EquivalenceVerification};
-use circom_algebra::algebra::{EncodableConstraint, Constraint};
+use circuits_constraints_and_algebra::algebra::{EncodableConstraint, Constraint};
 
 use std::fs::File;
 use std::io::Write;

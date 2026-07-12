@@ -3,12 +3,16 @@ name = "clustering"
 version = "0.1.0"
 edition = "2024"
 
+[[bin]]
+name = "clustering"
+path = "src/main.rs"
+
 [dependencies]
 mimalloc = "0.1"
 bincode = "1"
-circuits_and_constraints = {path = "../circuits_and_constraints" }
+circuits_constraints_and_algebra = {path = "../circuits_constraints_and_algebra" }
 circuit_graphing = {path = "../circuit_graphing"}
-circom_algebra = {path = "../circom_algebra"}
+circuits_constraints_and_algebra = {path = "../circuits_constraints_and_algebra"}
 utils = {path = "../utils"}
 ansi_term = "0.12.1"
 serde = { version = "1.0.104", features = ["derive"] }

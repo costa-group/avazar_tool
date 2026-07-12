@@ -16,7 +16,7 @@ use std::path::Path;
 use num_bigint_dig::BigInt;
 use serde::{Serialize,Deserialize};
 
-use circom_algebra::algebra::{EncodableConstraint, Constraint};
+use circuits_constraints_and_algebra::algebra::{EncodableConstraint, Constraint};
 
 #[derive(PartialEq, Eq, Clone, Copy)]
 pub enum PossibleSolver{

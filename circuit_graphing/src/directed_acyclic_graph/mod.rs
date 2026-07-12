@@ -3,8 +3,8 @@ use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet};
 
 use utils::structure::NodeInfo;
-use circuits_and_constraints::constraint::Constraint;
-use circuits_and_constraints::circuit::Circuit;
+use circuits_constraints_and_algebra::constraint::Constraint;
+use circuits_constraints_and_algebra::circuit::Circuit;
 
 pub mod dag_from_partition;
 pub mod dag_postprocessing;

@@ -2,10 +2,10 @@ use std::{cmp::max, collections::{HashMap, LinkedList}};
 use std::sync::atomic::AtomicBool;
 use num_bigint_dig::BigInt;
 use crate::{PossibleResult, SafetyVerification};
-use circom_algebra::algebra::{EncodableConstraint};
+use circuits_constraints_and_algebra::algebra::{EncodableConstraint};
 use std::clone::Clone;
 
-use circom_algebra::{modular_arithmetic, algebra::{
+use circuits_constraints_and_algebra::{modular_arithmetic, algebra::{
     Constraint, ExecutedInequation}};
 
 use super::safety_z3::try_prove_safety_with_z3;

@@ -1,6 +1,6 @@
 use crate::EquivalenceVerification;
 use crate::{CorrectnessVerification, PossibleResult, SafetyVerification};
-use circom_algebra::algebra::Constraint;
+use circuits_constraints_and_algebra::algebra::Constraint;
 use nix::sys::signal::killpg;
 use nix::sys::signal::Signal;
 use nix::unistd::Pid;
@@ -18,7 +18,7 @@ use std::thread;
 use std::time::Duration;
 use std::time::Instant;
 use wait_timeout::ChildExt;
-use circom_algebra::algebra::{EncodableConstraint};
+use circuits_constraints_and_algebra::algebra::{EncodableConstraint};
 
 pub fn study_correctness(problem: &CorrectnessVerification) -> (PossibleResult, Vec<String>) {
     let mut logs = Vec::new();

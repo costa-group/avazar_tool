@@ -5,7 +5,7 @@ use std::collections::{HashSet, HashMap};
 use std::array::from_fn;
 use thiserror::Error;
 
-use circuits_and_constraints::constraint::Constraint;
+use circuits_constraints_and_algebra::constraint::Constraint;
 
 #[derive(Debug, Error)]
 pub enum EncodingError {

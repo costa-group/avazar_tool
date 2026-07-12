@@ -6,9 +6,9 @@ use std::time::{Instant, Duration};
 use thiserror::Error;
 use rustsat::solvers::{Solve, SolverResult};
 
-use circuits_and_constraints::constraint::Constraint;
-use circuits_and_constraints::circuit::Circuit;
-use circuits_and_constraints::utils::{signals_to_constraints_with_them};
+use circuits_constraints_and_algebra::constraint::Constraint;
+use circuits_constraints_and_algebra::circuit::Circuit;
+use circuits_constraints_and_algebra::utils::{signals_to_constraints_with_them};
 
 use crate::encoding::{EncodingError, encode_comparison};
 use crate::fingerprinting::{iterated_refinement};

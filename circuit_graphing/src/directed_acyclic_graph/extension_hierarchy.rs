@@ -11,8 +11,8 @@ use itertools::Itertools;
 use std::time::{Instant};
 
 use super::{DAGNode};
-use circuits_and_constraints::constraint::Constraint;
-use circuits_and_constraints::circuit::Circuit;
+use circuits_constraints_and_algebra::constraint::Constraint;
+use circuits_constraints_and_algebra::circuit::Circuit;
 use super::dag_utils::{lt};
 use super::mixed_graph::MixedGraph;
 

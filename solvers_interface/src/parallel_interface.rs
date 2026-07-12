@@ -1,6 +1,6 @@
 use crate::{CorrectnessVerification, EquivalenceVerification, PossibleResult, PossibleSolver, SafetyVerification};
 use crate::{civer_interface, ffsol_interface, cvc5_interface, nia_z3_interface, yices_interface, z3_interface};
-use circom_algebra::algebra::{EncodableConstraint};
+use circuits_constraints_and_algebra::algebra::{EncodableConstraint};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::mpsc::RecvTimeoutError;

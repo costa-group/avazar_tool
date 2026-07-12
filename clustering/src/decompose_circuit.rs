@@ -2,10 +2,10 @@ use std::collections::{HashMap, HashSet};
 use std::time::{Instant};
 use std::borrow::Borrow;
 
-use circom_algebra::num_bigint::BigInt;
-use circuits_and_constraints::lightweight_circuit::LightweightCircuit;
-use circuits_and_constraints::circuit::Circuit;
-use circuits_and_constraints::constraint::Constraint;
+use circuits_constraints_and_algebra::num_bigint::BigInt;
+use circuits_constraints_and_algebra::lightweight_circuit::LightweightCircuit;
+use circuits_constraints_and_algebra::circuit::Circuit;
+use circuits_constraints_and_algebra::constraint::Constraint;
 use utils::structure::{NodeInfo, StructureReader, TimingInfo};
 use circuit_graphing::directed_acyclic_graph::{DAGNode};
 use circuit_graphing::directed_acyclic_graph::dag_from_partition::dag_from_partition;

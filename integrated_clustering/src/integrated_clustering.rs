@@ -1,17 +1,18 @@
 use std::time::{Instant};
 use std::marker::{Send, Sync};
 
+use circuits_constraints_and_algebra::algebra::EncodableConstraint;
 use utils::structure::{TimingInfo};
 use utils::small_utilities::{DecomposeOptions};
 use crate::hierarchy_solver::{ResultInfo, hierarchy_solver, HierarchyOptions};
-use circuits_and_constraints::constraint::Constraint;
-use circuits_and_constraints::circuit::Circuit;
+use circuits_constraints_and_algebra::constraint::Constraint;
+use circuits_constraints_and_algebra::circuit::Circuit;
 use circuit_graphing::graphing_circuits::{undo_clique_clusters, shared_signal_graph};
 use circuit_graphing::leiden_clustering::{CanLeiden};
 
 // TODO: get first working version with determinism, then generalise to any problem with similar input/output property
 
-pub fn decompose_circuit_and_check_determinism<C: Constraint + Send + Sync, S: Circuit<C> + Sync>(
+pub fn decompose_circuit_and_check_determinism<C: Constraint + EncodableConstraint + Send + Sync + Clone, S: Circuit<C> + Sync>(
     circuit: &S,
     decompose_options: DecomposeOptions
 ) -> ResultInfo {

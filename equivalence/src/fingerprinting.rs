@@ -4,7 +4,7 @@ use std::cmp::Eq;
 use std::fmt::Debug;
 use itertools::Itertools;
 
-use circuits_and_constraints::constraint::Constraint;
+use circuits_constraints_and_algebra::constraint::Constraint;
 use utils::assignment::Assignment;
 
 // started with arrays, now need 1 runtime length...

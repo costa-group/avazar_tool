@@ -4,7 +4,7 @@ pub mod safety_z3;
 use self::tags_checking::TemplateVerification;
 use crate::{PossibleResult, SafetyVerification};
 use std::sync::atomic::{AtomicBool, Ordering};
-use circom_algebra::algebra::{EncodableConstraint};
+use circuits_constraints_and_algebra::algebra::{EncodableConstraint};
 use std::clone::Clone;
 
 pub use self::tags_checking::TemplateVerification as CiverTemplateVerification;
