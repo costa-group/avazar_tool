@@ -1,4 +1,5 @@
 use crate::{PossibleResult,SafetyVerification,EquivalenceVerification};
+use circom_algebra::algebra::{EncodableConstraint, Constraint};
 
 use std::fs::File;
 use std::io::Write;
@@ -8,12 +9,10 @@ use rand::Rng;
 use z3::Config;
 use z3::Context;
 use z3::Solver;
-use z3::ast::Ast;
 use z3::*;
 use num_bigint_dig::BigInt;
 
 use std::collections::HashMap;
-use circom_algebra::algebra::Constraint;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::Duration;
@@ -61,7 +60,7 @@ pub fn study_equivalence_with_cancel(problem: &EquivalenceVerification, cancel_f
 
 
 
-pub fn study_safety(problem: &SafetyVerification)-> (PossibleResult, Vec<String>){
+pub fn study_safety<C: EncodableConstraint>(problem: &SafetyVerification<C>)-> (PossibleResult, Vec<String>){
     
     
     let (result_solver,mut logs) = try_prove_safety_with_z3(problem);
@@ -85,7 +84,7 @@ pub fn study_safety(problem: &SafetyVerification)-> (PossibleResult, Vec<String>
     (result_solver, logs)
 }
 
-pub fn study_safety_with_cancel(problem: &SafetyVerification, cancel_flag: &AtomicBool)-> (PossibleResult, Vec<String>){
+pub fn study_safety_with_cancel<C: EncodableConstraint + Sync>(problem: &SafetyVerification<C>, cancel_flag: &AtomicBool)-> (PossibleResult, Vec<String>){
     if cancel_flag.load(Ordering::Relaxed) {
         return (PossibleResult::UNKNOWN, vec!["### CANCELLED BEFORE STARTING Z3\n".to_string()]);
     }
@@ -111,8 +110,8 @@ pub fn study_safety_with_cancel(problem: &SafetyVerification, cancel_flag: &Atom
     (result_solver, logs)
 }
 
-pub fn try_prove_safety_with_z3_cancel(
-    problem: &SafetyVerification,
+pub fn try_prove_safety_with_z3_cancel<C: EncodableConstraint + Sync>(
+    problem: &SafetyVerification<C>,
     cancel_flag: &AtomicBool,
 ) -> (PossibleResult,Vec<String>) {
 
@@ -128,8 +127,8 @@ pub fn try_prove_safety_with_z3_cancel(
     )
 }
 
-fn try_prove_safety_with_z3_internal(
-    problem: &SafetyVerification,
+fn try_prove_safety_with_z3_internal<C: EncodableConstraint>(
+    problem: &SafetyVerification<C>,
     cancel_flag: Option<&AtomicBool>,
 ) -> (PossibleResult,Vec<String>) {
 
@@ -147,10 +146,10 @@ fn try_prove_safety_with_z3_internal(
     }
 
     for constraint in &problem.constraints {
-        declare_constraint(&constraint, &solver, &signals_1_to_smt_rep, &problem.field);
-        declare_constraint(&constraint, &solver, &signals_2_to_smt_rep, &problem.field);
+        constraint.declare_constraint_z3(&solver, &signals_1_to_smt_rep, &problem.field);
+        constraint.declare_constraint_z3(&solver, &signals_2_to_smt_rep, &problem.field);
         if problem.apply_deduction_assigned{
-            apply_deduction_assigned(&constraint, &solver, &signals_1_to_smt_rep, &signals_2_to_smt_rep);
+            apply_deduction_assigned(constraint, &solver, &signals_1_to_smt_rep, &signals_2_to_smt_rep);
         }
     }
 
@@ -265,13 +264,8 @@ fn internal_try_prove_equivalence_with_z3(
         
     }
 
-    for constraint in &problem.constraints_1 {
-        declare_constraint(&constraint, &solver, &signals_1_to_smt_rep, &problem.field);
-    }
-
-    for constraint in &problem.constraints_2 {
-        declare_constraint(&constraint, &solver, &signals_2_to_smt_rep, &problem.field);
-    }
+    for constraint in &problem.constraints_1 {constraint.declare_constraint_z3(&solver, &signals_1_to_smt_rep, &problem.field);}
+    for constraint in &problem.constraints_2 {constraint.declare_constraint_z3(&solver, &signals_2_to_smt_rep, &problem.field);}
 
     let equal_inputs = declare_all_signals_equal(
         &solver, 
@@ -335,8 +329,8 @@ fn internal_try_prove_equivalence_with_z3(
 }
 
 
-pub fn try_prove_safety_with_z3(
-    problem: &SafetyVerification
+pub fn try_prove_safety_with_z3<C: EncodableConstraint>(
+    problem: &SafetyVerification<C>
 ) -> (PossibleResult,Vec<String>) {
     try_prove_safety_with_z3_internal(problem, None)
 }
@@ -358,51 +352,8 @@ pub fn declare_signal(
     signal
 }
 
-
-pub fn declare_constraint(
-    constraint: &Constraint<usize>,
-    solver: &z3::Solver,
-    signals_to_z3: &HashMap<usize, z3::ast::Int>,
-    field: &BigInt,
-) {
-    let mut value_a = z3::ast::Int::from_u64(0);
-    let mut value_b = z3::ast::Int::from_u64(0);
-    let mut value_c = z3::ast::Int::from_u64(0);
-
-    for (signal, value) in constraint.a() {
-        if *signal == 0 {
-            value_a += &z3::ast::Int::from_str(&value.to_string()).unwrap()
-        } else {
-            value_a += signals_to_z3.get(signal).unwrap()
-                * &z3::ast::Int::from_str(&value.to_string()).unwrap();
-        }
-    }
-    for (signal, value) in constraint.b() {
-        if *signal == 0 {
-            value_b += &z3::ast::Int::from_str(&value.to_string()).unwrap()
-        } else {
-            value_b += signals_to_z3.get(signal).unwrap()
-                * &z3::ast::Int::from_str(&value.to_string()).unwrap();
-        }
-    }
-    for (signal, value) in constraint.c() {
-        if *signal == 0 {
-            value_c += &z3::ast::Int::from_str(&value.to_string()).unwrap()
-        } else {
-            value_c += signals_to_z3.get(signal).unwrap()
-                * &z3::ast::Int::from_str(&value.to_string()).unwrap();
-        }
-    }
-
-    let prime = z3::ast::Int::from_str(&field.to_string()).unwrap();
-    let value_left = (value_c - (value_a * value_b)).modulo(&prime);
-    let value_right = z3::ast::Int::from_i64(0);
-    solver.assert(&value_left.eq(&value_right));
-
-}
-
 pub fn declare_all_signals_equal(
-    solver: &z3::Solver,
+    _solver: &z3::Solver,
     signals_1: &Vec<usize>, 
     signal_1_to_z3: &HashMap<usize,z3::ast::Int>, 
     signals_2: &Vec<usize>, 
@@ -421,8 +372,8 @@ pub fn declare_all_signals_equal(
 
 
 
-pub fn apply_deduction_assigned(
-    c: &Constraint<usize>,
+pub fn apply_deduction_assigned<C: EncodableConstraint>(
+    c: &C,
     solver: &Solver,
     signals_to_smt_symbols_1: &HashMap<usize, z3::ast::Int>,
     signals_to_smt_symbols_2: &HashMap<usize, z3::ast::Int>,

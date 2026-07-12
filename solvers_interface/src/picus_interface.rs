@@ -2,16 +2,16 @@ use crate::{PossibleResult,SafetyVerification};
 use std::process::Command;
 use std::process::Stdio;
 use std::time::Duration;
-use circom_algebra::algebra::Constraint;
 use std::collections::{HashMap, LinkedList};
 use std::io::Read;
 use utils::write_r1cs::*;
 use num_bigint_dig::BigInt;
 use wait_timeout::ChildExt;
 use std::fs;
+use circom_algebra::algebra::{EncodableConstraint, Constraint};
 
 
-pub fn deduce(problem: &SafetyVerification)-> (PossibleResult, Vec<String>){
+pub fn deduce(problem: &SafetyVerification<Constraint<usize>>) -> (PossibleResult, Vec<String>){
     let  copy_inputs = problem.inputs.clone();
     let  copy_outputs = problem.outputs.clone();
     let  copy_signals = problem.signals.clone();

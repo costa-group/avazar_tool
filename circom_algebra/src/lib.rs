@@ -4,3 +4,4 @@ pub mod algebra;
 pub mod constraint_storage;
 pub mod modular_arithmetic;
 pub mod simplification_utils;
+pub mod encodable_constraint_impl;

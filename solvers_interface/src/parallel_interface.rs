@@ -1,5 +1,6 @@
 use crate::{CorrectnessVerification, EquivalenceVerification, PossibleResult, PossibleSolver, SafetyVerification};
 use crate::{civer_interface, ffsol_interface, cvc5_interface, nia_z3_interface, yices_interface, z3_interface};
+use circom_algebra::algebra::{EncodableConstraint};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::mpsc::RecvTimeoutError;
@@ -113,7 +114,7 @@ fn run_parallel(label: &str, timeout_ms: u64, tasks: Vec<(&'static str, Task)>) 
     }
 }
 
-pub fn study_safety(problem: &SafetyVerification) -> (PossibleResult, Vec<String>) {
+pub fn study_safety<C: EncodableConstraint + Clone + Send + Sync + 'static>(problem: &SafetyVerification<C>) -> (PossibleResult, Vec<String>) {
     let mut candidates = vec![
         ("ffsol",          PossibleSolver::FFSOL),
         ("ffsol-nolinear", PossibleSolver::FFSOL),

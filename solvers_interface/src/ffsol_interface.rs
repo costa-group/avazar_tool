@@ -17,6 +17,7 @@ use nix::sys::signal::killpg;
 use std::fs;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
+use circom_algebra::algebra::{EncodableConstraint};
 
 #[derive(Clone)]
 pub struct FfsolConfig {
@@ -173,7 +174,7 @@ pub fn study_equivalence(problem: &EquivalenceVerification, config: &FfsolConfig
 
 
 
-pub fn study_safety(problem: &SafetyVerification, config: &FfsolConfig)-> (PossibleResult, Vec<String>){
+pub fn study_safety<C: EncodableConstraint>(problem: &SafetyVerification<C>, config: &FfsolConfig)-> (PossibleResult, Vec<String>){
 
     let mut logs = Vec::new();
 
@@ -201,7 +202,7 @@ pub fn study_safety(problem: &SafetyVerification, config: &FfsolConfig)-> (Possi
     (result_solver, logs)
 }
 
-pub fn study_safety_with_cancel(problem: &SafetyVerification, cancel_flag: &AtomicBool, config: &FfsolConfig)-> (PossibleResult, Vec<String>){
+pub fn study_safety_with_cancel<C: EncodableConstraint + Sync>(problem: &SafetyVerification<C>, cancel_flag: &AtomicBool, config: &FfsolConfig)-> (PossibleResult, Vec<String>){
     let mut logs = Vec::new();
 
     if cancel_flag.load(Ordering::Relaxed) {

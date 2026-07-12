@@ -16,7 +16,7 @@ use std::path::Path;
 use num_bigint_dig::BigInt;
 use serde::{Serialize,Deserialize};
 
-use circom_algebra::algebra::Constraint;
+use circom_algebra::algebra::{EncodableConstraint, Constraint};
 
 #[derive(PartialEq, Eq, Clone, Copy)]
 pub enum PossibleSolver{
@@ -92,13 +92,13 @@ pub enum PossibleResult{
 
 
 #[derive(Clone)]
-pub struct SafetyVerification {
+pub struct SafetyVerification<C: EncodableConstraint> {
     pub template_name: String,
     pub original_file: String,
     pub signals: LinkedList<usize>,
     pub inputs: Vec<usize>,
     pub outputs: Vec<usize>,
-    pub constraints: Vec<Constraint<usize>>,
+    pub constraints: Vec<C>,
     pub implications_safety: Vec<(Vec<usize>, Vec<usize>)>,
     pub field: BigInt,
     pub verification_timeout: u64,
@@ -108,7 +108,7 @@ pub struct SafetyVerification {
     pub verbose: bool
 }
 
-impl SafetyVerification{
+impl<C: EncodableConstraint> SafetyVerification<C>{
 
     pub fn new(
         template_name: &String,
@@ -116,18 +116,16 @@ impl SafetyVerification{
         signals: LinkedList<usize>,
         inputs: Vec<usize>,
         outputs: Vec<usize>,
-        constraints: Vec<Constraint<usize>>,
+        mut constraints: Vec<C>,
         implications_safety: Vec<(Vec<usize>, Vec<usize>)>,
         field: &BigInt,
         verification_timeout: u64,
         apply_deduction_assigned: bool,
         include_niaz3_in_all: bool,
         verbose: bool
-    ) -> SafetyVerification {
-        let mut fixed_constraints = Vec::new();
-        for mut c in constraints{
-            Constraint::fix_constraint(&mut c, field);
-            fixed_constraints.push(c);
+    ) -> SafetyVerification<C> {
+        for c in constraints.iter_mut() {
+            c.fix_constraint(field);
         }
 
         SafetyVerification {
@@ -137,7 +135,7 @@ impl SafetyVerification{
             inputs,
             outputs,
             implications_safety,
-            constraints: fixed_constraints,
+            constraints: constraints,
             field: field.clone(),
             verification_timeout,
             added_nodes: HashSet::new(),

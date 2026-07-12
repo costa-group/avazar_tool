@@ -8,3 +8,4 @@ edition = "2018"
 num-bigint-dig = "0.6.0"
 num-traits = "0.2.6"
 constant_tracking = {path = "../constant_tracking" }
+z3 = {version="0.20.0"}

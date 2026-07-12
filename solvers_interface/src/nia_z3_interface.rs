@@ -18,6 +18,7 @@ use std::thread;
 use std::time::Duration;
 use std::time::Instant;
 use wait_timeout::ChildExt;
+use circom_algebra::algebra::{EncodableConstraint};
 
 pub fn study_correctness(problem: &CorrectnessVerification) -> (PossibleResult, Vec<String>) {
     let mut logs = Vec::new();
@@ -65,7 +66,7 @@ pub fn study_equivalence(problem: &EquivalenceVerification) -> (PossibleResult, 
     (result_solver, logs)
 }
 
-pub fn study_safety(problem: &SafetyVerification) -> (PossibleResult, Vec<String>) {
+pub fn study_safety<C: EncodableConstraint>(problem: &SafetyVerification<C>) -> (PossibleResult, Vec<String>) {
     let mut logs = Vec::new();
 
     let smt2_problem = safety_problem_to_z3_smt2(problem);
@@ -88,7 +89,7 @@ pub fn study_safety(problem: &SafetyVerification) -> (PossibleResult, Vec<String
     (result_solver, logs)
 }
 
-pub fn study_safety_with_cancel(problem: &SafetyVerification, cancel_flag: &AtomicBool) -> (PossibleResult, Vec<String>) {
+pub fn study_safety_with_cancel<C: EncodableConstraint + Sync>(problem: &SafetyVerification<C>, cancel_flag: &AtomicBool) -> (PossibleResult, Vec<String>) {
     let mut logs = Vec::new();
 
     if cancel_flag.load(Ordering::Relaxed) {
@@ -172,58 +173,6 @@ fn append_declare_and_domain(lines: &mut Vec<String>, name: &str, prime: &BigInt
     lines.push(format!("(assert (< {} {}))", name, prime));
 }
 
-fn sum_terms(terms: Vec<String>) -> String {
-    if terms.is_empty() {
-        return "0".to_string();
-    }
-    if terms.len() == 1 {
-        return terms[0].clone();
-    }
-    format!("(+ {})", terms.join(" "))
-}
-
-fn linear_expr_to_int(coeffs: &HashMap<usize, BigInt>, signal_to_name: &HashMap<usize, String>) -> String {
-    let mut terms = Vec::new();
-
-    for (signal, value) in coeffs {
-        if value == &BigInt::from(0) {
-            continue;
-        }
-
-        if *signal == 0 {
-            terms.push(value.to_string());
-            continue;
-        }
-
-        let s = signal_to_name.get(signal).unwrap();
-        if value == &BigInt::from(1) {
-            terms.push(s.clone());
-        } else {
-            terms.push(format!("(* {} {})", s, value));
-        }
-    }
-
-    sum_terms(terms)
-}
-
-fn constraint_to_mod0_assert(
-    constraint: &Constraint<usize>,
-    signal_to_name: &HashMap<usize, String>,
-    prime: &BigInt,
-) -> String {
-    let a = linear_expr_to_int(constraint.a(), signal_to_name);
-    let b = linear_expr_to_int(constraint.b(), signal_to_name);
-    let c = linear_expr_to_int(constraint.c(), signal_to_name);
-
-    let product = if constraint.a().is_empty() || constraint.b().is_empty() {
-        "0".to_string()
-    } else {
-        format!("(* {} {})", a, b)
-    };
-
-    format!("(assert (= (mod (- {} {}) {}) 0))", c, product, prime)
-}
-
 fn all_equal_expr_from_pairs(pairs: &[(String, String)]) -> String {
     if pairs.is_empty() {
         return "true".to_string();
@@ -256,8 +205,8 @@ fn all_equal_expr_by_ids(
     all_equal_expr_from_pairs(&pairs)
 }
 
-fn deduction_assertions(
-    constraint: &Constraint<usize>,
+fn deduction_assertions<C: EncodableConstraint>(
+    constraint: &C,
     signal_to_name_1: &HashMap<usize, String>,
     signal_to_name_2: &HashMap<usize, String>,
 ) -> Vec<String> {
@@ -315,7 +264,7 @@ fn safety_implication_expr(
     format!("(=> {} {})", left, right)
 }
 
-fn safety_problem_to_z3_smt2(problem: &SafetyVerification) -> String {
+fn safety_problem_to_z3_smt2<C: EncodableConstraint>(problem: &SafetyVerification<C>) -> String {
     let mut lines = Vec::new();
     lines.push("(set-logic QF_NIA)".to_string());
 
@@ -338,8 +287,8 @@ fn safety_problem_to_z3_smt2(problem: &SafetyVerification) -> String {
     }
 
     for c in &problem.constraints {
-        lines.push(constraint_to_mod0_assert(c, &signal_to_name_1, &problem.field));
-        lines.push(constraint_to_mod0_assert(c, &signal_to_name_2, &problem.field));
+        lines.push(c.constraint_to_mod0_assert(&signal_to_name_1, &problem.field));
+        lines.push(c.constraint_to_mod0_assert(&signal_to_name_2, &problem.field));
 
         if problem.apply_deduction_assigned {
             lines.extend(deduction_assertions(c, &signal_to_name_1, &signal_to_name_2));
@@ -397,11 +346,11 @@ fn equivalence_problem_to_z3_smt2(problem: &EquivalenceVerification) -> String {
     }
 
     for c in &problem.constraints_1 {
-        lines.push(constraint_to_mod0_assert(c, &signal_to_name_1, &problem.field));
+        lines.push(c.constraint_to_mod0_assert(&signal_to_name_1, &problem.field));
     }
 
     for c in &problem.constraints_2 {
-        lines.push(constraint_to_mod0_assert(c, &signal_to_name_2, &problem.field));
+        lines.push(c.constraint_to_mod0_assert(&signal_to_name_2, &problem.field));
     }
 
     lines.push(format!(
@@ -448,7 +397,7 @@ fn correctness_problem_to_z3_smt2(problem: &CorrectnessVerification) -> String {
     }
 
     for c in &problem.constraints_1 {
-        lines.push(constraint_to_mod0_assert(c, &signal_to_name_1, &problem.field));
+        lines.push(c.constraint_to_mod0_assert(&signal_to_name_1, &problem.field));
     }
 
     for c in &problem.constraints_2 {

@@ -1,7 +1,7 @@
 
-use std::collections::{HashMap, LinkedList};
+use std::collections::{HashMap, HashSet, LinkedList};
 use crate::{BigInt, SafetyVerification,EquivalenceVerification,CorrectnessVerification};
-use circom_algebra::algebra::Constraint;
+use circom_algebra::algebra::{EncodableConstraint, Constraint};
 
 pub fn correctness_problem_to_smt2(problem: &CorrectnessVerification)->LinkedList<String>{
     let mut smt2_problem = LinkedList::new();
@@ -155,7 +155,7 @@ pub fn equivalence_problem_to_smt2(problem: &EquivalenceVerification,use_old_syn
 }
 
 
-pub fn safety_problem_to_smt2(problem: &SafetyVerification)->LinkedList<String>{
+pub fn safety_problem_to_smt2<C: EncodableConstraint>(problem: &SafetyVerification<C>)->LinkedList<String>{
     let mut smt2_problem = LinkedList::new();
     let mut header = declare_header(&problem.field);
     smt2_problem.append(&mut header);
@@ -336,8 +336,8 @@ pub fn correctness_implication_to_smt2(imp: &(Vec<(usize, String)>, Vec<(usize, 
 
 }
 
-pub fn apply_deduction_assigned(
-    c: &Constraint<usize>,
+pub fn apply_deduction_assigned<C: EncodableConstraint>(
+    c: &C,
     signals_to_names: &HashMap<usize,String>,
     signals_to_names_aux: &HashMap<usize,String>,
 )->Vec<String> {

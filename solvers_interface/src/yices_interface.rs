@@ -17,6 +17,7 @@ use std::fs;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 use crate::smt2_utils::{safety_problem_to_smt2, equivalence_problem_to_smt2, correctness_problem_to_smt2};
+use circom_algebra::algebra::{EncodableConstraint};
 
 
 pub fn study_correctness(problem: &CorrectnessVerification) -> (PossibleResult, Vec<String>) {
@@ -73,7 +74,7 @@ pub fn study_equivalence(problem: &EquivalenceVerification) -> (PossibleResult, 
 }
 
 
-pub fn study_safety(problem: &SafetyVerification) -> (PossibleResult, Vec<String>) {
+pub fn study_safety<C: EncodableConstraint>(problem: &SafetyVerification<C>) -> (PossibleResult, Vec<String>) {
     let mut logs = Vec::new();
 
     let smt2_problem: LinkedList<String> = safety_problem_to_smt2(problem);
@@ -99,7 +100,7 @@ pub fn study_safety(problem: &SafetyVerification) -> (PossibleResult, Vec<String
     (result_solver, logs)
 }
 
-pub fn study_safety_with_cancel(problem: &SafetyVerification, cancel_flag: &AtomicBool) -> (PossibleResult, Vec<String>) {
+pub fn study_safety_with_cancel<C: EncodableConstraint + Sync>(problem: &SafetyVerification<C>, cancel_flag: &AtomicBool) -> (PossibleResult, Vec<String>) {
     let mut logs = Vec::new();
 
     if cancel_flag.load(Ordering::Relaxed) {
