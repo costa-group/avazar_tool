@@ -301,4 +301,8 @@ impl MixedGraph {
         let _ = write_dzn("data.dzn", &self.adjacencies, &self.edges, &fuzzy, &init_direction, &self.input_parts, &self.output_parts); 
     }
 
+    pub fn vertex_is_fully_oriented(&self, idx: usize) -> bool {
+        self.adjacencies[idx].iter().copied().all(|odx| self.pair_oriented(idx, odx))
+    }
+
 }

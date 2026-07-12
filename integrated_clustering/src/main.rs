@@ -8,7 +8,7 @@ use std::error::Error;
 use std::time::{Instant};
 
 use utils::small_utilities::{FileType, DecomposeOptions};
-use utils::read_r1cs::{R1CSData};
+use circuits_constraints_and_algebra::r1cs::{R1CSData};
 use circuits_constraints_and_algebra::generic::{AIRDataWrapper};
 use circuits_constraints_and_algebra::acir::{ACIRCircuit};
 use circuits_constraints_and_algebra::circuit::Circuit;
@@ -79,15 +79,15 @@ fn start(args: Args) -> Result<(), Box<dyn Error>> {
             },
         FileType::ACIR =>{
             panic!("Encoding is not yet implemented for the Acir filetype");
-            let circuit = ACIRCircuit::parse_file(&args.filepath)?;
-            if args.debug > 0 { println!("Took {:?} to parse", circuit_parsing_timer.elapsed()); }
-            decompose_circuit_and_check_determinism(&circuit, decompose_options)
+            // let circuit = ACIRCircuit::parse_file(&args.filepath)?;
+            // if args.debug > 0 { println!("Took {:?} to parse", circuit_parsing_timer.elapsed()); }
+            // decompose_circuit_and_check_determinism(&circuit, decompose_options)
             }
         FileType::Generic =>{
             panic!("Encoding is not yet implemented for the Generic filetype");
-            let circuit = AIRDataWrapper::parse_file(&args.filepath)?;
-            if args.debug > 0 { println!("Took {:?} to parse", circuit_parsing_timer.elapsed()); }
-            decompose_circuit_and_check_determinism(&circuit, decompose_options)
+            // let circuit = AIRDataWrapper::parse_file(&args.filepath)?;
+            // if args.debug > 0 { println!("Took {:?} to parse", circuit_parsing_timer.elapsed()); }
+            // decompose_circuit_and_check_determinism(&circuit, decompose_options)
             }
     };
     

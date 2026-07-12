@@ -121,7 +121,7 @@ pub fn hierarchy_solver<C: Constraint + EncodableConstraint + Send + Sync + Clon
     // Step 2: In rounds - in parallel - check all-outputs 
     //  solve DAGNode orientation
     //  Repeat until no new arcs are possible
-    let mut parts_to_attempt: Vec<usize> = (0..graph.n).into_iter().collect();
+    let mut parts_to_attempt: Vec<usize> = (0..graph.n).into_iter().filter(|&v| !graph.vertex_is_fully_oriented(v)).collect();
     let thread_pool = ThreadPoolBuilder::new().num_threads(num_cores).build().unwrap();
     let mut results_info = ResultInfo {
         total_constraints: circ.n_constraints(),
@@ -177,8 +177,8 @@ pub fn hierarchy_solver<C: Constraint + EncodableConstraint + Send + Sync + Clon
 
         let mut viable_arcs: Vec<(usize, usize)> = Vec::new();
 
-        for part_id in parts_to_attempt.iter().copied() {
-            if results[part_id] == PossibleResult::VERIFIED {
+        for (res_id, part_id) in parts_to_attempt.iter().copied().enumerate() {
+            if results[res_id] == PossibleResult::VERIFIED {
                 verified_parts.insert(part_id);
                 results_info.verified_nodes.insert(part_id);
                 viable_arcs.extend(
@@ -205,7 +205,7 @@ pub fn hierarchy_solver<C: Constraint + EncodableConstraint + Send + Sync + Clon
 
         // update parts_to_attempt with parts that had new input
         graph.orient_by_arcs(&chosen_arcs);
-        parts_to_attempt = chosen_arcs.into_iter().map(|(_, v)| v).sorted().dedup().collect();
+        parts_to_attempt = chosen_arcs.into_iter().map(|(_, v)| v).sorted().dedup().filter(|&v| !graph.vertex_is_fully_oriented(v)).collect();
     }
 
     }
