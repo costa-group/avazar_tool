@@ -6,6 +6,8 @@ use std::collections::{HashMap, HashSet, BTreeSet};
 use std::fmt::{Display, Formatter};
 use std::hash::Hash;
 
+use crate::r1cs::{R1CSConstraint as Constraint};
+
 pub enum ArithmeticExpression<C>
 where
     C: Hash + Eq,
@@ -92,7 +94,7 @@ impl<C: Default + Clone + Display + Hash + Eq> ArithmeticExpression<C> {
     }
 
     // printing utils
-    fn string_from_coefficients(coefficients: &HashMap<C, BigInt>) -> String {
+    pub(crate) fn string_from_coefficients(coefficients: &HashMap<C, BigInt>) -> String {
         let mut string_coefficients = "".to_string();
         for (signal, value) in coefficients {
             let component_string = if value.is_zero() {
@@ -109,7 +111,7 @@ impl<C: Default + Clone + Display + Hash + Eq> ArithmeticExpression<C> {
     }
 
     // printing utils
-    fn coefficients_to_smt2(coefficients: &HashMap<C, BigInt>, signal_to_smt2_name: &HashMap<C,String>) -> String {
+    pub(crate) fn coefficients_to_smt2(coefficients: &HashMap<C, BigInt>, signal_to_smt2_name: &HashMap<C,String>) -> String {
         if coefficients.is_empty(){
             return "".to_string();
         }
@@ -146,7 +148,7 @@ impl<C: Default + Clone + Display + Hash + Eq> ArithmeticExpression<C> {
     }
 
         // printing utils
-    fn coefficients_to_smt2_old(coefficients: &HashMap<C, BigInt>, signal_to_smt2_name: &HashMap<C,String>) -> String {
+    pub(crate) fn coefficients_to_smt2_old(coefficients: &HashMap<C, BigInt>, signal_to_smt2_name: &HashMap<C,String>) -> String {
         if coefficients.is_empty(){
             return "".to_string();
         }
@@ -226,27 +228,27 @@ impl<C: Default + Clone + Display + Hash + Eq> ArithmeticExpression<C> {
     // is meant to be call each time a hashmap is going to be
     // part of a Expression
     // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    fn constant_coefficient() -> C {
+    pub(crate) fn constant_coefficient() -> C {
         C::default()
     }
-    fn initialize_hashmap_for_expression(initial: &mut HashMap<C, BigInt>) {
+    pub(crate) fn initialize_hashmap_for_expression(initial: &mut HashMap<C, BigInt>) {
         initial
             .entry(ArithmeticExpression::constant_coefficient())
             .or_insert_with(|| BigInt::from(0));
         debug_assert!(ArithmeticExpression::valid_hashmap_for_expression(initial));
     }
-    fn valid_hashmap_for_expression(h: &HashMap<C, BigInt>) -> bool {
+    pub(crate) fn valid_hashmap_for_expression(h: &HashMap<C, BigInt>) -> bool {
         let cc = ArithmeticExpression::constant_coefficient();
         h.contains_key(&cc)
     }
-    fn initialize_symbol_in_coefficients(symbol: &C, coefficients: &mut HashMap<C, BigInt>) {
+    pub(crate) fn initialize_symbol_in_coefficients(symbol: &C, coefficients: &mut HashMap<C, BigInt>) {
         debug_assert!(ArithmeticExpression::valid_hashmap_for_expression(coefficients));
         if !coefficients.contains_key(symbol) {
             coefficients.insert(symbol.clone(), BigInt::from(0));
         }
         debug_assert!(ArithmeticExpression::valid_hashmap_for_expression(coefficients));
     }
-    fn add_constant_to_coefficients(
+    pub(crate) fn add_constant_to_coefficients(
         value: &BigInt,
         coefficients: &mut HashMap<C, BigInt>,
         field: &BigInt,
@@ -259,7 +261,7 @@ impl<C: Default + Clone + Display + Hash + Eq> ArithmeticExpression<C> {
         );
         debug_assert!(ArithmeticExpression::valid_hashmap_for_expression(coefficients));
     }
-    fn add_symbol_to_coefficients(
+    pub(crate) fn add_symbol_to_coefficients(
         symbol: &C,
         coefficient: &BigInt,
         coefficients: &mut HashMap<C, BigInt>,
@@ -273,7 +275,7 @@ impl<C: Default + Clone + Display + Hash + Eq> ArithmeticExpression<C> {
         );
         debug_assert!(ArithmeticExpression::valid_hashmap_for_expression(coefficients));
     }
-    fn add_coefficients_to_coefficients(
+    pub(crate) fn add_coefficients_to_coefficients(
         coefficients_0: &HashMap<C, BigInt>,
         coefficients_1: &mut HashMap<C, BigInt>,
         field: &BigInt,
@@ -291,7 +293,7 @@ impl<C: Default + Clone + Display + Hash + Eq> ArithmeticExpression<C> {
         debug_assert!(ArithmeticExpression::valid_hashmap_for_expression(coefficients_0));
         debug_assert!(ArithmeticExpression::valid_hashmap_for_expression(coefficients_1));
     }
-    fn multiply_coefficients_by_constant(
+    pub(crate) fn multiply_coefficients_by_constant(
         constant: &BigInt,
         coefficients: &mut HashMap<C, BigInt>,
         field: &BigInt,
@@ -1073,7 +1075,7 @@ impl Substitution<usize> {
     where A,B and C are linear expression.
 */
 
-use crate::encodable_constraint_impl::Signal2Bounds;
+pub type Signal2Bounds = HashMap<usize, ExecutedInequation<usize>>;
 pub trait EncodableConstraint {
 
     fn constraint_to_smt2(&self, signal_to_name: &HashMap<usize, String>) -> String;
@@ -1136,7 +1138,7 @@ impl Constraint<usize> {
 }
 
 // model utils
-type RawExpr<C> = HashMap<C, BigInt>;
+pub(crate) type RawExpr<C> = HashMap<C, BigInt>;
 
 fn apply_vectored_correspondence(
     symbols: &HashMap<usize, BigInt>,
@@ -1149,7 +1151,7 @@ fn apply_vectored_correspondence(
     mapped
 }
 
-fn apply_raw_correspondence<C, K>(
+pub(crate) fn apply_raw_correspondence<C, K>(
     symbols: &HashMap<C, BigInt>,
     map: &HashMap<C, K>,
 ) -> HashMap<K, BigInt>
@@ -1183,7 +1185,7 @@ fn apply_raw_offset(h: &HashMap<usize, BigInt>, offset: usize) -> HashMap<usize,
     new
 }
 
-fn raw_substitution<C>(
+pub(crate) fn raw_substitution<C>(
     change: &mut HashMap<C, BigInt>,
     substitution: &Substitution<C>,
     field: &BigInt,
@@ -1200,7 +1202,7 @@ fn raw_substitution<C>(
     //*change = remove_zero_value_coefficients(std::mem::take(change));
 }
 
-fn remove_zero_value_coefficients<C>(raw_expression: HashMap<C, BigInt>) -> HashMap<C, BigInt>
+pub(crate) fn remove_zero_value_coefficients<C>(raw_expression: HashMap<C, BigInt>) -> HashMap<C, BigInt>
 where
     C: Default + Clone + Display + Hash + Eq,
 {
@@ -1211,79 +1213,6 @@ where
         }
     }
     clean_raw
-}
-
-fn fix_raw_constraint<C>(a: &mut RawExpr<C>, b: &mut RawExpr<C>, c: &mut RawExpr<C>, field: &BigInt)
-where
-    C: Default + Clone + Display + Hash + Eq,
-{
-    *a = remove_zero_value_coefficients(std::mem::take(a));
-    *b = remove_zero_value_coefficients(std::mem::take(b));
-    *c = remove_zero_value_coefficients(std::mem::take(c));
-    if HashMap::is_empty(a) || HashMap::is_empty(b) {
-        HashMap::clear(a);
-        HashMap::clear(b);
-    } else if is_constant_expression(a) {
-        constant_linear_linear_reduction(a, b, c, field);
-    } else if is_constant_expression(b) {
-        constant_linear_linear_reduction(b, a, c, field);
-    }
-}
-
-fn constant_linear_linear_reduction<C>(
-    a: &mut RawExpr<C>,
-    b: &mut RawExpr<C>,
-    c: &mut RawExpr<C>,
-    field: &BigInt,
-) where
-    C: Default + Clone + Display + Hash + Eq,
-{
-    let cq: C = ArithmeticExpression::constant_coefficient();
-    ArithmeticExpression::initialize_hashmap_for_expression(c);
-    ArithmeticExpression::initialize_hashmap_for_expression(b);
-    let constant = HashMap::remove(a, &cq).unwrap();
-    ArithmeticExpression::multiply_coefficients_by_constant(&constant, b, field);
-    ArithmeticExpression::multiply_coefficients_by_constant(&BigInt::from(-1), b, field);
-    ArithmeticExpression::add_coefficients_to_coefficients(b, c, field);
-    *c = remove_zero_value_coefficients(std::mem::take(c));
-    HashMap::clear(a);
-    HashMap::clear(b);
-}
-
-fn signal_equals_signal<C>(a: &RawExpr<C>, b: &RawExpr<C>, c: &RawExpr<C>, field: &BigInt) -> bool
-where
-    C: Default + Clone + Display + Hash + Eq,
-{
-    let cq: C = ArithmeticExpression::constant_coefficient();
-    if a.is_empty() && b.is_empty() && !HashMap::contains_key(c, &cq) && c.len() == 2 {
-        let signals: Vec<_> = c.keys().cloned().collect();
-        let c0 = HashMap::get(c, &signals[0]).unwrap();
-        let c1 = HashMap::get(c, &signals[1]).unwrap();
-        let c1_p = modular_arithmetic::mul(&BigInt::from(-1), c1, field);
-        c1_p == *c0
-    } else {
-        false
-    }
-}
-
-fn signal_equals_constant<C>(a: &RawExpr<C>, b: &RawExpr<C>, c: &RawExpr<C>) -> bool
-where
-    C: Default + Clone + Display + Hash + Eq,
-{
-    let cq: C = ArithmeticExpression::constant_coefficient();
-    HashMap::is_empty(a)
-        && HashMap::is_empty(b)
-        && 
-        	((HashMap::contains_key(c, &cq) && HashMap::len(c) == 2) ||
-        	(!HashMap::contains_key(c, &cq) && HashMap::len(c) == 1))
-}
-
-fn is_constant_expression<C>(expr: &RawExpr<C>) -> bool
-where
-    C: Default + Clone + Display + Hash + Eq,
-{
-    let cq: C = ArithmeticExpression::constant_coefficient();
-    HashMap::contains_key(expr, &cq) && HashMap::len(expr) == 1
 }
 
 pub fn normalize(c: Constraint<usize>, _field: &BigInt) -> Constraint<usize> {

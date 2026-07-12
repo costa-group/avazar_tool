@@ -1,12 +1,11 @@
 #![allow(unused_variables)]
-use circuits_constraints_and_algebra::num_bigint::BigInt;
+use crate::num_bigint::BigInt;
 
 use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::fs::File;
 use std::io::BufReader;
-use std::borrow::Borrow;
 
 use crate::constraint::Constraint;
 use crate::circuit::Circuit;

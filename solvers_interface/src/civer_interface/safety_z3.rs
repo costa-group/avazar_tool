@@ -5,7 +5,7 @@ use std::time::Duration;
 use std::str::FromStr;
 use num_bigint_dig::BigInt;
 use crate::PossibleResult;
-use circuits_constraints_and_algebra::{encodable_constraint_impl::Signal2Bounds, algebra::{Constraint, ExecutedInequation, EncodableConstraint}};
+use circuits_constraints_and_algebra::{algebra::{Signal2Bounds, ExecutedInequation, EncodableConstraint}};
 
 use z3::Config;
 use z3::Solver;

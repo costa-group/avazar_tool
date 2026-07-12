@@ -8,15 +8,13 @@ pub mod z3_interface;
 pub mod parallel_interface;
 mod smt2_utils;
 use indexmap::IndexMap;
-
-use std::collections::HashMap;
-
 use std::collections::{HashSet, LinkedList};
 use std::path::Path;
 use num_bigint_dig::BigInt;
 use serde::{Serialize,Deserialize};
 
-use circuits_constraints_and_algebra::algebra::{EncodableConstraint, Constraint};
+use circuits_constraints_and_algebra::algebra::EncodableConstraint;
+use circuits_constraints_and_algebra::r1cs::{R1CSConstraint as Constraint};
 
 #[derive(PartialEq, Eq, Clone, Copy)]
 pub enum PossibleSolver{

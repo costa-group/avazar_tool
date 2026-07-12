@@ -1,11 +1,11 @@
-use circuits_constraints_and_algebra::num_bigint::{BigInt, Sign};
+use crate::num_bigint::{BigInt, Sign};
 use std::collections::HashMap;
-use circuits_constraints_and_algebra::num_traits::ToPrimitive;
+use crate::num_traits::ToPrimitive;
 use std::fs::File;
 use std::io::{BufReader, Read, Seek, SeekFrom};
 use std::fmt;
 
-use super::{R1CSConstraint, R1CSData};
+use super::{R1CSConstraint, R1CSData, HeaderData};
 
 const SECTIONS: u8 = 5;
 const MAGIC: &[u8] = b"r1cs";
@@ -269,7 +269,7 @@ impl HeaderSection {
 }
 
 impl ConstraintSection {
-    pub fn read_constraint_usize(&mut self) -> Result<(Constraint, Constraint, Constraint), std::io::Error> {
+    pub fn read_constraint_usize(&mut self) -> Result<R1CSConstraint<usize>, std::io::Error> {
         let field_size = self.field_size;
         let (a, b, c) = read_constraint::<Vec<u8>>(&mut self.reader, field_size)?;
         let mut constraint_a = HashMap::new();
@@ -288,7 +288,7 @@ impl ConstraintSection {
             constraint_c.insert(id, v);
         }
         self.number_of_constraints += 1;
-        Ok((constraint_a, constraint_b, constraint_c))
+        Ok(R1CSConstraint::new(constraint_a, constraint_b, constraint_c))
     }
 
     pub fn end_section(mut self) -> Result<R1CSReader, std::io::Error> {

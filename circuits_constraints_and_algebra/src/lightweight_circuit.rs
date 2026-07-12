@@ -1,8 +1,7 @@
 use std::collections::{HashMap, HashSet};
-use std::borrow::Borrow;
 use std::error::Error;
 
-use circuits_constraints_and_algebra::num_bigint::{BigInt};
+use crate::num_bigint::{BigInt};
 use crate::circuit::Circuit;
 use crate::constraint::Constraint;
 

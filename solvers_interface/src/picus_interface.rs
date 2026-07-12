@@ -4,11 +4,11 @@ use std::process::Stdio;
 use std::time::Duration;
 use std::collections::{HashMap, LinkedList};
 use std::io::Read;
-use utils::write_r1cs::*;
 use num_bigint_dig::BigInt;
 use wait_timeout::ChildExt;
 use std::fs;
-use circuits_constraints_and_algebra::algebra::{EncodableConstraint, Constraint};
+use circuits_constraints_and_algebra::r1cs::{R1CSConstraint as Constraint};
+use circuits_constraints_and_algebra::r1cs::write_r1cs::*;
 
 
 pub fn deduce(problem: &SafetyVerification<Constraint<usize>>) -> (PossibleResult, Vec<String>){

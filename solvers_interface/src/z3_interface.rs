@@ -1,13 +1,11 @@
 use crate::{PossibleResult,SafetyVerification,EquivalenceVerification};
-use circuits_constraints_and_algebra::algebra::{EncodableConstraint, Constraint};
+use circuits_constraints_and_algebra::algebra::EncodableConstraint;
 
 use std::fs::File;
 use std::io::Write;
 use std::str::FromStr;
-use rand::Rng;
 
 use z3::Config;
-use z3::Context;
 use z3::Solver;
 use z3::*;
 use num_bigint_dig::BigInt;

@@ -4,7 +4,7 @@ use crate::modular_arithmetic;
 use std::collections::{BTreeMap, HashMap, HashSet, LinkedList};
 use std::mem::replace;
 
-type C = crate::algebra::Constraint<usize>;
+type C = crate::r1cs::R1CSConstraint<usize>;
 type S = crate::algebra::Substitution<usize>;
 type A = crate::algebra::ArithmeticExpression<usize>;
 type SH = BTreeMap<usize, S>;

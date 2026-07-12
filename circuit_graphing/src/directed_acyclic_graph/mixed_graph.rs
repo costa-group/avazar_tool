@@ -1,5 +1,4 @@
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::borrow::Borrow;
 use itertools::Itertools;
 
 use utils::small_utilities::{distance_to_source_set};
@@ -299,7 +298,7 @@ impl MixedGraph {
                         .map(|&(a, b)| if self.dir_adjacencies[a].contains(&b) {contains_value} else if self.dir_adjacencies[b].contains(&a) {3 - contains_value} else {0} )
                         .collect();
         
-        write_dzn("data.dzn", &self.adjacencies, &self.edges, &fuzzy, &init_direction, &self.input_parts, &self.output_parts); 
+        let _ = write_dzn("data.dzn", &self.adjacencies, &self.edges, &fuzzy, &init_direction, &self.input_parts, &self.output_parts); 
     }
 
 }

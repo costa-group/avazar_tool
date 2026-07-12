@@ -1,4 +1,4 @@
-use circuits_constraints_and_algebra::num_bigint::BigInt;
+use crate::num_bigint::BigInt;
 use std::collections::{HashSet, HashMap};
 use std::hash::Hash;
 use std::cmp::Eq;
@@ -11,15 +11,15 @@ use std::borrow::Cow;
 use rustsat::instances::ObjectVarManager;
 use rustsat::types::{Clause};
 
-use super::{R1CSCosntraint<usize>};
+use super::{R1CSConstraint};
 use crate::constraint::{Constraint, ShuffleConstraint};
 use crate::normalisation::division_normalise;
-use circuits_constraints_and_algebra::modular_arithmetic::{mul, div};
+use crate::modular_arithmetic::{mul, div};
 use crate::utils::FingerprintIndex;
 
-impl Constraint for R1CSCosntraint<usize> {
+impl Constraint for R1CSConstraint<usize> {
 
-    fn normalise<'a>(&'a self, prime: &'a BigInt) -> Vec<R1CSCosntraint<usize>> {
+    fn normalise<'a>(&'a self, prime: &'a BigInt) -> Vec<R1CSConstraint<usize>> {
 
         // first normalise the quadratic term if there is one
         let mut choices_ab: Vec<(Cow<'_, BigInt>, Cow<'_, BigInt>)> = Vec::new();
@@ -59,9 +59,9 @@ impl Constraint for R1CSCosntraint<usize> {
             let nonlinear_part_b = self.b.keys().map(|sig| (*sig, div(self.b.get(sig).unwrap(), &b_factor, prime).ok().unwrap()) ).collect::<HashMap<usize, BigInt>>();
             let nonlinear_part_c = self.c.keys().map(|sig| (*sig, div(self.c.get(sig).unwrap(), &c_factor, prime).ok().unwrap()) ).collect::<HashMap<usize, BigInt>>();
             if nonlinear_part_a.values().sorted().cmp(nonlinear_part_b.values().sorted()).is_gt() {
-                (nonlinear_part_b, nonlinear_part_a, nonlinear_part_c)
+                R1CSConstraint::new(nonlinear_part_b, nonlinear_part_a, nonlinear_part_c)
             } else {
-                (nonlinear_part_a, nonlinear_part_b, nonlinear_part_c)
+                R1CSConstraint::new(nonlinear_part_a, nonlinear_part_b, nonlinear_part_c)
             }
         }).collect()
     }
@@ -141,7 +141,7 @@ impl Constraint for R1CSCosntraint<usize> {
                 let norm = &normalised_constraints[normi];
                 let is_ordered: bool = norm.is_ordered();
                 // tuples don't play nice with iterables
-                let (a_val, b_val, c_val): (Option<&'a BigInt>, Option<&'a BigInt>, Option<&'a BigInt>) = (norm.0.get(signal), norm.1.get(signal), norm.2.get(signal));
+                let (a_val, b_val, c_val): (Option<&'a BigInt>, Option<&'a BigInt>, Option<&'a BigInt>) = (norm.a.get(signal), norm.b.get(signal), norm.c.get(signal));
 
                 if is_ordered {
                     new_fingerprint.push(
@@ -186,7 +186,7 @@ impl Constraint for R1CSCosntraint<usize> {
     fn singular_class_requires_additional_constraints() -> bool {false}
 
     fn encode_single_norm_pair(
-        norms: &[&R1CSCosntraint<usize>; 2],
+        norms: &[&R1CSConstraint<usize>; 2],
         is_ordered: bool,
         variable_manager: &mut ObjectVarManager,
         fingerprint_to_signals: &[HashMap<usize, Vec<usize>>; 2],
@@ -194,7 +194,7 @@ impl Constraint for R1CSCosntraint<usize> {
         _is_singular_class: bool
     ) -> Vec<Clause> {
 
-        let dicts: [[&HashMap<usize, BigInt>; 3];2] = from_fn::<_, 2, _>(|idx| [&norms[idx].0, &norms[idx].1, &norms[idx].2]);
+        let dicts: [[&HashMap<usize, BigInt>; 3];2] = from_fn::<_, 2, _>(|idx| [&norms[idx].a, &norms[idx].b, &norms[idx].c]);
         let allkeys = from_fn::<_, 2, _>(|idx| norms[idx].signals());
 
         let (app, inv) = if is_ordered {_compare_norms_with_ordered_parts(&dicts, &allkeys)} else {_compare_norms_with_unordered_parts(&dicts, &allkeys)};
@@ -236,7 +236,7 @@ impl Constraint for R1CSCosntraint<usize> {
     }
 }
 
-impl ShuffleConstraint for R1CSCosntraint<usize> {
+impl ShuffleConstraint for R1CSConstraint<usize> {
     fn add_random_constant_factor(&mut self, rng: &mut impl Rng, field: &BigInt) -> () {
         let factors: [u64; 2] = from_fn(|_| rng.random::<u32>() as u64);
     

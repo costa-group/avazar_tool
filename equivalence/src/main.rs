@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::time::{Instant};
 
-use utils::read_r1cs::{R1CSData};
+use circuits_constraints_and_algebra::r1cs::{R1CSData};
 use circuits_constraints_and_algebra::circuit::{Circuit};
 use circuits_constraints_and_algebra::utils::{circuit_shuffle};
 

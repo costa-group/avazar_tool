@@ -1,22 +1,21 @@
-use circuits_constraints_and_algebra::num_bigint::BigInt;
+use crate::num_bigint::BigInt;
 use std::collections::{HashMap, HashSet};
-use std::borrow::Borrow;
 use std::error::Error;
 use rand::seq::SliceRandom;
 use rand::Rng;
 
-use utils::read_r1cs::read_r1cs;
-use super::{R1CSCosntraint<usize>, R1CSData, HeaderData};
+use crate::r1cs::read_r1cs::read_r1cs;
+use super::{R1CSConstraint, R1CSData, HeaderData};
 use crate::circuit::{ShuffleCircuit, Circuit};
 use crate::lightweight_circuit::LightweightCircuit;
 
-impl Circuit<R1CSCosntraint<usize>> for R1CSData {
+impl Circuit<R1CSConstraint<usize>> for R1CSData {
 
     fn prime(&self) -> &BigInt {&self.header_data.field}
     fn n_constraints(&self) -> usize {self.header_data.number_of_constraints}
     fn n_wires(&self) -> usize {self.header_data.total_wires}
-    fn constraints(&self) -> Vec<&R1CSCosntraint<usize>> {self.constraints.iter().collect::<Vec<_>>()}
-    fn get_constraint(&self, idx: usize) -> &R1CSCosntraint<usize> {&self.constraints[idx]}
+    fn constraints(&self) -> Vec<&R1CSConstraint<usize>> {self.constraints.iter().collect::<Vec<_>>()}
+    fn get_constraint(&self, idx: usize) -> &R1CSConstraint<usize> {&self.constraints[idx]}
     fn n_inputs(&self) -> usize {self.header_data.public_inputs + self.header_data.private_inputs}
     fn n_outputs(&self) -> usize {self.header_data.public_outputs}
     fn signal_is_input(&self, signal: &usize) -> bool {let sig = *signal; self.header_data.public_outputs < sig && sig <= self.header_data.public_inputs + self.header_data.private_inputs + self.header_data.public_outputs} 
@@ -26,7 +25,7 @@ impl Circuit<R1CSCosntraint<usize>> for R1CSData {
     fn get_output_signals(&self) -> impl Iterator<Item = usize> {1..=self.header_data.public_outputs}
     fn parse_file(filepath: &str) -> Result<Self, Box<dyn Error>> where Self: Sized {Ok(read_r1cs(filepath)?)}
     
-    type SubCircuit<'a> = LightweightCircuit<'a, R1CSCosntraint<usize>> where Self: 'a;
+    type SubCircuit<'a> = LightweightCircuit<'a, R1CSConstraint<usize>> where Self: 'a;
     fn take_subcircuit<'a>(
         &'a self, 
         constraint_subset: &Vec<usize>, 
@@ -34,7 +33,7 @@ impl Circuit<R1CSCosntraint<usize>> for R1CSData {
         output_signals: Option<&HashSet<usize>>, 
         signal_map: Option<&HashMap<usize,usize>>, 
         _return_signal_mapping: Option<bool> // TODO: implement in the mapping overhaul
-    ) -> LightweightCircuit<'a, R1CSCosntraint<usize>> where Self: 'a {
+    ) -> LightweightCircuit<'a, R1CSConstraint<usize>> where Self: 'a {
         // Assumes correct inputs
 
         let input_signals_unwrapped: &HashSet<usize>;
@@ -62,9 +61,9 @@ impl Circuit<R1CSCosntraint<usize>> for R1CSData {
     }
 }
 
-impl ShuffleCircuit<R1CSCosntraint<usize>> for R1CSData {
+impl ShuffleCircuit<R1CSConstraint<usize>> for R1CSData {
 
-    fn get_mut_constraints(&mut self) -> &mut Vec<R1CSCosntraint<usize>> {&mut self.constraints}
+    fn get_mut_constraints(&mut self) -> &mut Vec<R1CSConstraint<usize>> {&mut self.constraints}
 
     fn shuffle_signals(self, rng: &mut impl Rng) -> Self {
         let mut outputs: Vec<usize> = self.get_output_signals().into_iter().collect();
@@ -90,7 +89,7 @@ impl ShuffleCircuit<R1CSCosntraint<usize>> for R1CSData {
                     c: c.into_iter().map(|(k, val)| (mapping[k], val)).collect::<HashMap<usize, BigInt>>()
                 }
             }
-        ).collect::<Vec<R1CSCosntraint<usize>>>();
+        ).collect::<Vec<R1CSConstraint<usize>>>();
 
         R1CSData::from(
             field,

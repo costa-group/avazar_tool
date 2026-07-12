@@ -2,8 +2,8 @@ use std::collections::{HashSet, HashMap};
 use itertools::Itertools;
 use std::borrow::Cow;
 
-use circuits_constraints_and_algebra::num_bigint::BigInt;
-use circuits_constraints_and_algebra::modular_arithmetic::{add, div, ArithmeticError};
+use crate::num_bigint::BigInt;
+use crate::modular_arithmetic::{add, div, ArithmeticError};
 
 fn non_zero_sum_normalise<'a>(lineq: impl Iterator<Item = &'a BigInt>, prime: &'a BigInt) -> Result<BigInt, ArithmeticError> {
     

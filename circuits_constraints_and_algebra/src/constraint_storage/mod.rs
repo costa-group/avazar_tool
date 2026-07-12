@@ -1,4 +1,4 @@
-use crate::algebra::Constraint;
+use crate::r1cs::{R1CSConstraint as Constraint};
 use crate::num_bigint::BigInt;
 use constant_tracking::{ConstantTracker, CID};
 use std::collections::LinkedList;

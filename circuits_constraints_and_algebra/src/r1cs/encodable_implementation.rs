@@ -4,9 +4,8 @@ use std::collections::{HashMap, HashSet};
 use num_bigint::BigInt;
 use z3::ast;
 
-use crate::{modular_arithmetic, algebra::{EncodableConstraint, Constraint, ExecutedInequation}};
-
-pub type Signal2Bounds = HashMap<usize, ExecutedInequation<usize>>;
+use super::{R1CSConstraint as Constraint};
+use crate::{modular_arithmetic, algebra::{Signal2Bounds, EncodableConstraint, ExecutedInequation}};
 
 pub fn is_positive(a: &BigInt, field: &BigInt) -> bool{
     a <= &(field / BigInt::from(2))

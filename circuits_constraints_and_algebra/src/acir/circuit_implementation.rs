@@ -1,7 +1,6 @@
-use circuits_constraints_and_algebra::num_bigint::{BigInt, ParseBigIntError};
+use crate::num_bigint::{BigInt, ParseBigIntError};
 use std::collections::{HashMap, HashSet};
 use serde::{Serialize,Deserialize};
-use std::borrow::Borrow;
 use std::error::Error;
 use std::fs::File;
 use std::io::BufReader;

@@ -1,12 +1,11 @@
-use std::{cmp::max, collections::{HashMap, LinkedList}};
+use std::{collections::{HashMap, LinkedList}};
 use std::sync::atomic::AtomicBool;
 use num_bigint_dig::BigInt;
 use crate::{PossibleResult, SafetyVerification};
-use circuits_constraints_and_algebra::algebra::{EncodableConstraint};
 use std::clone::Clone;
 
-use circuits_constraints_and_algebra::{modular_arithmetic, algebra::{
-    Constraint, ExecutedInequation}};
+use circuits_constraints_and_algebra::{algebra::{EncodableConstraint, ExecutedInequation}};
+
 
 use super::safety_z3::try_prove_safety_with_z3;
 use super::safety_z3::try_prove_safety_with_z3_cancel;

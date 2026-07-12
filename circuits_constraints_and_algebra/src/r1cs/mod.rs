@@ -2,8 +2,16 @@ mod circuit_implementation;
 mod constraint_implementation;
 mod encodable_implementation;
 mod read_r1cs;
+pub mod write_r1cs;
 
-use crate::algebra::ArithmeticExpression;
+use std::collections::{HashMap, HashSet};
+use std::fmt::Display;
+use std::hash::Hash;
+
+use crate::num_traits::Zero;
+use crate::modular_arithmetic;
+use crate::num_bigint::BigInt;
+use crate::algebra::{ArithmeticExpression, Substitution};
 
 //This struct contained all the sections
 
@@ -60,13 +68,15 @@ impl<C: Default + Clone + Display + Hash + Eq> fmt::Display for R1CSConstraint<C
     }
 }
 
+use crate::algebra::{RawExpr, remove_zero_value_coefficients, raw_substitution, apply_raw_correspondence};
+
 impl<C: Default + Clone + Display + Hash + Eq> R1CSConstraint<C> {
     pub fn new(a: HashMap<C, BigInt>, b: HashMap<C, BigInt>, c: HashMap<C, BigInt>) -> R1CSConstraint<C> {
-        Constraint { a, b, c }
+        Self { a, b, c }
     }
 
     pub fn empty() -> R1CSConstraint<C> {
-        Constraint::new(
+        Self::new(
             HashMap::with_capacity(0),
             HashMap::with_capacity(0),
             HashMap::with_capacity(0),
@@ -83,7 +93,7 @@ impl<C: Default + Clone + Display + Hash + Eq> R1CSConstraint<C> {
     where
         K: Default + Clone + Display + Hash + Eq,
     {
-        Constraint::apply_correspondence(&constraint, symbol_correspondence)
+        Self::apply_correspondence(&constraint, symbol_correspondence)
     }
 
     pub fn apply_correspondence<K>(
@@ -96,7 +106,7 @@ impl<C: Default + Clone + Display + Hash + Eq> R1CSConstraint<C> {
         let a = apply_raw_correspondence(&constraint.a, symbol_correspondence);
         let b = apply_raw_correspondence(&constraint.b, symbol_correspondence);
         let c = apply_raw_correspondence(&constraint.c, symbol_correspondence);
-        Constraint::new(a, b, c)
+        R1CSConstraint::<K>::new(a, b, c)
     }
 
     // Constraint simplifications
@@ -110,9 +120,9 @@ impl<C: Default + Clone + Display + Hash + Eq> R1CSConstraint<C> {
         signal: &C,
         field: &BigInt,
     ) -> Substitution<C> {
-        debug_assert!(Constraint::is_linear(&constraint));
+        debug_assert!(Self::is_linear(&constraint));
         debug_assert!(constraint.c.contains_key(signal));
-        let raw_expression = Constraint::clear_signal(constraint.c, &signal, field);
+        let raw_expression = Self::clear_signal(constraint.c, &signal, field);
         Substitution { from: signal.clone(), to: raw_expression }
     }
 
@@ -121,9 +131,9 @@ impl<C: Default + Clone + Display + Hash + Eq> R1CSConstraint<C> {
         signal: &C,
         field: &BigInt,
     ) -> (BigInt, Substitution<C>) {
-        debug_assert!(Constraint::is_linear(&constraint));
+        debug_assert!(Self::is_linear(&constraint));
         debug_assert!(constraint.c.contains_key(signal));
-        let (coefficient, raw_expression) = Constraint::clear_signal_not_normalized(constraint.c, &signal, field);
+        let (coefficient, raw_expression) = Self::clear_signal_not_normalized(constraint.c, &signal, field);
         (coefficient, Substitution {from: signal.clone(), to: raw_expression})
     }
 
@@ -138,11 +148,11 @@ impl<C: Default + Clone + Display + Hash + Eq> R1CSConstraint<C> {
         for signal in self.c().keys() {
             signals.insert(signal.clone());
         }
-        signals.remove(&Constraint::constant_coefficient());
+        signals.remove(&Self::constant_coefficient());
         signals
     }
     pub fn take_signals(&self) -> HashSet<&C> {
-        let cc: C = Constraint::constant_coefficient();
+        let cc: C = Self::constant_coefficient();
         let mut signals = HashSet::new();
         for signal in self.a().keys() {
             signals.insert(signal);
@@ -158,7 +168,7 @@ impl<C: Default + Clone + Display + Hash + Eq> R1CSConstraint<C> {
     }
 
     pub fn take_only_linear_signals(&self) -> HashSet<&C> {
-        let cc: C = Constraint::constant_coefficient();
+        let cc: C = Self::constant_coefficient();
         let mut signals = HashSet::new();
         for signal in self.c().keys() {
             signals.insert(signal);
@@ -211,7 +221,7 @@ impl<C: Default + Clone + Display + Hash + Eq> R1CSConstraint<C> {
         raw_substitution(&mut constraint.a, substitution, field);
         raw_substitution(&mut constraint.b, substitution, field);
         raw_substitution(&mut constraint.c, substitution, field);
-        //Constraint::fix_constraint(constraint, field);
+        //Self::fix_constraint(constraint, field);
     }
 
     pub fn remove_zero_value_coefficients(constraint: &mut R1CSConstraint<C>) {
@@ -229,9 +239,9 @@ impl<C: Default + Clone + Display + Hash + Eq> R1CSConstraint<C> {
     }
 
     pub fn has_constant_coefficient(&self) -> bool {
-        self.a.contains_key(&Constraint::constant_coefficient())
-            || self.b.contains_key(&Constraint::constant_coefficient())
-            || self.a.contains_key(&Constraint::constant_coefficient())
+        self.a.contains_key(&Self::constant_coefficient())
+            || self.b.contains_key(&Self::constant_coefficient())
+            || self.a.contains_key(&Self::constant_coefficient())
     }
 
     pub fn a(&self) -> &HashMap<C, BigInt> {
@@ -310,4 +320,77 @@ impl<C: Default + Clone + Display + Hash + Eq> R1CSConstraint<C> {
         )
     }
 
+}
+
+fn signal_equals_signal<C>(a: &RawExpr<C>, b: &RawExpr<C>, c: &RawExpr<C>, field: &BigInt) -> bool
+where
+    C: Default + Clone + Display + Hash + Eq,
+{
+    let cq: C = ArithmeticExpression::constant_coefficient();
+    if a.is_empty() && b.is_empty() && !HashMap::contains_key(c, &cq) && c.len() == 2 {
+        let signals: Vec<_> = c.keys().cloned().collect();
+        let c0 = HashMap::get(c, &signals[0]).unwrap();
+        let c1 = HashMap::get(c, &signals[1]).unwrap();
+        let c1_p = modular_arithmetic::mul(&BigInt::from(-1), c1, field);
+        c1_p == *c0
+    } else {
+        false
+    }
+}
+
+fn signal_equals_constant<C>(a: &RawExpr<C>, b: &RawExpr<C>, c: &RawExpr<C>) -> bool
+where
+    C: Default + Clone + Display + Hash + Eq,
+{
+    let cq: C = ArithmeticExpression::constant_coefficient();
+    HashMap::is_empty(a)
+        && HashMap::is_empty(b)
+        && 
+        	((HashMap::contains_key(c, &cq) && HashMap::len(c) == 2) ||
+        	(!HashMap::contains_key(c, &cq) && HashMap::len(c) == 1))
+}
+
+fn fix_raw_constraint<C>(a: &mut RawExpr<C>, b: &mut RawExpr<C>, c: &mut RawExpr<C>, field: &BigInt)
+where
+    C: Default + Clone + Display + Hash + Eq,
+{
+    *a = remove_zero_value_coefficients(std::mem::take(a));
+    *b = remove_zero_value_coefficients(std::mem::take(b));
+    *c = remove_zero_value_coefficients(std::mem::take(c));
+    if HashMap::is_empty(a) || HashMap::is_empty(b) {
+        HashMap::clear(a);
+        HashMap::clear(b);
+    } else if is_constant_expression(a) {
+        constant_linear_linear_reduction(a, b, c, field);
+    } else if is_constant_expression(b) {
+        constant_linear_linear_reduction(b, a, c, field);
+    }
+}
+
+fn constant_linear_linear_reduction<C>(
+    a: &mut RawExpr<C>,
+    b: &mut RawExpr<C>,
+    c: &mut RawExpr<C>,
+    field: &BigInt,
+) where
+    C: Default + Clone + Display + Hash + Eq,
+{
+    let cq: C = ArithmeticExpression::constant_coefficient();
+    ArithmeticExpression::initialize_hashmap_for_expression(c);
+    ArithmeticExpression::initialize_hashmap_for_expression(b);
+    let constant = HashMap::remove(a, &cq).unwrap();
+    ArithmeticExpression::multiply_coefficients_by_constant(&constant, b, field);
+    ArithmeticExpression::multiply_coefficients_by_constant(&BigInt::from(-1), b, field);
+    ArithmeticExpression::add_coefficients_to_coefficients(b, c, field);
+    *c = remove_zero_value_coefficients(std::mem::take(c));
+    HashMap::clear(a);
+    HashMap::clear(b);
+}
+
+fn is_constant_expression<C>(expr: &RawExpr<C>) -> bool
+where
+    C: Default + Clone + Display + Hash + Eq,
+{
+    let cq: C = ArithmeticExpression::constant_coefficient();
+    HashMap::contains_key(expr, &cq) && HashMap::len(expr) == 1
 }

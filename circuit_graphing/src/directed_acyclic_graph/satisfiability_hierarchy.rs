@@ -11,7 +11,7 @@ pub fn dag_from_partition_solver(
     
     let encoding_timer = Instant::now();
 
-    // Building this according to Cosntraint Optimisation intuition -- need to get people more familiar with SMT to take a look at it.
+    // Building this according to Constraint Optimisation intuition -- need to get people more familiar with SMT to take a look at it.
 
     // Precalculate distances for some early local information
     //   - Maximum Distance is when no edges are contracted
@@ -69,19 +69,19 @@ pub fn dag_from_partition_solver(
     // default fixed vars reused to save number of vars
     let int_idxs: Vec<Int> = (0..graph.n).into_iter().map(|i| Int::from_u64(i as u64)).collect();
     let bool_false: Bool = Bool::from_bool(false); let bool_true: Bool = Bool::from_bool(true); 
-    let bool_to_Bool = |x: bool| if x {&bool_true} else {&bool_false};
+    let bool_to_z3_bool = |x: bool| if x {&bool_true} else {&bool_false};
 
     // For each edge (not arc) we have a boolean decision variable about whether or not that edge is 'fused'
     let fused: Vec<Bool> = (0..graph.m).into_iter().map(|e| Bool::new_const(format!("f_{e}"))).collect();
 
     // // forall e in 0..graph.m edges_is_fuzzy(e) => fused[e] NOTE: testing only
     // for e in 0..graph.m {optimiser.assert(
-    //     bool_to_Bool(edge_is_fuzzy(e)).implies(&fused[e])
+    //     bool_to_z3_bool(edge_is_fuzzy(e)).implies(&fused[e])
     // );}
 
     // \forall e : fused[e] => edge_is_fuzzy(e)
     for e in 0..graph.m {optimiser.assert(
-        fused[e].implies(bool_to_Bool(edge_is_fuzzy(e)))
+        fused[e].implies(bool_to_z3_bool(edge_is_fuzzy(e)))
     );}
 
     // We map each vertex and edge to a tree T in 0..max_trees (with 0 being not in a tree)
@@ -199,7 +199,7 @@ pub fn dag_from_partition_solver(
         Int::sub(&[&distances[1][graph.edges[e].0], &distances[0][graph.edges[e].0]]).eq(Int::sub(&[&distances[1][graph.edges[e].1], &distances[0][graph.edges[e].1]]));
 
     // No fuzzy unfused edges
-    for e in 0..graph.m {optimiser.assert(fuzzy(e).implies(Bool::or(&[&fused[e], &bool_to_Bool(edge_is_fuzzy(e)).not()])));}
+    for e in 0..graph.m {optimiser.assert(fuzzy(e).implies(Bool::or(&[&fused[e], &bool_to_z3_bool(edge_is_fuzzy(e)).not()])));}
 
     let num_fused_edges = Int::add(&(0..graph.m).into_iter().map(|e| bool_to_int(&fused[e])).collect::<Vec<_>>());
     optimiser.minimize(&num_fused_edges);

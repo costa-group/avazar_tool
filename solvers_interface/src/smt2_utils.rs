@@ -1,7 +1,7 @@
 
-use std::collections::{HashMap, HashSet, LinkedList};
+use std::collections::{HashMap, LinkedList};
 use crate::{BigInt, SafetyVerification,EquivalenceVerification,CorrectnessVerification};
-use circuits_constraints_and_algebra::algebra::{EncodableConstraint, Constraint};
+use circuits_constraints_and_algebra::algebra::EncodableConstraint;
 
 pub fn correctness_problem_to_smt2(problem: &CorrectnessVerification)->LinkedList<String>{
     let mut smt2_problem = LinkedList::new();
