@@ -1,7 +1,7 @@
 
 use num_bigint_dig::BigInt;
 use std::collections::{HashMap, HashSet, BTreeMap};
-use circuits_constraints_and_algebra::algebra::Constraint;
+use circuits_constraints_and_algebra::r1cs::{R1CSConstraint as Constraint};
 use utils::read_original_structure::read_original_structure;
 use utils::structure::*;
 use utils::small_utilities::DecomposeOptions;
@@ -345,14 +345,9 @@ fn decompose_and_study(
     let mut constraints_copy = Vec::new();
     for c_id in &node_info.constraints{
         let c = &constraints[*c_id];
-        let interface_aux_constraint = (
-            c.a().clone(),
-            c.b().clone(),
-            c.c().clone()
-        );
         constraints_original_index.push(*c_id);
         constraints_copy.push(
-            interface_aux_constraint
+            c.clone()
         );
     }
 

@@ -1,7 +1,7 @@
 mod circuit_implementation;
 mod constraint_implementation;
 mod encodable_implementation;
-mod read_r1cs;
+pub mod read_r1cs;
 pub mod write_r1cs;
 
 use std::collections::{HashMap, HashSet};

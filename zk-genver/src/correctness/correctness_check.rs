@@ -7,7 +7,7 @@ use crate::processing_utils::*;
 use utils::read_correspondence::read_signal_correspondence;
 use utils::structure::*;
 use regex::Regex;
-use circuits_constraints_and_algebra::algebra::Constraint;
+use circuits_constraints_and_algebra::r1cs::{R1CSConstraint as Constraint};
 use num_bigint_dig::BigInt;
 
 use indexmap::IndexMap;

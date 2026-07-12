@@ -27,7 +27,7 @@ use utils::structure::StructureReader;
 use crate::decompose_circuit::decompose_circuit;
 use crate::argument_parsing::{Args};
 use utils::small_utilities::{DecomposeOptions, FileType};
-use utils::read_r1cs::{R1CSData};
+use circuits_constraints_and_algebra::r1cs::{R1CSData};
 use circuits_constraints_and_algebra::generic::{AIRDataWrapper};
 use circuits_constraints_and_algebra::acir::{ACIRCircuit};
 use circuits_constraints_and_algebra::circuit::Circuit;

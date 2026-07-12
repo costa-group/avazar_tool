@@ -78,11 +78,13 @@ fn start(args: Args) -> Result<(), Box<dyn Error>> {
             decompose_circuit_and_check_determinism(&circuit, decompose_options)
             },
         FileType::ACIR =>{
+            panic!("Encoding is not yet implemented for the Acir filetype");
             let circuit = ACIRCircuit::parse_file(&args.filepath)?;
             if args.debug > 0 { println!("Took {:?} to parse", circuit_parsing_timer.elapsed()); }
             decompose_circuit_and_check_determinism(&circuit, decompose_options)
             }
         FileType::Generic =>{
+            panic!("Encoding is not yet implemented for the Generic filetype");
             let circuit = AIRDataWrapper::parse_file(&args.filepath)?;
             if args.debug > 0 { println!("Took {:?} to parse", circuit_parsing_timer.elapsed()); }
             decompose_circuit_and_check_determinism(&circuit, decompose_options)

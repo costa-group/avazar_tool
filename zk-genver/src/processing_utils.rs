@@ -1,6 +1,6 @@
 use std::collections::{HashMap, BTreeMap};
-use circuits_constraints_and_algebra::algebra::Constraint;
-use utils::read_r1cs::read_r1cs;
+use circuits_constraints_and_algebra::r1cs::{R1CSConstraint as Constraint};
+use circuits_constraints_and_algebra::r1cs::read_r1cs::read_r1cs;
 use utils::read_specification::{read_smt_specification, MacroDef, MainSection};
 
 use utils::structure::*;
@@ -19,12 +19,8 @@ pub fn process_constraints(input: &PathBuf) -> (
     let input: &String = &format!("{}", input.display());
     let result = read_r1cs(input).unwrap();
     let constraint_list = result.constraints;
-    let mut formatted_list = Vec::new();
-    for (a, b, c) in constraint_list{
-        formatted_list.push(Constraint::new(a,b,c));
-    }
     (
-        formatted_list,
+        constraint_list,
         result.signals,
         result.header_data.public_outputs,
         result.header_data.public_inputs + result.header_data.private_inputs,

@@ -1,5 +1,5 @@
 use solvers_interface::{CorrectnessVerification, PossibleResult, PossibleSolver, cvc5_interface, ffsol_interface, nia_z3_interface, parallel_interface, yices_interface, z3_interface};
-type Constraint = circuits_constraints_and_algebra::algebra::Constraint<usize>;
+type Constraint = circuits_constraints_and_algebra::r1cs::R1CSConstraint<usize>;
 use circuits_constraints_and_algebra::num_bigint::BigInt;
 use std::collections::LinkedList;
 use std::time::{Instant, Duration};
