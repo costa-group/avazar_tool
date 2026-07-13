@@ -17,7 +17,8 @@ pub fn decompose_circuit_and_check_determinism<C: Constraint + EncodableConstrai
     circuit: &S,
     decompose_options: DecomposeOptions,
     hierarchy_options: HierarchyOptions,
-    determinism_options: DeterminismOptions
+    determinism_options: DeterminismOptions,
+    extract_integrated_hierarchy: Option<PathBuf>
 ) -> ResultInfoDeterminism {
 
     // Step 1: Get partition
@@ -62,12 +63,12 @@ pub fn decompose_circuit_and_check_determinism<C: Constraint + EncodableConstrai
         partition = decompose_options.existing_partition.unwrap();
     }
 
-    if decompose_options.extract_raw_partition {
+    if let Some(path) = decompose_options.extract_raw_partition {
         use std::fs::File;
         use std::io::BufWriter;
         use std::io::Write;
 
-        let file = File::create("partition.json").unwrap();
+        let file = File::create(path).unwrap();
         let mut writer = BufWriter::new(file);
 
         // Write the result.
@@ -88,7 +89,7 @@ pub fn decompose_circuit_and_check_determinism<C: Constraint + EncodableConstrai
     let dagnode_info_len = dagnode_info.len();
     let mut structure = StructureInfo {timing: timing_info, nodes: dagnode_info, local_equivalency: (0..dagnode_info_len).map(|x| vec![x]).collect(), structural_equivalency: (0..dagnode_info_len).map(|x| vec![x]).collect()};
 
-    write_output_into_file("test.json", &structure);
+    if let Some(path) = extract_integrated_hierarchy {write_output_into_file(path, &structure);}
 
     let (results_info, _) = prove_safety_internal(
         &constraints,
@@ -100,10 +101,9 @@ pub fn decompose_circuit_and_check_determinism<C: Constraint + EncodableConstrai
     results_info
 }
 
-
 use std::io::BufWriter;
 use std::fs::File;
-use std::path::Path;
+use std::path::{PathBuf, Path};
 use std::error::Error;
 use std::io::Write;
 fn write_output_into_file<P: AsRef<Path>>(path: P, result: &StructureInfo) -> Result<(), Box<dyn Error>> {

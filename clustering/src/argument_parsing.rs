@@ -1,4 +1,5 @@
 use clap::Parser;
+use std::path::PathBuf;
 use utils::small_utilities::{GraphBackend, EquivalenceMode, FileType, ClusteringPreprocessing, HierarchyMode};
 
 #[derive(Parser)]
@@ -43,7 +44,7 @@ pub struct Args {
     pub leiden_max_iterations: Option<usize>,
 
     #[arg(long)]
-    pub extract_raw_partition: bool,
+    pub extract_raw_partition: Option<PathBuf>,
 
     #[arg(long)]
     pub clique_cluster_size: Option<usize>,

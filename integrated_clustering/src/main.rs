@@ -99,7 +99,7 @@ fn start(args: Args) -> Result<(), Box<dyn Error>> {
         FileType::R1CS => {
             let circuit = R1CSData::parse_file(&args.filepath.to_str().expect("not valid UTF-8 path"))?;
             if args.debug > 0 { println!("Took {:?} to parse", circuit_parsing_timer.elapsed()); }
-            decompose_circuit_and_check_determinism(&circuit, decompose_options, hierarchy_options, determinism_options)
+            decompose_circuit_and_check_determinism(&circuit, decompose_options, hierarchy_options, determinism_options, args.extract_integrated_hierarchy)
             },
         FileType::ACIR =>{
             panic!("Encoding is not yet implemented for the Acir filetype");

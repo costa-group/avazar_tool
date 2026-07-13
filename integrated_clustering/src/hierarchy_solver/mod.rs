@@ -141,8 +141,6 @@ pub fn hierarchy_solver<'a, C: Constraint + EncodableConstraint + Send + Sync + 
     }
 
     loop {
-        println!("{:?}", parts_to_attempt.clone());
-
         // STEP 1: Attempt to prove all outgoing for every vertex
 
         // NOTE: parts_to_attempt must be sorted here
@@ -175,7 +173,6 @@ pub fn hierarchy_solver<'a, C: Constraint + EncodableConstraint + Send + Sync + 
             let part_id = parts_to_attempt[res_id];
             let (result, inputs, outputs) = result;
             if result == PossibleResult::VERIFIED {
-                println!("Verified {}: with adjacencies {:?} and incoming {:?}", part_id, graph.adjacencies[part_id].clone(), graph.dir_adjacencies[part_id].clone());
                 verified_parts.insert(part_id);
                 verified_implications.entry(part_id).or_insert((inputs, outputs));
 
@@ -212,6 +209,7 @@ pub fn hierarchy_solver<'a, C: Constraint + EncodableConstraint + Send + Sync + 
     //    -- TODO: keep known implications to be able to pass to solver next round
     //    -- TODO: keep indices so don't need to remake verified nodes
     let unoriented_edges = (0..graph.m).into_iter().filter(|&e| !graph.edge_oriented(e));
+    if debug > 0 {println!("LOG: need to merge remaining {} unoriented erges", unoriented_edges.clone().count());}
     let mut unoriented_components = UnionFind::new(false);
     for v in 0..graph.n {unoriented_components.find(v);}
     for e in unoriented_edges {unoriented_components.union([graph.edges[e].0,graph.edges[e].1].into_iter());}
@@ -237,7 +235,6 @@ pub fn hierarchy_solver<'a, C: Constraint + EncodableConstraint + Send + Sync + 
     let (nodes, _, newidx_to_nodeid) = merged_graph.initialise_dagnodes(circ, &mut (0..).into_iter()); //TODO: handle arbitrary node_ids
 
     let mut idx_merged: Vec<bool> = vec![false;graph.n];
-    println!("{:?}", unoriented_components.get_components());
     for idx in unoriented_components.get_components().into_iter().filter(|part| part.len() > 1).flatten() {idx_merged[idx] = true;}
 
     let mut verified_nodes: HashSet<usize> = HashSet::new();

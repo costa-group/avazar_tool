@@ -73,12 +73,12 @@ fn decompose_circuit_and_return_dagnodes<'a, C: Constraint, S: Circuit<C>>(
         partition = decompose_options.existing_partition.unwrap();
     }
 
-    if decompose_options.extract_raw_partition {
+    if let Some(path) = decompose_options.extract_raw_partition {
         use std::fs::File;
         use std::io::BufWriter;
         use std::io::Write;
 
-        let file = File::create("partition.json").unwrap();
+        let file = File::create(path).unwrap();
         let mut writer = BufWriter::new(file);
 
         // Write the result.

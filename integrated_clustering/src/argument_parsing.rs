@@ -37,13 +37,13 @@ pub struct Args {
     pub leiden_max_iterations: Option<usize>,
 
     #[arg(long)]
-    pub extract_raw_partition: bool,
+    pub extract_raw_partition: Option<PathBuf>,
 
     #[arg(long)]
     pub clique_cluster_size: Option<usize>,
 
     #[arg(long)]
-    pub existing_partition: Option<String>,
+    pub existing_partition: Option<PathBuf>,
 
     #[arg(long, default_value_t=0, help = "Debugger level, 0 = None, 1 = Minimal Checkpoints, 2 = Detailed Checkpoints")]
     pub debug: usize,
@@ -71,6 +71,9 @@ pub struct Args {
 
     #[arg(long)]
     pub original_structure: Option<PathBuf>,
+
+    #[arg(long)]
+    pub extract_integrated_hierarchy: Option<PathBuf>,
 
     #[arg(long = "deactivate-deduction-assigned", action = ArgAction::SetFalse)]
     pub apply_deduction_assigned: bool,

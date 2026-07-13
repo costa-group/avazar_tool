@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::hash::Hash;
 use std::cmp::Ord;
+use std::path::PathBuf;
 use itertools::Itertools;
 
 use clap::{ValueEnum};
@@ -75,7 +76,7 @@ pub struct DecomposeOptions<'a> {
     pub minimum_equivalence_size: Option<usize>,
     pub equivalence_comparison_budget: Option<usize>,
     pub existing_partition: Option<Vec<Vec<usize>>>,
-    pub extract_raw_partition: bool,
+    pub extract_raw_partition: Option<PathBuf>,
     pub clique_cluster_size: Option<usize>,
     pub dead_ends_as_outputs: bool,
     pub seed: Option<u64>,
