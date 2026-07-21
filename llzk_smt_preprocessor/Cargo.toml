@@ -1,0 +1,22 @@
+[package]
+name = "llzk_smt_preprocessor"
+version = "0.1.0"
+authors = ["Costa Group UCM"]
+edition = "2021"
+description = "Preprocesado del SMT-LIB producido por llzk: agrupa parámetros de macro por anotaciones :meta-data (sobre yaspar)"
+license = "Apache-2.0"
+
+[lib]
+name = "llzk_smt_preprocessor"
+path = "src/lib.rs"
+
+[[bin]]
+name = "llzk_smt_preprocessor"
+path = "src/main.rs"
+
+[dependencies]
+# yaspar se usa como dependencia de crates.io (no es un fork).
+yaspar = "2.7"
+# Debe ser compatible con la versión de dashu de yaspar (tipos UBig/DBig).
+dashu = { version = "0.4.2", features = ["num-traits"] }
+clap = { version = "4", features = ["derive"] }
