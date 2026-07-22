@@ -17,6 +17,7 @@ pub struct Input {
     pub include_niaz3_in_all: bool,
     pub apply_predecessors: bool,
     pub apply_bidirectional: bool,
+    pub add_llzk_sub: bool,
     pub prime: BigInt,
     pub clustering_size: usize,
     pub equivalence_mode: usize,
@@ -45,6 +46,7 @@ impl Input {
         let include_niaz3_in_all = input_processing::get_include_niaz3_in_all(&matches);
         let apply_predecessors = input_processing::get_apply_predecessors(&matches);
         let apply_bidirectional = input_processing::get_apply_bidirectional(&matches);
+        let add_llzk_sub = input_processing::get_add_llzk_sub(&matches);
 
         let equivalence_mode = input_processing::get_equivalence_mode(&matches)?;
         let target_size = input_processing::get_target_size(&matches)?;
@@ -68,6 +70,7 @@ impl Input {
             include_niaz3_in_all,
             apply_predecessors,
             apply_bidirectional,
+            add_llzk_sub,
             equivalence_mode,
             target_size,
             extra_rounds,
@@ -191,6 +194,10 @@ mod input_processing {
 
     pub fn get_apply_bidirectional(matches: &ArgMatches) -> bool {
         matches.is_present("apply_bidirectional")
+    }
+
+    pub fn get_add_llzk_sub(matches: &ArgMatches) -> bool {
+        matches.is_present("add_llzk_subcomponent")
     }
 
     pub fn get_prime(matches: &ArgMatches) -> Result<BigInt, ()>{
@@ -383,6 +390,14 @@ mod input_processing {
                     .takes_value(false)
                     .hidden(false)
                     .help("Desactivate to apply the deduction rule for linear constraints")
+                    .display_order(600)
+            )
+            .arg(
+                Arg::with_name("add_llzk_subcomponent")
+                    .long("add_llzk_subcomponent")
+                    .takes_value(false)
+                    .hidden(false)
+                    .help("Activate to add the constraints obtained via llzk translation. If not, the child subcomponent are abstracted and represented by the R1CS constraints")
                     .display_order(600)
             )
             .arg(

@@ -47,8 +47,6 @@ pub fn prove_correctness(user_input: Input) -> Result<(), ()> {
         n_inputs)
         = process_constraints(&user_input.input_r1cs);
 
-    let outputs: Vec<usize> = (1..n_outputs+1).collect();
-    let inputs: Vec<usize> = (n_outputs+1..n_outputs+n_inputs+1).collect();
         
 
     // Read the structure
@@ -120,7 +118,7 @@ pub fn prove_correctness(user_input: Input) -> Result<(), ()> {
     let include_niaz3_in_all: bool = user_input.include_niaz3_in_all;
     let apply_predecessors: bool = user_input.apply_predecessors;
     let apply_bidirectional: bool = user_input.apply_bidirectional;
-
+    let add_llzk_sub: bool = user_input.add_llzk_sub;
 
 
 
@@ -149,6 +147,7 @@ pub fn prove_correctness(user_input: Input) -> Result<(), ()> {
             include_niaz3_in_all,
             apply_predecessors,
             apply_bidirectional,
+            add_llzk_sub,
             &mut results,
             user_input.extra_rounds,
             user_input.limit_size,
@@ -187,6 +186,7 @@ fn process_node(
     include_niaz3_in_all: bool,
     apply_predecessors: bool,
     apply_bidirectional: bool,
+    add_llzk_sub: bool,
     results: &mut ResultInfoCorrectness,
     extra_rounds: usize,
     limit_size: usize,
@@ -231,6 +231,7 @@ fn process_node(
         apply_predecessors,
         apply_bidirectional,
         no_abstract_fails,
+        add_llzk_sub,
         results,
         extra_rounds,
         verbose,
