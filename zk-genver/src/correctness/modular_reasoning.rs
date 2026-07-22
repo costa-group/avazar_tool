@@ -42,32 +42,42 @@ pub type CorrectnessImplication = (Vec<(usize, String)>, Vec<(usize, String)>);
         apply_predecessors:bool,
         apply_bidirectional: bool,
         no_abstract_fails:bool,
+        add_llzk_sub: bool,
         results:&ResultInfoCorrectness,
         extra_rounds: usize,
         verbose: bool,
         original_file: &str,
+        
     ) 
     -> (PossibleResult, f64, usize, bool, Vec<String>, HashSet<usize>){
 
         let node_name = node_info.node_name.clone();
         let node_id = node_info.node_id;
-        println!("Considering {}", node_id);
-        println!("{:?}", correspondence_nodeid_macros);
+        //println!("Considering {}", node_id);
+        //println!("{:?}", correspondence_nodeid_macros);
         let macro_name = correspondence_nodeid_macros.get(&node_id).unwrap();
         let macro_spec = macros.get(macro_name).unwrap();
 
 
         let signals_1: LinkedList<usize> = node_info.signals.clone().into_iter().collect(); 
         let signals_2: Vec<String> = get_all_signals_macro(macro_spec); 
+        //println!("Printing signals node: {:?}", signals_2);
+
 
         let inputs_1 = node_info.input_signals.clone();
         let inputs_2 = get_input_signals_macro( inputs_1.len(), macro_spec);
+
+        //println!("Printing input signals node: {:?}", inputs_2);
 
         let outputs_1 = node_info.output_signals.clone();
         let mut outputs_2 = Vec::new();
         for out in &outputs_1 {
             outputs_2.push(get_equivalent_signal_in_macro(*out, macro_spec, signal_to_name));
         }
+
+        //println!("Printing output orig signals node: {:?}", outputs_1);
+        //println!("Printing output signals node: {:?}", outputs_2);
+
 
         let mut constraints_1 = Vec::new();
         for c in &node_info.constraints{
@@ -114,11 +124,11 @@ pub type CorrectnessImplication = (Vec<(usize, String)>, Vec<(usize, String)>);
 
         let mut to_check_next=Vec::new();
         if !apply_predecessors || apply_bidirectional{
-            let mut to_check = generate_and_add_node_info(&node_info.successors, &mut verification, node_list, nodeid2pos, constraint_list, macro_spec, macros,correspondence_nodeid_macros, signal_to_name, results, apply_bidirectional, no_abstract_fails);
+            let mut to_check = generate_and_add_node_info(&node_info.successors, &mut verification, node_list, nodeid2pos, constraint_list, macro_spec, macros,correspondence_nodeid_macros, signal_to_name, results, apply_bidirectional, no_abstract_fails, add_llzk_sub);
             to_check_next.append(&mut to_check);
         } 
         if apply_predecessors || apply_bidirectional{
-            let mut to_check = generate_and_add_node_info(&node_info.predecessors, &mut verification, node_list, nodeid2pos, constraint_list, macro_spec, macros,correspondence_nodeid_macros,signal_to_name, results, apply_bidirectional, false);
+            let mut to_check = generate_and_add_node_info(&node_info.predecessors, &mut verification, node_list, nodeid2pos, constraint_list, macro_spec, macros,correspondence_nodeid_macros,signal_to_name, results, apply_bidirectional, false, add_llzk_sub);
             to_check_next.append(&mut to_check);
         }
 
@@ -157,7 +167,7 @@ pub type CorrectnessImplication = (Vec<(usize, String)>, Vec<(usize, String)>);
 
                     let pos = nodeid2pos[node_id];
                     let node = &node_list[pos];
-                    let result_add_components = add_info_component(node, &mut verification, node_list, nodeid2pos, constraint_list, macro_spec, macros, correspondence_nodeid_macros, signal_to_name, results, apply_predecessors, apply_bidirectional, no_abstract_fails);                    
+                    let result_add_components = add_info_component(node, &mut verification, node_list, nodeid2pos, constraint_list, macro_spec, macros, correspondence_nodeid_macros, signal_to_name, results, apply_predecessors, apply_bidirectional, no_abstract_fails, add_llzk_sub);                    
                     if result_add_components.is_some(){
                         to_check_next.append(&mut result_add_components.unwrap());
                     }
@@ -211,32 +221,44 @@ pub type CorrectnessImplication = (Vec<(usize, String)>, Vec<(usize, String)>);
         results:&ResultInfoCorrectness,
         apply_predecessors: bool,
         apply_bidirectional: bool,
-        no_abstract_fails: bool
+        no_abstract_fails: bool,
+        add_llzk_sub: bool
     )-> Option<Vec<usize>>{
 
             for c in &info.constraints{
                 verification.constraints_1.push(constraint_list_1[*c].clone());
             }
 
-            // add the macro
-            let node_id = &info.node_id;
-            let macro_child_name = correspondence_nodeid_macros.get(node_id).unwrap();
-            let macro_info = macros.get(macro_child_name).unwrap();
-            let macro_formula = build_call_macro(macro_child_name, &macro_info.params, macro_info.formula.clone());
-            verification.macros.insert(macro_child_name.clone(), macro_formula);
+            // add the macro -> only if mode add_llzk_sub
+            if add_llzk_sub{
+                let node_id = &info.node_id;
+                let macro_child_name = correspondence_nodeid_macros.get(node_id).unwrap();
+                let macro_info = macros.get(macro_child_name).unwrap();
+                let macro_formula = build_call_macro(macro_child_name, &macro_info.params, macro_info.formula.clone());
+                verification.macros.insert(macro_child_name.clone(), macro_formula);
+
+            }
+
+
+            let mut set_io_signals: HashSet<usize> = info.output_signals.clone().into_iter().collect();
+            for inp in &info.input_signals{
+                set_io_signals.insert(inp.clone());
+            }
 
             for s in &info.signals{
-                verification.signals_1.push_back(*s);
+                if !set_io_signals.contains(s){
+                    verification.signals_1.push_back(*s);
+                }
             }
             let mut to_check_next: Vec<usize> = Vec::new();
             if !apply_predecessors || apply_bidirectional{
-                let mut to_check = generate_and_add_node_info(&info.successors, verification, node_list, nodeid2pos, constraint_list_1, father_macro, macros, correspondence_nodeid_macros, signal_to_name,  results, apply_bidirectional, no_abstract_fails);
+                let mut to_check = generate_and_add_node_info(&info.successors, verification, node_list, nodeid2pos, constraint_list_1, father_macro, macros, correspondence_nodeid_macros, signal_to_name,  results, apply_bidirectional, no_abstract_fails, add_llzk_sub);
                 to_check_next.append(&mut to_check);
             } 
             if apply_predecessors || apply_bidirectional{
                             //println!("Entra pred");
 
-                let mut to_check = generate_and_add_node_info(&info.predecessors, verification, node_list, nodeid2pos, constraint_list_1, father_macro, macros, correspondence_nodeid_macros, signal_to_name, results, apply_bidirectional, false);
+                let mut to_check = generate_and_add_node_info(&info.predecessors, verification, node_list, nodeid2pos, constraint_list_1, father_macro, macros, correspondence_nodeid_macros, signal_to_name, results, apply_bidirectional, false, add_llzk_sub);
                 to_check_next.append(&mut to_check);
             }
 
@@ -256,6 +278,7 @@ pub type CorrectnessImplication = (Vec<(usize, String)>, Vec<(usize, String)>);
         results:&ResultInfoCorrectness, 
         apply_bidirectional: bool,
         no_abstract_fails: bool,
+        add_llzk_sub: bool
     ) -> Vec<usize> {
         let mut to_check_next = Vec::new();
         for node_id in node_ids {
@@ -276,7 +299,7 @@ pub type CorrectnessImplication = (Vec<(usize, String)>, Vec<(usize, String)>);
                             if !verification.added_nodes.contains(node_id) { 
                                 let pos = nodeid2pos[node_id];
                                 let node = &node_list[pos];
-                                let result_add_components = add_info_component(node, verification, node_list, nodeid2pos, constraint_list_1, father_macro, macros,correspondence_nodeid_macros,signal_to_name, results,  false, false, no_abstract_fails);                    
+                                let result_add_components = add_info_component(node, verification, node_list, nodeid2pos, constraint_list_1, father_macro, macros,correspondence_nodeid_macros,signal_to_name, results,  false, false, no_abstract_fails, add_llzk_sub);                    
                                 if result_add_components.is_some(){
                                     for aux in result_add_components.unwrap(){
                                         to_check_next.push(aux);

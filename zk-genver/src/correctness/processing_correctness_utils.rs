@@ -24,6 +24,7 @@ pub fn process_correspondence_node_macro(
         let pos_suc = nodeid2pos.get(suc).unwrap();
 
         let suc_name = &structure.nodes[*pos_suc].component_name;
+        //println!("Suc name: {}", suc_name);
         let macro_suc = macro_studied.components_info.get(suc_name).unwrap();
         correspondence_node_macro.insert(*suc, macro_suc.clone());
 
@@ -37,6 +38,7 @@ pub fn process_correspondence_node_macro(
 pub fn get_equivalent_subcomponent_signal_in_macro(signal: usize, studied_macro: &MacroDef, signal_to_name: &BTreeMap<usize, String>)->String{
 
     let complete_signal_name = signal_to_name.get(&signal).unwrap();
+        //println!("Signal name: {}", complete_signal_name);
 
     // 1. Look for the LAST '[' from the right side of the string
     let (possible_array_access, remaining) = if complete_signal_name.ends_with(']') {
@@ -74,6 +76,7 @@ pub fn get_equivalent_signal_in_macro(signal: usize, studied_macro: &MacroDef, s
 
     let complete_signal_name = signal_to_name.get(&signal).unwrap();
 
+    //println!("The complete signal name is {}", complete_signal_name);
     // 1. Look for the LAST '[' from the right side of the string
     let (possible_array_access, remaining) = if complete_signal_name.ends_with(']') {
         if let Some(bracket_idx) = complete_signal_name.rfind('[') {
@@ -94,6 +97,8 @@ pub fn get_equivalent_signal_in_macro(signal: usize, studied_macro: &MacroDef, s
     // 2. Get the last dot-separated segments from what remains
     let last_access: Vec<&str> = remaining.rsplit('.').take(1).collect();
     let signal_name: String = last_access[0].to_string();
+    //println!("The accessed signal name is {}", signal_name);
+    //println!("The vars of the macro are {:?}", studied_macro.vars_info);
 
     let signal_info_macro = studied_macro.vars_info.get(&signal_name).unwrap();
     if signal_info_macro.is_array(){
