@@ -56,5 +56,8 @@ pub struct Args {
     pub existing_partition: Option<String>,
 
     #[arg(long, default_value_t=0, help = "Debugger level, 0 = None, 1 = Minimal Checkpoints, 2 = Detailed Checkpoints")]
-    pub debug: usize
+    pub debug: usize,
+
+    #[arg(long)]
+    pub smt_formula: Option<PathBuf>,
 }

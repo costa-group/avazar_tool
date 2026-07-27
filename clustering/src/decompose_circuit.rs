@@ -27,7 +27,7 @@ pub fn decompose_node<C: Constraint>(
     decompose_circuit(&lw_circ, decompose_options)
 }
 
-fn decompose_circuit_and_return_dagnodes<'a, C: Constraint, S: Circuit<C>>(
+pub(crate) fn decompose_circuit_and_return_dagnodes<'a, C: Constraint, S: Circuit<C>>(
     circuit: &'a S,
     node_id_generator: &mut dyn Iterator<Item = usize>,
     decompose_options: DecomposeOptions

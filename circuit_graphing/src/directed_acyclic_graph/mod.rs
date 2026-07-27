@@ -35,6 +35,8 @@ impl<'a, C: Constraint + 'a, S: Circuit<C> + 'a> DAGNode<'a, C, S> {
         Self { circ: circ, id: node_id, constraints: constraints, input_signals: input_signals, output_signals: output_signals, successors: successors.unwrap_or_else(|| Vec::new()), predecessors: predecessors.unwrap_or_else(|| Vec::new()), _phantom: PhantomData }
     }
 
+    pub fn get_id(&self) -> usize {self.id}
+
     pub fn len(&self) -> usize {
         self.constraints.len()
     }
@@ -108,13 +110,10 @@ impl<'a, C: Constraint + 'a, S: Circuit<C> + 'a> DAGNode<'a, C, S> {
         }
     }
 
-    pub fn merge_nodes(to_merge: HashSet<usize>, nodes: &mut HashMap<usize, DAGNode<'a, C, S>>, sig_to_coni: &HashMap<usize, Vec<usize>>, coni_to_node: &mut Vec<usize>) -> usize {
+    pub fn merge_nodes(root: usize, to_merge: &HashSet<usize>, nodes: &mut HashMap<usize, DAGNode<'a, C, S>>, sig_to_coni: &HashMap<usize, Vec<usize>>, coni_to_node: &mut Vec<usize>) -> usize {
         // not especially elegant but whatever
-        if to_merge.len() == 0 {panic!("Attempting to merge no nodes");}
-        let root: usize = *to_merge.iter().next().unwrap();
-
-        let new_successors: HashSet<usize> = to_merge.iter().flat_map(|nkey| nodes.get(nkey).unwrap().get_successors()).copied().filter(|nkey| !to_merge.contains(nkey)).collect();
-        let new_predecessors: HashSet<usize> = to_merge.iter().flat_map(|nkey| nodes.get(nkey).unwrap().get_predecessors()).copied().filter(|nkey| !to_merge.contains(nkey)).collect();
+        let new_successors: HashSet<usize> = to_merge.into_iter().flat_map(|nkey| nodes.get(nkey).unwrap().get_successors()).copied().filter(|nkey| !to_merge.contains(nkey)).collect();
+        let new_predecessors: HashSet<usize> = to_merge.into_iter().flat_map(|nkey| nodes.get(nkey).unwrap().get_predecessors()).copied().filter(|nkey| !to_merge.contains(nkey)).collect();
 
         // fix parents to point to root
         for nkey in new_predecessors.iter() {
@@ -127,11 +126,11 @@ impl<'a, C: Constraint + 'a, S: Circuit<C> + 'a> DAGNode<'a, C, S> {
 
         let circ: &'a S = nodes[&root].circ;        
 
-        let mut new_constraints: Vec<usize> = Vec::with_capacity(to_merge.iter().map(|nkey| nodes[nkey].constraints.len()).sum::<usize>());
+        let mut new_constraints: Vec<usize> = Vec::with_capacity(to_merge.into_iter().map(|nkey| nodes[nkey].constraints.len()).sum::<usize>());
         let mut new_input_signals: HashSet<usize> = HashSet::new();
         let mut new_output_signals: HashSet<usize> = HashSet::new();
 
-        for nkey in to_merge.iter() {
+        for nkey in to_merge.into_iter() {
 
             let DAGNode { constraints, input_signals, output_signals, .. } = nodes.remove(nkey).unwrap();
 
@@ -184,5 +183,36 @@ impl<'a, C: Constraint + 'a, S: Circuit<C> + 'a> DAGNode<'a, C, S> {
         self.constraints = self.constraints.iter().copied().map(constraint_mapping).collect();
         self.input_signals = self.input_signals.iter().copied().map(signal_mapping).collect();
         self.output_signals = self.output_signals.iter().copied().map(signal_mapping).collect();
+    }
+
+    pub fn get_topological_ordering(nodes: &HashMap<usize, DAGNode<'a, C, S>>) -> Vec<usize> {
+
+        // implementation of DFS based algorithm described on wikipedia attributed to Tarjan 1986
+
+        let mut result: Vec<usize> = Vec::new();
+        let mut unvisited: HashSet<usize> = nodes.keys().copied().collect();
+
+        fn dfs_search<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(v: usize, nodes: &HashMap<usize, DAGNode<'a, C, S>>, result: &mut Vec<usize>, unvisited: &mut HashSet<usize>, currently_visited: &mut HashSet<usize>) -> () {
+            if !unvisited.contains(&v) {return;}
+            if currently_visited.contains(&v) {panic!("DAG contains a cycle");}
+
+            currently_visited.insert(v);
+
+            for child in nodes[&v].get_successors().into_iter().copied() { dfs_search(child, nodes, result, unvisited, currently_visited); }
+
+            unvisited.remove(&v);
+            result.push(v);
+        }
+
+        while unvisited.len() > 0 {
+
+            let val = *unvisited.iter().next().unwrap();
+            let mut currently_visited: HashSet<usize> = HashSet::new();
+        
+            dfs_search(val, nodes, &mut result, &mut unvisited, &mut currently_visited);
+        }
+
+        result.reverse();
+        result
     }
 }

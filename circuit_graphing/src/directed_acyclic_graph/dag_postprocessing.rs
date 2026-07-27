@@ -69,7 +69,7 @@ fn merge_under_property<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
         // TODO: movie copied calls to here?
         let choice_to_merge: HashSet<usize> = required_to_merge.into_iter().max_by_key(|(idx, req_to_merge)| (req_to_merge.len(), adjacent_to_property[*idx])).unwrap().1;
 
-        let root: usize =  DAGNode::merge_nodes(choice_to_merge, nodes, &sig_to_coni, &mut coni_to_node);
+        let root: usize =  DAGNode::merge_nodes(*choice_to_merge.iter().next().expect("Empty Merge"), &choice_to_merge, nodes, &sig_to_coni, &mut coni_to_node);
 
         // if it still has property add back to queue
         if node_property(nodes.get(&root).unwrap()) > 0 && !merge_queue.contains(&root) {merge_queue.push_back(root)};
@@ -78,7 +78,7 @@ fn merge_under_property<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
 
 pub fn merge_passthrough<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
     circ: &'a S, nodes: &mut HashMap<usize, DAGNode<'a, C, S>>, 
-) -> () {
+) -> HashMap<usize, usize> {
 
     // Merge passthrough now no longer uses merge_under_property to better take advantage of how signals work
     fn get_passthrough_signals<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(node: &DAGNode<'a, C, S>) -> impl Iterator<Item = usize> {
@@ -94,6 +94,7 @@ pub fn merge_passthrough<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
     for (coni, node_id) in nodes.values().flat_map(|node| node.constraints.iter().map(|coni| (coni, node.id))) { coni_to_node[*coni] = node_id };
     
     let passthrough_signals: HashSet<usize> = nodes.values().flat_map(|node| get_passthrough_signals(node)).collect();
+    let mut union_find: HashMap<usize, usize> = HashMap::new();
 
     for signal in passthrough_signals.into_iter() {
 
@@ -127,7 +128,16 @@ pub fn merge_passthrough<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
             None
         );
 
-        // merge nodes
-        DAGNode::merge_nodes(to_merge, nodes, &sig_to_coni, &mut coni_to_node);
+        // merge nodes -- TODO: update to not clone
+        let root = DAGNode::merge_nodes(*to_merge.iter().next().expect("Empty Merge"), &to_merge, nodes, &sig_to_coni, &mut coni_to_node);
+
+        // NOTE: differentiating this way breaks down if a node key is ever usize::MAX but at that point you have 18_446_744_073_709_551_615 min constraints and bigger problems
+        for idx in to_merge {
+            if idx == root {union_find.insert(root, usize::MAX);}
+            else {union_find.insert(idx, root);}
+        }
+
     }
+
+    union_find
 }

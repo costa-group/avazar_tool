@@ -44,7 +44,7 @@ fn conservative_hierarchy<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
 
     let sig_to_coni = signals_to_constraints_with_them::<C>(&circ.constraints(), None, None);
     for to_merge in components_to_merge.into_iter() {
-        DAGNode::merge_nodes(to_merge.into_iter().collect(), &mut nodes, &sig_to_coni, &mut coni_to_node);
+        DAGNode::merge_nodes(to_merge[0], &to_merge.into_iter().collect(), &mut nodes, &sig_to_coni, &mut coni_to_node);
     }
     if debug > 1 { println!("LOG: Merged fuzzy components in {:?}", timer.elapsed().as_secs_f32()); }
 

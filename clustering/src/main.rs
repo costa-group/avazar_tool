@@ -20,17 +20,20 @@ use mimalloc::MiMalloc;
 static GLOBAL: MiMalloc = MiMalloc;
 
 mod argument_parsing;
+mod smt_hybrid;
 pub mod decompose_circuit;
 
 
 use utils::structure::StructureReader;
 use crate::decompose_circuit::decompose_circuit;
 use crate::argument_parsing::{Args};
+use crate::smt_hybrid::circuit_and_smt_hybrid_clustering;
 use utils::small_utilities::{DecomposeOptions, FileType};
 use circuits_constraints_and_algebra::r1cs::{R1CSData};
 use circuits_constraints_and_algebra::generic::{AIRDataWrapper};
 use circuits_constraints_and_algebra::acir::{ACIRCircuit};
 use circuits_constraints_and_algebra::circuit::Circuit;
+use circuits_constraints_and_algebra::smt_formula::{Formula, parse_formula};
 
 fn main() {
     let args = Args::parse();
@@ -91,8 +94,21 @@ fn start(args: Args) -> Result<(), Box<dyn Error>> {
         FileType::R1CS => {
             let circuit = R1CSData::parse_file(&args.filepath)?;
             if args.debug > 0 { println!("Took {:?} to parse", circuit_parsing_timer.elapsed()); }
-            decompose_circuit(&circuit, decompose_options)
-            },
+            if args.smt_formula.is_some() {
+                let smt = parse_formula(args.smt_formula.as_ref().unwrap(), circuit.get_input_signals().collect(), circuit.get_output_signals().collect(), None)?;
+
+                use crate::smt_hybrid::{HybridClusteringMethods, HybridClusteringOptions, HybridClusteringMethodOptions, TiebreakingStrategy};
+
+                let options = HybridClusteringOptions {
+                    guide_decompose_options: decompose_options,
+                    hybrid_decompose_method: HybridClusteringMethods::default(),
+                    hybrid_decompose_options: HybridClusteringMethodOptions {tiebreaking_strategy: TiebreakingStrategy::default(), recipient_requires_subsets: true} ,
+                };
+
+                circuit_and_smt_hybrid_clustering(&smt, &circuit, options, args.debug)
+            } else {
+                decompose_circuit(&circuit, decompose_options)
+            }},
         FileType::ACIR =>{
             let circuit = ACIRCircuit::parse_file(&args.filepath)?;
             if args.debug > 0 { println!("Took {:?} to parse", circuit_parsing_timer.elapsed()); }
