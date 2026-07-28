@@ -16,7 +16,7 @@ use std::time::{Instant};
 
 use circuits_constraints_and_algebra::algebra::EncodableConstraint;
 use solvers_interface::{PossibleResult, PossibleSolver};
-use circuit_graphing::directed_acyclic_graph::{DAGNode, mixed_graph::MixedGraph};
+use circuit_graphing::directed_acyclic_graph::{DAGNode, mixed_graph::MixedGraph, dag_postprocessing::merge_passthrough};
 use circuits_constraints_and_algebra::constraint::Constraint;
 use circuits_constraints_and_algebra::circuit::Circuit;
 use utils::small_utilities::dfs_merge_set_in_dag;
@@ -105,6 +105,7 @@ pub fn hierarchy_solver<'a, C: Constraint + EncodableConstraint + Send + Sync + 
     graph.invert_edge_direction();
     let HierarchyOptions {property, preprocessing, solver_target, num_cores, timeout, dag_extension_method, debug, ..} = options;
 
+    let start = Instant::now();
     let mut last_instant = Instant::now();
 
     // Apply any preprocessing steps to the graph to give initial inputs
@@ -230,23 +231,38 @@ pub fn hierarchy_solver<'a, C: Constraint + EncodableConstraint + Send + Sync + 
         parts = new_parts;
     }
 
+    // TODO: need to be able to detect when a node has been merged or not
+
     // Step 3.2 Merge these expanded parts
     let (merged_graph, parent_to_newidx) = graph.merge(&mut unoriented_components);
-    let (nodes, _, newidx_to_nodeid) = merged_graph.initialise_dagnodes(circ, &mut (0..).into_iter()); //TODO: handle arbitrary node_ids
+    let (mut nodes, _, mut newidx_to_nodeid) = merged_graph.initialise_dagnodes(circ, &mut (0..).into_iter()); //TODO: handle arbitrary node_ids
+    let union_find = merge_passthrough(circ, &mut nodes);
+
+    fn find(idx: usize, union_find: &HashMap<usize, usize>) -> usize {
+        if union_find[&idx] == usize::MAX {idx} else 
+        {find(union_find[&idx], union_find)}
+    }
 
     let mut idx_merged: Vec<bool> = vec![false;graph.n];
     for idx in unoriented_components.get_components().into_iter().filter(|part| part.len() > 1).flatten() {idx_merged[idx] = true;}
+
+    for i in 0..newidx_to_nodeid.len() {if union_find.contains_key(&newidx_to_nodeid[i]) {
+        idx_merged[i] = true; newidx_to_nodeid[i] = find(newidx_to_nodeid[i], &union_find);
+    }}
 
     let mut verified_nodes: HashSet<usize> = HashSet::new();
     let mut implications_for_partially_verified_nodes: HashMap<usize, Vec<(Vec<usize>, Vec<usize>)>> = HashMap::new();
 
     for idx in verified_parts.into_iter() {
         // if the cluster was not merged in the previous step AND was verified, then list it in verified_nodes (under new idx)
-        if !idx_merged[idx] {verified_nodes.insert(newidx_to_nodeid[parent_to_newidx[&idx]]);}
+        let node_id = newidx_to_nodeid[parent_to_newidx[&idx]];
+
+        if !idx_merged[idx] {verified_nodes.insert(node_id);}
 
         // if the cluster WAS merged in the previous AND was verified, then list its implications
         else {implications_for_partially_verified_nodes.entry(newidx_to_nodeid[parent_to_newidx[&unoriented_components.find(idx)]]).or_default().push(verified_implications.remove(&idx).expect(format!("Verified Node {idx} has no associated implication").as_str()));}
     }
 
+    if debug > 0 {println!("LOG: finished integrated clustering in {:?}", start.elapsed().as_secs_f32());}
     IntegratedHierarchy {nodes, verified_nodes, implications_for_partially_verified_nodes}
 }

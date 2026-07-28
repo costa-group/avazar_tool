@@ -86,8 +86,8 @@ pub fn decompose_circuit_and_check_determinism<C: Constraint + EncodableConstrai
     let mut dagnode_info: Vec<NodeInfo> = nodes.into_values().map(|node| node.to_json(None, None)).collect();
     for node in dagnode_info.iter_mut() {node.is_deterministic = verified_nodes.contains(&node.node_id);}
     // TODO: refactor to be able to pass remaining information about known implications to solver
-    let dagnode_info_len = dagnode_info.len();
-    let mut structure = StructureInfo {timing: timing_info, nodes: dagnode_info, local_equivalency: (0..dagnode_info_len).map(|x| vec![x]).collect(), structural_equivalency: (0..dagnode_info_len).map(|x| vec![x]).collect()};
+    let all_separate_equivalence_class: Vec<Vec<usize>> = dagnode_info.iter().map(|x| vec![x.node_id]).collect();
+    let mut structure = StructureInfo {timing: timing_info, nodes: dagnode_info, local_equivalency: all_separate_equivalence_class.clone(), structural_equivalency: all_separate_equivalence_class};
 
     if let Some(path) = extract_integrated_hierarchy {write_output_into_file(path, &structure);}
 
