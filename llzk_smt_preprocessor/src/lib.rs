@@ -3,20 +3,20 @@
 
 //! # llzk_smt_preprocessor
 //!
-//! Preprocesado del SMT-LIB producido por llzk. Analiza cómo se agrupan los
-//! parámetros de cada macro (`define-fun` y familia) según las anotaciones
-//! `:meta-data`, usando la librería
-//! [`yaspar`](https://crates.io/crates/yaspar).
+//! Preprocessing for the SMT-LIB produced by llzk. Analyzes how each macro's
+//! parameters (`define-fun` and family) are grouped according to the
+//! `:meta-data` annotations, using the
+//! [`yaspar`](https://crates.io/crates/yaspar) library.
 //!
-//! Construye un ÁRBOL de tags que respeta el anidamiento de los `!` y ofrece dos
-//! vistas:
+//! Builds a TREE of tags that respects the nesting of `!` and offers two
+//! views:
 //!
-//! - **plano** ([`to_json_flat`]): para cada fórmula del nivel superior, todas las
-//!   variables accedidas (agregando los tags anidados). Siempre incluye `level0`.
-//! - **anidado** ([`to_json_nested`]): respeta la estructura; cada tag es un nodo
-//!   con sus variables directas y sus hijos.
+//! - **flat** ([`to_json_flat`]): for each top-level formula, all the
+//!   variables it touches (aggregating nested tags). Always includes `level0`.
+//! - **nested** ([`to_json_nested`]): preserves the structure; each tag is a
+//!   node with its own direct variables and its children.
 //!
-//! ## Uso como librería
+//! ## Library usage
 //!
 //! ```no_run
 //! let source = std::fs::read_to_string("f.smt2").unwrap();
@@ -25,6 +25,22 @@
 //!     println!("{}: level0 = {:?}", m.name, m.level0);
 //! }
 //! println!("{}", llzk_smt_preprocessor::to_json_nested(&macros));
+//! ```
+//!
+//! ## From the specification JSON
+//!
+//! In practice the input usually isn't a full `.smt2`, but the same
+//! specification JSON that `zk-genver` consumes (`--check-correctness`,
+//! e.g. `results/iszero.json`): a map of macros where each one already
+//! carries its `formula` (the SMT-LIB body, with the `:meta-data`
+//! annotations) and its `params`. [`analyze_specification`] wraps each
+//! `formula` in a valid `define-fun` and runs the same analysis:
+//!
+//! ```no_run
+//! use utils::read_specification::read_smt_specification;
+//!
+//! let spec = read_smt_specification("results/iszero.json").unwrap();
+//! let macros = llzk_smt_preprocessor::analyze_specification(&spec.macros).unwrap();
 //! ```
 
 use dashu::float::DBig;
@@ -39,36 +55,48 @@ use yaspar::position::Range;
 use yaspar::smtlib2::ScriptParser;
 use yaspar::{binary_to_string, hex_to_string, tokenize_str};
 
+use indexmap::IndexMap;
+use utils::read_specification::{MacroDef, VarInfo};
+
+pub mod graph;
+pub mod pretty;
+pub mod resolve;
+
 // ===========================================================================
-// Tipos públicos del resultado.
+// Public result types.
 // ===========================================================================
 
-/// Nodo del árbol de tags `:meta-data`.
+/// Node of the `:meta-data` tag tree.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TagNode {
-    /// Valor del `:meta-data`.
+    /// The `:meta-data` value.
     pub tag: String,
-    /// Parámetros directos de este tag (los que no caen en un tag hijo).
+    /// Direct parameters of this tag (the ones that don't fall into a child tag).
     pub own: Vec<String>,
-    /// Tags anidados dentro de este.
+    /// Tags nested within this one.
     pub children: Vec<TagNode>,
 }
 
-/// Resultado por macro (ya filtrado a los parámetros formales).
+/// Result per macro (already filtered down to the formal parameters).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MacroEntry {
-    /// Nombre de la macro.
+    /// Macro name.
     pub name: String,
-    /// Parámetros que aparecen fuera de cualquier tag.
+    /// Parameters that appear outside of any `and`/tag (e.g. if the whole
+    /// body of the macro isn't an `and`). In practice this is usually
+    /// empty: every loose branch of a top-level `and` becomes its own
+    /// synthetic node `"and0"`, `"and1"`, ... inside `tree`, instead of
+    /// being merged in here (see `on_term_app`).
     pub level0: Vec<String>,
-    /// Árbol de tags de nivel superior.
+    /// Top-level tag tree (includes real tags and the synthetic `"andN"`
+    /// nodes that represent `and` branches without their own `:meta-data`).
     pub tree: Vec<TagNode>,
 }
 
-/// Analiza un script SMT-LIB y devuelve una entrada por cada macro definida.
+/// Analyzes an SMT-LIB script and returns one entry per macro defined in it.
 ///
-/// `block_comments` habilita los comentarios `#| ... |#` de SMT-LIB 2.7.
-/// Devuelve `Err` con el mensaje de error de parseo si el script es inválido.
+/// `block_comments` enables SMT-LIB 2.7's `#| ... |#` comments.
+/// Returns `Err` with the parse error message if the script is invalid.
 pub fn analyze(source: &str, block_comments: bool) -> Result<Vec<MacroEntry>, String> {
     let mut col = MetaCollector::default();
     match ScriptParser::new().parse(&mut col, tokenize_str(source, block_comments)) {
@@ -77,7 +105,44 @@ pub fn analyze(source: &str, block_comments: bool) -> Result<Vec<MacroEntry>, St
     }
 }
 
-/// Todas las variables de un nodo, agregando recursivamente sus hijos (vista plana).
+/// Wraps a macro's body (as it appears in `MacroDef::formula` in the
+/// specification JSON) in a syntactically valid `define-fun`, so it can be
+/// analyzed with [`analyze`]. `yaspar` doesn't check types (see the
+/// `parses_one_macro` test, which uses the made-up sort `FFp` without ever
+/// declaring it), so any sort works for the parameters.
+fn wrap_macro_formula(name: &str, params: &[VarInfo], formula: &str) -> String {
+    let mut script = format!("(define-fun {} (", name);
+    for par in params {
+        script.push_str(&format!("({} FF0) ", par.name));
+    }
+    script.push_str(") Bool\n");
+    script.push_str(formula);
+    script.push_str(")\n");
+    script
+}
+
+/// Analyzes a single macro from the specification JSON.
+pub fn analyze_macro_def(name: &str, macro_def: &MacroDef) -> Result<MacroEntry, String> {
+    let script = wrap_macro_formula(name, &macro_def.params, &macro_def.formula);
+    let mut entries = analyze(&script, false)?;
+    entries
+        .pop()
+        .ok_or_else(|| format!("La macro '{}' no produjo ninguna entrada", name))
+}
+
+/// Analyzes every macro in the specification JSON (the same one
+/// `zk-genver::correctness::processing_correctness_utils` consumes), instead
+/// of a raw `.smt2` with several `define-fun`s.
+pub fn analyze_specification(
+    macros: &IndexMap<String, MacroDef>,
+) -> Result<Vec<MacroEntry>, String> {
+    macros
+        .iter()
+        .map(|(name, def)| analyze_macro_def(name, def))
+        .collect()
+}
+
+/// All the variables of a node, recursively aggregating its children (flat view).
 pub fn aggregate(node: &TagNode) -> Vec<String> {
     let mut out = Vec::new();
     for s in &node.own {
@@ -92,7 +157,7 @@ pub fn aggregate(node: &TagNode) -> Vec<String> {
 }
 
 // ===========================================================================
-// Representaciones internas construidas durante el parseo.
+// Internal representations built during parsing.
 // ===========================================================================
 
 #[derive(Clone)]
@@ -103,9 +168,9 @@ enum Attr {
 
 #[derive(Clone, Default)]
 struct MetaInfo {
-    /// Símbolos directos no encerrados aún en ningún tag interno.
+    /// Direct symbols not yet enclosed in any inner tag.
     own: Vec<String>,
-    /// Tags hallados en el subárbol al nivel actual.
+    /// Tags found in the subtree at the current level.
     children: Vec<TagNode>,
 }
 
@@ -126,6 +191,10 @@ fn push_unique(v: &mut Vec<String>, s: &str) {
     }
 }
 
+// Keeps only the symbols in `syms` that are also formal parameters of the
+// macro (discards operator identifiers like "=", "ff.mul", "ite", which
+// `on_term_app` accumulates into `own` without distinguishing them from real
+// variables — only the declared parameters are variables).
 fn filter_params(syms: &[String], params: &[String]) -> Vec<String> {
     syms.iter()
         .filter(|s| params.iter().any(|p| p == *s))
@@ -145,7 +214,7 @@ fn filter_node(node: TagNode, params: &[String]) -> TagNode {
     }
 }
 
-/// Construye la entrada de una macro filtrando a sus parámetros.
+/// Builds a macro entry, filtering down to its parameters.
 fn build_entry(name: String, params: &[String], body: MetaInfo) -> MacroEntry {
     let level0 = filter_params(&body.own, params);
     let tree = body
@@ -157,10 +226,10 @@ fn build_entry(name: String, params: &[String], body: MetaInfo) -> MacroEntry {
 }
 
 // ===========================================================================
-// Salida JSON.
+// JSON output.
 // ===========================================================================
 
-fn json_string(s: &str) -> String {
+pub(crate) fn json_string(s: &str) -> String {
     let mut r = String::from("\"");
     for c in s.chars() {
         match c {
@@ -193,7 +262,7 @@ fn merge_pair(into: &mut Vec<(String, Vec<String>)>, tag: String, syms: Vec<Stri
     }
 }
 
-/// Vista plana: `{ macro: { "level0": [...], "<tag superior>": [todas...] } }`.
+/// Flat view: `{ macro: { "level0": [...], "<top-level tag>": [all...] } }`.
 pub fn to_json_flat(macros: &[MacroEntry]) -> String {
     let mut out = String::from("{\n");
     for (mi, m) in macros.iter().enumerate() {
@@ -244,7 +313,7 @@ fn node_json(node: &TagNode, ind: usize) -> String {
     s
 }
 
-/// Vista anidada: respeta la estructura de tags.
+/// Nested view: preserves the tag structure.
 pub fn to_json_nested(macros: &[MacroEntry]) -> String {
     let mut out = String::from("{\n");
     for (mi, m) in macros.iter().enumerate() {
@@ -274,7 +343,7 @@ pub fn to_json_nested(macros: &[MacroEntry]) -> String {
 }
 
 // ===========================================================================
-// Implementación de la jerarquía de traits de yaspar.
+// Implementation of yaspar's trait hierarchy.
 // ===========================================================================
 
 impl ActionOnString for MetaCollector {
@@ -453,6 +522,53 @@ impl ActionOnTerm for MetaCollector {
         _sort: Option<Self::Sort>,
         args: Vec<Self::Term>,
     ) -> ParsingResult<Self::Term> {
+        if identifier == "and" {
+            // Each argument of an "and" is, in practice, an independent
+            // assertion that the compiler didn't bother wrapping in its own
+            // :meta-data (typically the final equality that ties the
+            // macro's output to the value already computed). If several of
+            // these loose arguments appeared in the same "and", merging
+            // their variables (as the generic case below used to do) would
+            // lose which variables came from which; instead, each one
+            // becomes its own synthetic node "and0", "and1", ..., just like
+            // a real tag.
+            let mut children = Vec::new();
+            let mut and_index = 0;
+            // Each argument `a` of the "and" arrives already processed (the
+            // parser is bottom-up): if `a` was wrapped in a real
+            // :meta-data, `on_term_annotated` already moved its variables
+            // into its own TagNode in `a.children` and left `a.own` empty;
+            // if `a` was itself another nested "and", this same code
+            // ALREADY handled it in its own recursive call and also
+            // returned `own: Vec::new()`. So a non-empty `a.own` means
+            // exactly "this branch of the `and` has no tag of its own":
+            // that's what turns into a synthetic "andN".
+            for a in args {
+                if !a.own.is_empty() {
+                    children.push(TagNode {
+                        tag: format!("and{}", and_index),
+                        own: a.own,
+                        children: Vec::new(),
+                    });
+                    and_index += 1;
+                }
+                // Already-identified children (real tags or "andN" from
+                // further down) are propagated as-is, whether or not a new
+                // one was just created above.
+                children.extend(a.children);
+            }
+            return Ok(MetaInfo {
+                own: Vec::new(), // an "and" never leaves anything in `own`: it all ends up in `children`.
+                children,
+            });
+        }
+
+        // Generic case (any operator that isn't "and": "=", "ite", calls to
+        // other macros, ...): `own` from all arguments gets merged without
+        // distinguishing which variable came from where. That's correct
+        // here because these operators represent a SINGLE assertion/value
+        // (not several independent ones like "and"), so there's nothing
+        // that needs to be kept separate.
         let mut own = Vec::new();
         push_unique(&mut own, &identifier);
         for a in &args {
@@ -540,17 +656,26 @@ impl ActionOnTerm for MetaCollector {
         Ok(MetaInfo { own, children })
     }
 
+    // `(! term :meta-data "..." ...)`: this is where a real term turns into
+    // a node of the tag tree.
     fn on_term_annotated(
         &mut self,
         _range: Range,
         t: Self::Term,
         attributes: Vec<Self::Attribute>,
     ) -> ParsingResult<Self::Term> {
+        // Look, among this `(! ...)`'s annotations, for a :meta-data (there
+        // could be other, unrelated annotations, `Other`).
         let meta = attributes.into_iter().find_map(|a| match a {
             Attr::MetaData(tag) => Some(tag),
             Attr::Other => None,
         });
         match meta {
+            // There is a :meta-data: `t.own`/`t.children` (everything this
+            // term had accumulated so far) get "closed" inside a new
+            // TagNode, and it's propagated upward with `own` EMPTY — the
+            // parent (usually an "and") will no longer see these loose
+            // variables, only the node already packaged in `children`.
             Some(tag) => {
                 let node = TagNode {
                     tag,
@@ -562,6 +687,9 @@ impl ActionOnTerm for MetaCollector {
                     children: vec![node],
                 })
             }
+            // No :meta-data (an annotation of another kind, irrelevant
+            // here): the term passes through untouched, as if the
+            // annotation didn't exist.
             None => Ok(t),
         }
     }
@@ -813,9 +941,14 @@ mod tests {
     }
 
     #[test]
-    fn level0_is_v4_v3() {
+    fn untagged_top_level_conjunct_becomes_synthetic_and_tag() {
         let macros = analyze(EXAMPLE, false).unwrap();
-        assert_eq!(macros[0].level0, vec!["v_4".to_string(), "v_3".to_string()]);
+        // "(= v_4 v_3)" isn't wrapped in any :meta-data, so it no longer
+        // gets merged into level0: it becomes its own "and0" node.
+        assert!(macros[0].level0.is_empty());
+        let and0 = macros[0].tree.iter().find(|n| n.tag == "and0").unwrap();
+        assert_eq!(and0.own, vec!["v_4".to_string(), "v_3".to_string()]);
+        assert!(and0.children.is_empty());
     }
 
     #[test]
@@ -826,14 +959,14 @@ mod tests {
             .iter()
             .find(|n| n.tag == "if (%x == 1)")
             .unwrap();
-        // Directo del if: solo v_0 (la condición).
+        // Direct from the if: only v_0 (the condition).
         assert_eq!(if_node.own, vec!["v_0".to_string()]);
-        // Agregado (modo plano): v_0, v_1, v_2.
+        // Aggregated (flat mode): v_0, v_1, v_2.
         assert_eq!(
             aggregate(if_node),
             vec!["v_0".to_string(), "v_1".to_string(), "v_2".to_string()]
         );
-        // Estructura: dos hijos (then / else).
+        // Structure: two children (then / else).
         assert_eq!(if_node.children.len(), 2);
     }
 }
