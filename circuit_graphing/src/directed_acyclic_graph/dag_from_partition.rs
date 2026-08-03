@@ -25,13 +25,13 @@ fn conservative_hierarchy<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
 
     // DAGNode indices might not be 0..n_parts so now need to do some pointer work
     // need idx => node_id for arcs 
-    let (mut nodes, _, _) = graph.initialise_dagnodes(circ, node_id_generator);
+    let (mut nodes, _, idx_to_nodeid) = graph.initialise_dagnodes(circ, node_id_generator);
     if debug > 1 { println!("LOG: Initialised nodes in {:?}", timer.elapsed().as_secs_f32()); }
 
     // merge remaining nodes
     let mut undirected_components = UnionFind::new(false);
     for e in 0..graph.m {
-        if !graph.edge_oriented(e) {undirected_components.union([graph.edges[e].0, graph.edges[e].1].into_iter())}
+        if !graph.edge_oriented(e) {undirected_components.union([idx_to_nodeid[graph.edges[e].0], idx_to_nodeid[graph.edges[e].1]].into_iter())}
     }
 
     let mut coni_to_node: Vec<usize> = vec![0; circ.n_constraints()];
