@@ -1,10 +1,10 @@
 #![allow(unused_variables)]
-use crate::num_bigint::BigInt;
 
 use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
 
+use crate::num_bigint::{BigInt};
 use crate::constraint::Constraint;
 use crate::circuit::Circuit;
 use crate::lightweight_circuit::LightweightCircuit;
@@ -14,7 +14,7 @@ const EQUIV_ERR_MESSAGE: &str = "Equivalence is not supported for Formula Expres
 
 impl Circuit<FormulaAtom> for Formula {
 
-    fn prime(&self) -> &BigInt {unimplemented!("{EQUIV_ERR_MESSAGE}");}
+    fn prime(&self) -> &BigInt {&self.prime}
     fn n_constraints(&self) -> usize {self.atoms.len()}
     fn n_wires(&self) -> usize {self.signals.len()}
     

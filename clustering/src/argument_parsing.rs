@@ -60,4 +60,7 @@ pub struct Args {
 
     #[arg(long)]
     pub smt_formula: Option<PathBuf>,
+
+    #[arg(long)]
+    pub circuit_structure: Option<PathBuf>,
 }

@@ -73,11 +73,18 @@ pub(crate) fn guided_clustering<'a, Cons: Constraint, Circ: Circuit<Cons> , Atom
         if !any_inserted {break;}
     }
 
+    let printable = guide_clustering.into_iter().map(|(key, part)| (key, part.get_constraint_indices().flat_map(|atomi| guide.get_constraint(atomi).signals().into_iter()).sorted().dedup().collect::<Vec<_>>())).sorted().collect::<Vec<_>>();
+    println!("left_signals: {:?}", printable);
+
+    let printable = guide_clustering.into_iter().map(|(key, part)| (key, part.get_constraint_indices().sorted().collect::<Vec<_>>())).sorted().collect::<Vec<_>>();
+    println!("left_clusters: {:?}", printable);
+
+
     let printable = recipient_clusters.clone().into_iter().map(|(key, part)| (key, part.into_iter().flat_map(|atomi| recipient.get_constraint(atomi).signals().into_iter()).sorted().dedup().collect::<Vec<_>>())).sorted().collect::<Vec<_>>();
-    println!("after_signals: {:?}", printable);
+    println!("right_signals: {:?}", printable);
 
     let printable = recipient_clusters.clone().into_iter().map(|(key, part)| (key, part.into_iter().sorted().collect::<Vec<_>>())).sorted().collect::<Vec<_>>();
-    println!("after_clusters: {:?}", printable);
+    println!("right_clusters: {:?}", printable);
 
     // First step is convert this clustering to a DAG
     //  -- it remains to orient the remaining edges which is always possible
@@ -118,19 +125,9 @@ pub(crate) fn guided_clustering<'a, Cons: Constraint, Circ: Circuit<Cons> , Atom
     } else {
         merge_until_all_left_is_subset_to_right(guide, recipient, guide_clustering, &mut recipient_clustering);
     }
-
-
-    // What to do with the remaining constraints? -- With default add to clusters we're not going to worry
-    // What do we do if there is a left-hand cluster that has lost signals on the right-hand because there were not enough constraints?
-
-    // // Two constraints at this point need to be met a) that it is a DAG
-
-
-
-
-    unimplemented!("Not Yet Finished");
-
-    // (recipient_clustering, recipient_clustering.key().copied().map(|k| (k, k)).collect() )
+    
+    let identity_map = recipient_clustering.keys().copied().map(|k| (k, k)).collect();
+    (recipient_clustering, identity_map)
 }
 
 fn merge_until_all_left_is_subset_to_right<'a, LCon: Constraint, Left: Circuit<LCon> , RCon: Constraint, Right: Circuit<RCon>>(left: &'a Left, right: &'a Right, core_nodes: &mut HashMap<usize, DAGNode<'a, LCon, Left>>, superset_nodes: &mut HashMap<usize, DAGNode<'a, RCon, Right>>) -> () {

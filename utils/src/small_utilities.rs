@@ -83,6 +83,61 @@ pub struct DecomposeOptions<'a> {
     pub debug: usize
 }
 
+impl<'a> DecomposeOptions<'a> {
+    pub fn into_copy_decompose_options(&self) -> CopyableDecomposeOptions {
+        CopyableDecomposeOptions {
+            resolution: self.resolution,
+            target_size: self.target_size,
+            leiden_max_iterations: self.leiden_max_iterations,
+            graph_backend: self.graph_backend,
+            preprocessing: self.preprocessing,
+            hierarchy_mode: self.hierarchy_mode,
+            clique_cluster_size: self.clique_cluster_size,
+            dead_ends_as_outputs: self.dead_ends_as_outputs,
+            seed: self.seed,
+            debug: self.debug
+    }}
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct CopyableDecomposeOptions {
+    pub resolution: Option<f64>,
+    pub target_size: Option<f64>,
+    pub leiden_max_iterations: Option<usize>,
+    pub graph_backend: GraphBackend,
+    pub preprocessing: ClusteringPreprocessing,
+    pub hierarchy_mode: HierarchyMode,
+    pub clique_cluster_size: Option<usize>,
+    pub dead_ends_as_outputs: bool,
+    pub seed: Option<u64>,
+    pub debug: usize
+}
+
+// Version that can be copied at the cost of reduced options
+impl CopyableDecomposeOptions {
+    pub fn into_decompose_options(&self) -> DecomposeOptions {
+        DecomposeOptions {
+            resolution: self.resolution,
+            target_size: self.target_size,
+            leiden_max_iterations: self.leiden_max_iterations,
+            equivalence_mode: EquivalenceMode::None,
+            graph_backend: self.graph_backend,
+            preprocessing: self.preprocessing,
+            hierarchy_mode: self.hierarchy_mode,
+            inverse_coni_mapping: None,
+            inverse_sig_mapping: None,
+            minimum_equivalence_size: None,
+            equivalence_comparison_budget: None,
+            existing_partition: None,
+            extract_raw_partition: None,
+            clique_cluster_size: self.clique_cluster_size,
+            dead_ends_as_outputs: self.dead_ends_as_outputs,
+            seed: self.seed,
+            debug: self.debug
+    }}
+}
+
+
 // takes two sorted vecs and returns a sorted vec
 pub fn merge_sorted_vecs(left: &Vec<usize>, right: &Vec<usize>) -> Vec<usize> {
         let (mut l_pointer, mut r_pointer) = (0, 0);

@@ -27,7 +27,7 @@ pub mod decompose_circuit;
 use utils::structure::StructureReader;
 use crate::decompose_circuit::decompose_circuit;
 use crate::argument_parsing::{Args};
-use crate::smt_hybrid::circuit_and_smt_hybrid_clustering;
+use crate::smt_hybrid::{circuit_and_smt_hybrid_clustering, structure_driven_circuit_and_smt_hybrid_clustering};
 use utils::small_utilities::{DecomposeOptions, FileType};
 use circuits_constraints_and_algebra::r1cs::{R1CSData};
 use circuits_constraints_and_algebra::generic::{AIRDataWrapper};
@@ -95,7 +95,7 @@ fn start(args: Args) -> Result<(), Box<dyn Error>> {
             let circuit = R1CSData::parse_file(&args.filepath)?;
             if args.debug > 0 { println!("Took {:?} to parse", circuit_parsing_timer.elapsed()); }
             if args.smt_formula.is_some() {
-                let smt = parse_formula(args.smt_formula.as_ref().unwrap(), circuit.get_input_signals().collect(), circuit.get_output_signals().collect(), None)?;
+                let smt = parse_formula(args.smt_formula.as_ref().unwrap(), circuit.prime(), circuit.get_input_signals().collect(), circuit.get_output_signals().collect(), None)?;
 
                 use crate::smt_hybrid::{HybridClusteringMethods, HybridClusteringOptions, HybridClusteringMethodOptions, TiebreakingStrategy};
 
@@ -105,7 +105,20 @@ fn start(args: Args) -> Result<(), Box<dyn Error>> {
                     hybrid_decompose_options: HybridClusteringMethodOptions {tiebreaking_strategy: TiebreakingStrategy::default(), recipient_requires_subsets: true} ,
                 };
 
-                circuit_and_smt_hybrid_clustering(&smt, &circuit, options, args.debug)
+                if args.circuit_structure.is_some() {
+
+                    use utils::structure::StructureReader; use std::io::BufReader;
+                    let file = File::open(args.circuit_structure.unwrap())?;
+                    let reader = BufReader::new(file);
+                    let structure_info: StructureReader = serde_json::from_reader(reader).unwrap();
+
+                    structure_driven_circuit_and_smt_hybrid_clustering(&circuit, &structure_info, &smt, options, args.debug);
+                    panic!("Have not yet decided on output format");
+                } else {
+                    circuit_and_smt_hybrid_clustering(&smt, &circuit, options, args.debug);
+                    panic!("Have not yet decided on output format");
+                }
+                
             } else {
                 decompose_circuit(&circuit, decompose_options)
             }},
