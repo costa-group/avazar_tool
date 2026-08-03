@@ -161,7 +161,7 @@ fn merge_until_all_left_is_subset_to_right<'a, LCon: Constraint, Left: Circuit<L
         // for each remaining signal get list of right_clusters that contain that signal
         let mut signal_to_clusterid: HashMap<usize, HashSet<usize>> = remaining_signals.map(|sig| (*sig, right_signal_to_coni[sig].iter().copied().map(|coni| right_coni_to_node[coni]).filter(|id| *id != root).collect()) ).collect();
         for (sig, prospective) in signal_to_clusterid.into_iter() {
-            println!("{:?} {:?} {:?}", root, sig, prospective.clone());
+            println!("root_id {:?}, signal {:?}, prospective node_ids with signal {:?}", root, sig, prospective.clone());
             if prospective.len() == 0 {panic!("No potential clusters for missing signal {sig}");}
             if prospective.iter().any(|id| to_merge.contains(id)) {continue;}
 
@@ -177,7 +177,7 @@ fn merge_until_all_left_is_subset_to_right<'a, LCon: Constraint, Left: Circuit<L
                     if !visited.contains(adj) {visited.insert(*adj); queue.push_back(*adj);}
                 }
             }
-            println!("{:?}", visited);
+            println!("BFS visited {:?}", visited);
             to_merge.insert(chosen.expect("Signal {sig} has no prospective nodes connected to {root} on right"));
         }
 

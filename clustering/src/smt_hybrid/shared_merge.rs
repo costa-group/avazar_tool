@@ -44,11 +44,10 @@ pub(crate) fn dual_merge_until_property<'a, LCon: Constraint, Left: Circuit<LCon
 
     while stack.len() > 0 && left_nodes.len() > 1 {
 
-        println!("#################################################");
-
         let val = stack.pop().unwrap();
         if !left_nodes.contains_key(&val) {continue;}
         if node_meets_property(&left_nodes[&val], &right_nodes[&val]) {continue;}
+        println!("----------------------------------------------");
 
         // doing it this way actually takes longer but is cleaner code
         let left_adjacency : HashMap<usize, &Vec<usize>> = left_nodes.iter().map(|(k, node)| (*k, node.get_successors())).collect();

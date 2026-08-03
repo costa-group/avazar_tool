@@ -98,6 +98,7 @@ fn start(args: Args) -> Result<(), Box<dyn Error>> {
                 let smt = parse_formula(args.smt_formula.as_ref().unwrap(), circuit.prime(), circuit.get_input_signals().collect(), circuit.get_output_signals().collect(), None)?;
 
                 use crate::smt_hybrid::{HybridClusteringMethods, HybridClusteringOptions, HybridClusteringMethodOptions, TiebreakingStrategy};
+                use itertools::Itertools;
 
                 let options = HybridClusteringOptions {
                     guide_decompose_options: decompose_options,
@@ -112,10 +113,24 @@ fn start(args: Args) -> Result<(), Box<dyn Error>> {
                     let reader = BufReader::new(file);
                     let structure_info: StructureReader = serde_json::from_reader(reader).unwrap();
 
-                    structure_driven_circuit_and_smt_hybrid_clustering(&circuit, &structure_info, &smt, options, args.debug);
+                    let results = structure_driven_circuit_and_smt_hybrid_clustering(&circuit, &structure_info, &smt, options, args.debug);
+
+                    println!("################## final_output #################");
+                    for (template_idx, (circ_clustering, smt_clustering) ) in results.into_iter() {
+
+                        println!("################## template idx {} #################", template_idx);
+                        println!("smt_clustering (cluster_id, signals) {:?}", smt_clustering.into_iter().map(|(key, node)| (key, node.signals().into_iter().sorted().collect::<Vec<_>>())).sorted().collect::<Vec<_>>());
+                        println!("circ_clustering (cluster_id, signals) {:?}", circ_clustering.into_iter().map(|(key, node)| (key, node.signals().into_iter().sorted().collect::<Vec<_>>())).sorted().collect::<Vec<_>>());
+                    }
+                    
                     panic!("Have not yet decided on output format");
                 } else {
-                    circuit_and_smt_hybrid_clustering(&smt, &circuit, options, args.debug);
+                    let (smt_clustering, circ_clustering) = circuit_and_smt_hybrid_clustering(&smt, &circuit, options, args.debug);
+
+                    println!("################## final_output #################");
+                    println!("smt_clustering (cluster_id, signals) {:?}", smt_clustering.into_iter().map(|(key, node)| (key, node.signals().into_iter().sorted().collect::<Vec<_>>())).sorted().collect::<Vec<_>>());
+                    println!("circ_clustering (cluster_id, signals) {:?}", circ_clustering.into_iter().map(|(key, node)| (key, node.signals().into_iter().sorted().collect::<Vec<_>>())).sorted().collect::<Vec<_>>());
+
                     panic!("Have not yet decided on output format");
                 }
                 
