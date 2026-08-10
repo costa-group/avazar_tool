@@ -7,7 +7,7 @@ use circuits_constraints_and_algebra::constraint::Constraint;
 use circuit_graphing::directed_acyclic_graph::DAGNode;
 use utils::small_utilities::{DecomposeOptions, CopyableDecomposeOptions};
 use crate::decompose_circuit::decompose_circuit_and_return_dagnodes;
-use crate::smt_hybrid::guided_clustering::guided_clustering;
+use crate::smt_hybrid::{guided_clustering::guided_clustering, shared_merge::merge_passthrough_shared};
 use utils::structure::StructureReader;
 
 pub mod guided_clustering;
@@ -47,13 +47,15 @@ pub fn circuit_and_smt_hybrid_clustering<'a, Cons: Constraint, Circ: Circuit<Con
 
     let (_, mut guide_clustering) = decompose_circuit_and_return_dagnodes(circ, &mut (0..), guide_decompose_options);
 
-    let (recipient_clustering, _) = match options.hybrid_decompose_method {
+    let (mut recipient_clustering, _) = match options.hybrid_decompose_method {
         HybridClusteringMethods::GuidedClustering => {
             guided_clustering(circ, smt, &mut guide_clustering, hybrid_decompose_options, debug)
         }
 
     };
 
+    merge_passthrough_shared(circ, smt, &mut guide_clustering, &mut recipient_clustering);
+    
     (guide_clustering, recipient_clustering)
 }
 

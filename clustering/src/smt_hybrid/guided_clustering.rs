@@ -143,7 +143,7 @@ fn merge_until_all_left_is_subset_to_right<'a, LCon: Constraint, Left: Circuit<L
     fn select_right_nodes_that_meet_superset_of_left<'a, LCon: Constraint, Left: Circuit<LCon> , RCon: Constraint, Right: Circuit<RCon>>(
         root: usize, left_nodes: &HashMap<usize, DAGNode<'a, LCon, Left>>, right_nodes: &HashMap<usize, DAGNode<'a, RCon, Right>>,
         left_signal_to_coni: &HashMap<usize, Vec<usize>>, left_coni_to_node: &Vec<usize>, right_signal_to_coni: &HashMap<usize, Vec<usize>>, right_coni_to_node: &Vec<usize>
-    ) -> (Vec<usize>, bool) {
+    ) -> (HashSet<usize>, bool) {
 
         // need to choose clusters on right that will get all remaining signals not in left
         let (left, right) = (&left_nodes[&root], &right_nodes[&root]);
@@ -151,7 +151,7 @@ fn merge_until_all_left_is_subset_to_right<'a, LCon: Constraint, Left: Circuit<L
         if left_signals.len() == 0 {
             // left is empty -- merge with arbitrary right adjacent
             let chosen = *right.get_predecessors().into_iter().chain(right.get_successors().into_iter()).next().expect("Empty cluster on left has no adjent on right");
-            return (vec![root, chosen], false);
+            return ([root, chosen].into_iter().collect(), false);
         }
         let right_signals = right.signals();
         let remaining_signals = left_signals.difference(&right_signals);
@@ -181,7 +181,7 @@ fn merge_until_all_left_is_subset_to_right<'a, LCon: Constraint, Left: Circuit<L
             to_merge.insert(chosen.expect("Signal {sig} has no prospective nodes connected to {root} on right"));
         }
 
-        (to_merge.into_iter().collect(), false)
+        (to_merge, false)
     }
 
 
