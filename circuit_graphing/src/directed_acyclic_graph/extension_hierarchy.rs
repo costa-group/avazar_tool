@@ -16,6 +16,8 @@ use circuits_constraints_and_algebra::circuit::Circuit;
 use super::dag_utils::{lt};
 use super::mixed_graph::MixedGraph;
 
+// The following are a series of private methods that orient edges in a MixedGraph in some manner as described.
+
 // If a vertex has exactly two un-oriented edges - and no others - and there is an adjacent vertex with an increasing index we orient toward that increasing distance
 fn exactly_two_edges_stairs(graph: &mut MixedGraph, part_to_preorder: &Vec<(usize, usize)>) {
 
@@ -120,6 +122,9 @@ fn exactly_one_unoriented_edge_all_others_single_direction(graph: &mut MixedGrap
 // Moved to MixedGraph method iterative_orient_by_partial_order
 // fn iteratively_update_distances_under_preorder(graph: &mut MixedGraph, part_to_preorder: &Vec<(usize, usize)>)    -> Vec<(usize, usize)> 
 
+/// A method based on iteratively extending a partial DAG 
+///
+/// This method is unfinished without and thus always panics. After the initial orientation any subsequent orientations passed the second can risk creating a cycle, ultimately this method was used as insipiration for the integrated_hierarchy tool
 pub fn extension_hierarchy<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
     circ: &'a S, node_id_generator: &mut dyn Iterator<Item = usize>,
     mut graph: MixedGraph, timer: Instant, debug: usize) -> HashMap<usize, DAGNode<'a, C, S>> {

@@ -5,8 +5,14 @@ use circuits_constraints_and_algebra::constraint::Constraint;
 use circuits_constraints_and_algebra::circuit::Circuit;
 use utils::small_utilities::merge_sorted_vecs;
 
+// A collection of utils for DAGS
+
+/// Comparison operator between (dist to in, dist to out) pair
+///
+/// $x < y <=>$ `x.0 < y.0 && (y.1 <= x.1) || x.0 == y.0 && (y.1 < x.1)`
 pub fn lt(x: (usize, usize), y: (usize, usize)) -> bool {x.0 < y.0 && (y.1 <= x.1) || x.0 == y.0 && (y.1 < x.1)}
 
+/// Adds an arc to a DAGNode hierarchy maintaining input/output signals and successor/predecessor relationships
 pub fn add_arc_to_nodes<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(arc: (usize, usize), idx_to_nodeid: &Vec<usize>, part_to_signals_arr: &Vec<Vec<usize>>, nodes: &mut HashMap<usize, DAGNode<'a, C, S>>) -> () {
     let (l, r) = arc;
     let l_id = idx_to_nodeid[l]; let r_id = idx_to_nodeid[r];

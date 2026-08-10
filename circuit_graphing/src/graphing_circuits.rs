@@ -14,6 +14,9 @@ use utils::union_find::UnionFind;
 
 use crate::leiden_clustering::CanLeiden;
 
+/// Reverts pre-clustered cliques
+///
+/// If clique_cluster_size was preclustered a clique then clique_clusters will be nonempty. The method traverses the partition and expands any clique_ids into the corresponding constraint indices
 pub fn undo_clique_clusters<C: Constraint>(circ: &impl Circuit<C>, partition: Vec<Vec<usize>>, mut clique_clusters: Vec<Vec<usize>>) -> Vec<Vec<usize>> {
 
     let mut coni_to_clique: FxHashMap<usize, usize> = FxHashMap::default();
@@ -42,12 +45,13 @@ pub fn undo_clique_clusters<C: Constraint>(circ: &impl Circuit<C>, partition: Ve
     return new_partition
 }
 
+// Given an input circuit, pre-clusters cliques of sufficient size, and calculates the weighted adjacencies of the undirected graph.
 fn get_weighted_arcs<C: Constraint>(circ: &impl Circuit<C>, clique_cluster_size: Option<usize>, debug: usize) -> ( FxHashMap<[usize;2], usize>, Vec<Vec<usize>> ) {
 
     let signal_to_coni_timer = Instant::now();
     let signal_to_coni = signals_to_constraints_with_them::<C>(&circ.constraints(), None, None);
     if debug > 1 {println!("LOG: finished signal_to_coni calculation in {:?}s", signal_to_coni_timer.elapsed().as_secs_f32());}
-    let mut weights: FxHashMap<[usize;2], usize> = FxHashMap::default();
+    let mut weights: FxHashMap<[usize;2], usize> = FxHashMap::default(); // Use of FxHashMap because these ids are not user-controllable and it's faster
 
     let mut clique_clusters: Vec<Vec<usize>> = Vec::new();
     let mut coni_to_clique: FxHashMap<usize, usize> = FxHashMap::default();
@@ -90,6 +94,7 @@ fn get_weighted_arcs<C: Constraint>(circ: &impl Circuit<C>, clique_cluster_size:
     (weights, clique_clusters)
 }
 
+// implementation of shared-signal-graph construction for xgraph backend
 fn shared_signal_graph_xgraph<C: Constraint>(circ: &impl Circuit<C>, clique_cluster_size: Option<usize>, debug: usize) -> (XGraph<f64, (), ()>, Vec<Vec<usize>>) {
     let (weights, clique_clusters) = get_weighted_arcs(circ, clique_cluster_size, debug);
     let mut graph = XGraph::new(false);
@@ -100,12 +105,17 @@ fn shared_signal_graph_xgraph<C: Constraint>(circ: &impl Circuit<C>, clique_clus
     (graph, clique_clusters)
 }
 
+// implementation of shared-signal-graph construction for graphrs backend
 fn shared_signal_graph_graphrs<C: Constraint>(circ: &impl Circuit<C>, clique_cluster_size: Option<usize>, debug: usize) -> (WeightedArcs<usize>, Vec<Vec<usize>>) {
 
     let (weights, clique_clusters) = get_weighted_arcs(circ, clique_cluster_size, debug);
     ( WeightedArcs {original_nodes: (0..circ.n_constraints()+clique_clusters.len()).collect(), arcs: weights.into_iter().map(|([k0, k1], w)| (k0, k1, w as f64)).collect()}, clique_clusters)
 }
 
+/// Constructs the shared-signal-graph with the given backend, returning it and any pre-clustered cliques
+///
+/// A shared-signal-graph is a weighted undirected graph with vertices the constraints of the circuit, two vertices are adjacent with weight $k$ if they share $k$.
+/// If clique-cluster-size is not `None` than signals that are in at least that many constraints are pre-clustered and represented by a single vertex in the graph with an appropriately weighted self-loop. The second return value is a Vec<Vec<usize>> of preclustered constraint indices, where vec[i] has clique_id circ.n + i
 pub fn shared_signal_graph<C: Constraint>(circ: &impl Circuit<C>, backend: GraphBackend, clique_cluster_size: Option<usize>, debug: usize) -> (Box<dyn CanLeiden>, Vec<Vec<usize>>) {
     match backend {
             GraphBackend::GraphRS => {

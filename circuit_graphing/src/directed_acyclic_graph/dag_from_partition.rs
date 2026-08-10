@@ -11,6 +11,9 @@ use super::satisfiability_hierarchy::dag_from_partition_solver;
 use super::extension_hierarchy::{extension_hierarchy};
 use super::mixed_graph::MixedGraph;
 
+// Conservative Hierarchy conversion to DAG
+//
+// Using the ordering given by minimum distances to input/output if an adjacent pair have no clear direction then they are merged together. We call this conservative as there is no attempt to make an orientation decision.
 fn conservative_hierarchy<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
     circ: &'a S, node_id_generator: &mut dyn Iterator<Item = usize>,
     mut graph: MixedGraph, timer: Instant, debug: usize) -> HashMap<usize, DAGNode<'a, C, S>> {
@@ -51,6 +54,10 @@ fn conservative_hierarchy<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
     nodes
 }
 
+// Optimisation Hierarchy conversion to DAG
+//
+// Using the ordering given by minimum distances to input/output if an adjacent pair have the same distances then they are merged together. After this a SAT solver is used to determine a minimum number of unoriented edges to merge and orient so that we are left with a DAG
+// In practice this is not a good application of SAT and it takes too long.
 fn optimisation_hierarchy<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
     circ: &'a S, node_id_generator: &mut dyn Iterator<Item = usize>,
     mut graph: MixedGraph, _timer: Instant, debug: usize) -> HashMap<usize, DAGNode<'a, C, S>> {
@@ -77,6 +84,7 @@ fn optimisation_hierarchy<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
     nodes
 }
 
+/// Given circuit and constraint partition returns a DAG hierarchy for that partition
 pub fn dag_from_partition<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
     circ: &'a S, partition: Vec<Vec<usize>>, node_id_generator: &mut dyn Iterator<Item = usize>,
     dead_ends_as_outputs: bool, hierarchy_mode: HierarchyMode, debug: usize) -> HashMap<usize, DAGNode<'a, C, S>> {

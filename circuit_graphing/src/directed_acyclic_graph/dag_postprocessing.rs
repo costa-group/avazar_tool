@@ -76,6 +76,12 @@ fn merge_under_property<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
     }
 }
 
+/// Merges DAGNodes until all nodes have no passthrough signals
+///
+/// A passthrough signal is one both an input and an output. Assuming that no signal is passthrough in circ, it can be shown that there exists a fixed point in which no node in the hierarchy has one either.
+///
+/// # Panics
+/// Will panic if there is no non-passthrough node for any signal, this occurs only if the circuit as a whole has a passthrough signal 
 pub fn merge_passthrough<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
     circ: &'a S, nodes: &mut HashMap<usize, DAGNode<'a, C, S>>, 
 ) -> HashMap<usize, usize> {

@@ -6,6 +6,9 @@ use utils::small_utilities::distance_to_source_set;
 use utils::union_find::UnionFind;
 use super::mixed_graph::MixedGraph;
 
+/// Method to solve which unoriented edges to orient, and which to merge using SAT to 
+///
+/// In practice this is not a good usage for SAT as there is little propagation opportunity and hence the method takes far too long.
 pub fn dag_from_partition_solver(
     graph: &MixedGraph, debug: usize) -> Vec<(usize, usize)> {    
     

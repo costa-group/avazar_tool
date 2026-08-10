@@ -24,6 +24,7 @@ pub struct MixedGraph {
 // NOTE: this struct doesn't handle correctness -- correctness is handled by the user
 impl MixedGraph {
 
+    /// Constructs a MixedGraph from a partition and a circuit
     pub fn from_circuit<C: Constraint, S: Circuit<C>>(
         circ: &S, partition: Vec<Vec<usize>>,
         dead_ends_as_outputs: bool
@@ -71,6 +72,7 @@ impl MixedGraph {
         Self::new(partition, adjacencies, input_parts, output_parts)
     }
 
+    /// Generic constructor
     pub fn new(partition: Vec<Vec<usize>>, adjacencies:Vec<Vec<usize>>, input_parts: HashSet<usize>, output_parts: HashSet<usize>) -> Self {
         let edges: Vec<(usize, usize)> = adjacencies.iter().enumerate()
                         .flat_map( |(idx, part)| part.into_iter().copied().map(move |x| (idx, x)))
@@ -82,6 +84,7 @@ impl MixedGraph {
         Self {n: partition.len(), m: edges.len(), partition, adjacencies, dir_adjacencies, edges, input_parts, output_parts, dir_adjacencies_is_outgoing: true}
     }
 
+    /// Given a UnionFind datastructure, merges the vertices in self according to the components from the UnionFind
     pub fn merge(&self, undirected_components: &mut UnionFind) -> (MixedGraph, HashMap<usize, usize>) {
 
         let components = undirected_components.get_components();
@@ -113,20 +116,28 @@ impl MixedGraph {
         )
     }
 
+    /// Changes semantic meaning of dir_adjacencies to mean incoming edges, again correctness is up to the user
     pub fn invert_edge_direction(&mut self) -> bool {self.dir_adjacencies_is_outgoing = !self.dir_adjacencies_is_outgoing; self.dir_adjacencies_is_outgoing}
+
+    /// Checks if a given pair is oriented
     pub fn pair_oriented(&self, u: usize, v: usize) -> bool { self.dir_adjacencies[u].contains(&v) || self.dir_adjacencies[v].contains(&u) }
+
+    /// Checks if a given edge is oriented
     pub fn edge_oriented(&self, e: usize) -> bool { self.dir_adjacencies[self.edges[e].0].contains(&self.edges[e].1) || self.dir_adjacencies[self.edges[e].1].contains(&self.edges[e].0) }
 
+    // orients an edge u -> v
     fn orient_arc(&mut self, u: usize, v:usize) -> () {
         let (u,v) = if self.dir_adjacencies_is_outgoing {(u,v)} else {(v,u)};
         self.dir_adjacencies[u].insert(v);
     }
 
+    /// unorients an edge u -> v
     pub fn deorient_arc(&mut self, u:usize, v:usize) -> () {
         let (u,v) = if self.dir_adjacencies_is_outgoing {(u,v)} else {(v,u)};
         self.dir_adjacencies[u].remove(&v);
     }
 
+    /// orients a list of arcs [(u,v)] by u -> v
     pub fn orient_by_arcs(&mut self, arcs: &[(usize, usize)]) -> () {
 
         for &(u, v) in arcs.into_iter() {
@@ -136,11 +147,13 @@ impl MixedGraph {
 
     }
 
+    /// unorients a list of arcs [(u,v)] by u -> v
     pub fn deorient_arcs(&mut self, arcs: &[(usize, usize)]) -> () {
 
         for &(u, v) in arcs.into_iter() {self.deorient_arc(u, v);}
     }
 
+    /// Orients unoriented edges in the MixedGraph by the (dist to in, dist to out) ordering
     pub fn orient_by_partial_order(&mut self) -> Vec<(usize, usize)> {
 
         let distance_to_inputs = distance_to_source_set(self.input_parts.iter().copied(), &self.adjacencies);
@@ -158,11 +171,13 @@ impl MixedGraph {
         part_to_preorder
     }
 
-    // TODO: convince self that this will never lower the number of oriented edges
-    // This is technically better than nothing (assuming the above) but it doesn't seem to help at all
-    //      the hard case is when do we decide to go downstairs and doesn't help.
-    //      Does help in general with repeated clusters -- though this structure hasn't been problematic otherwise.
+    /// Repeatedly Orients unoriented edges in the MixedGraph by the (dist to in, dist to out) ordering with one-way arcs.
+    ///
+    /// As in `orient_by_partial_order` but when calculating distances, the distance to inputs cannot go backwards along an arc, and the distance to outputs cannot go forwards. This attempted to deal with cases with multiple inputs /outputs in sequence
     pub fn iterative_orient_by_partial_order(&mut self) -> Vec<(usize, usize)> {
+        // This is technically better than nothing (assuming the above) but it doesn't seem to help at all
+        //      the hard case is when do we decide to go downstairs and doesn't help.
+        //      Does help in general with repeated clusters -- though this structure hasn't been problematic otherwise.
 
         // A version of BFS that only allows distances if they follow oriented arc directions correctly
         fn distance_to_source_set_under_preorder(source_set: impl Iterator<Item = usize>, adjacencies: &Vec<Vec<usize>>, lt: impl Fn(usize, usize) -> Option<bool>) -> Vec<usize> {

@@ -31,64 +31,84 @@ pub struct DAGNode<'a, C: Constraint + 'a, S: Circuit<C> + 'a> {
 
 impl<'a, C: Constraint + 'a, S: Circuit<C> + 'a> DAGNode<'a, C, S> {
 
+    /// Constructor for DAGNode
     pub fn new(circ: &'a S, node_id: usize, constraints: Vec<usize>, input_signals: HashSet<usize>, output_signals: HashSet<usize>, successors: Option<Vec<usize>>, predecessors: Option<Vec<usize>>) -> DAGNode<'a, C, S> {
         Self { circ: circ, id: node_id, constraints: constraints, input_signals: input_signals, output_signals: output_signals, successors: successors.unwrap_or_else(|| Vec::new()), predecessors: predecessors.unwrap_or_else(|| Vec::new()), _phantom: PhantomData }
     }
 
+    /// self.id getter
     pub fn get_id(&self) -> usize {self.id}
 
+    /// returns number of constraints in node
     pub fn len(&self) -> usize {
         self.constraints.len()
     }
 
+    /// returns reference to internal circuit
     pub fn get_circ(&self) -> &'a S {
         self.circ
     }
 
+    /// returns HashSet of internal signals
     pub fn signals(&self) -> HashSet<usize> {
         self.get_constraint_indices().flat_map(|coni| self.circ.get_constraint(coni).signals()).collect()
     }
 
+    /// adds a successor to the node
     pub fn add_successors(&mut self, to_add: impl Iterator<Item = usize>) -> () {
         self.successors.extend(to_add)
     }
 
+    /// returns a reference to the successors of the node
     pub fn get_successors(&self) -> &Vec<usize> {
         &self.successors
     }
 
+    /// adds a predecessor to the node
     pub fn add_predecessors(&mut self, to_add: impl Iterator<Item = usize>) -> () {
         self.predecessors.extend(to_add)
     }
 
+    /// returns a reference to the predecessors of the node
     pub fn get_predecessors(&self) -> &Vec<usize> {
         &self.predecessors
     }
 
+    
     pub fn get_input_signals(&self) -> &HashSet<usize> {
         &self.input_signals
     }
 
+    /// adds input signals to the node
     pub fn update_input_signals(&mut self, to_add: impl Iterator<Item = usize>) -> () {
         self.input_signals.extend(to_add)
     }
 
+    /// returns a reference to the input_signals of the node
     pub fn get_output_signals(&self) -> &HashSet<usize> {
         &self.output_signals
     }
 
+    /// adds output signals to the node
     pub fn update_output_signals(&mut self, to_add: impl Iterator<Item = usize>) -> () {
         self.output_signals.extend(to_add)
     }
 
+    /// returns iterator for the constraint indices of the node
     pub fn get_constraint_indices(&self) -> impl Iterator<Item = usize> {
         self.constraints.iter().copied()
     }
 
+    /// Return a subcircuit for the node
+    ///
+    /// The subcircuit contains only the constraints in the given node and has the same input and output signals
     pub fn get_subcircuit(&self) -> S::SubCircuit<'a> {
         self.circ.take_subcircuit(&self.constraints, Some(&self.input_signals), Some(&self.output_signals), None, None)
     }
 
+    /// Converts a DAGNode struct into a NodeInfo struct for writing to json
+    ///
+    /// Inverse_constraint/signal_mapping will remap the constraint/signal indices as in the slice this is useful if a subcircuit was clustered as constraint indices are alwaus 0..circ.n
     pub fn to_json(self, inverse_constraint_mapping: Option<&[usize]>, inverse_signal_mapping: Option<&[usize]>) -> NodeInfo {
         let signal_mapping = |sig: usize| if inverse_signal_mapping.is_none() {sig} else {inverse_signal_mapping.unwrap()[sig]};
         let constraint_mapping = |coni: usize| if inverse_constraint_mapping.is_none() {coni} else {inverse_constraint_mapping.unwrap()[coni]};
@@ -110,6 +130,9 @@ impl<'a, C: Constraint + 'a, S: Circuit<C> + 'a> DAGNode<'a, C, S> {
         }
     }
 
+    /// Merges a set of DAGNodes together into a single node
+    ///
+    /// Note that the correctness of the DAG is not checked, i.e. the caller must ensure that merging the given nodes doesn't break acyclicism.
     pub fn merge_nodes(root: usize, to_merge: &HashSet<usize>, nodes: &mut HashMap<usize, DAGNode<'a, C, S>>, sig_to_coni: &HashMap<usize, Vec<usize>>, coni_to_node: &mut Vec<usize>) -> usize {
         // not especially elegant but whatever
         let new_successors: HashSet<usize> = to_merge.into_iter().flat_map(|nkey| nodes.get(nkey).unwrap().get_successors()).copied().filter(|nkey| !to_merge.contains(nkey)).collect();

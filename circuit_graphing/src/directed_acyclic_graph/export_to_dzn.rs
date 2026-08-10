@@ -3,6 +3,9 @@ use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::Path;
 
+/// Exports a problem into a .dzn format for passing to a minizinc solver 
+///
+/// used as part of the now discontinued extension_hierarchy
 pub fn write_dzn<P: AsRef<Path>>(
     path: P,
     adjacency: &[Vec<usize>],

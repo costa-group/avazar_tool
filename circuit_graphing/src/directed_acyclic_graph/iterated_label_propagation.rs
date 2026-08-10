@@ -5,15 +5,18 @@ use std::cmp::Eq;
 
 use utils::assignment::Assignment;
 
+/// Label passing algorithm done simultaneously across N graphs
+///
+/// To ensure consistent labelling each step for each N graph label passing is done together, unique labels are not recalculated.
 pub fn iterated_label_propagation<const N: usize, H: Hash + Eq + Copy>(
     indices_to_adjacent: &[HashMap<usize, &Vec<usize>>; N],
     init_label_to_indices: [HashMap<H, Vec<usize>>; N]
 ) -> [HashMap<usize, Vec<usize>>; N] {
 
     let mut singular_classes: [HashMap<usize, Vec<usize>>; N] = from_fn(|_| HashMap::new());
-    
     let mut index_to_label: [HashMap<usize, usize>; N] = from_fn(|_| HashMap::new());
     
+    // Detects labels that are unique in all graphs and locks their index.
     fn remove_lone_classes<const N: usize, H: Hash + Eq + Copy>(
         label_to_indices: [HashMap<H, Vec<usize>>; N], 
         singular_classes: &mut [HashMap<usize, Vec<usize>>; N], 
@@ -56,6 +59,7 @@ pub fn iterated_label_propagation<const N: usize, H: Hash + Eq + Copy>(
         (new_label_to_indices, new_max_singular_label)
     }
 
+    // Recalculates each label as having the current label and being adjacent to the set of adjacent labels
     fn propogate_adjacent_labels<const N: usize>(
         label_to_indices: [HashMap<usize, Vec<usize>>; N],
         index_to_label: &[HashMap<usize, usize>; N],
@@ -97,6 +101,7 @@ pub fn iterated_label_propagation<const N: usize, H: Hash + Eq + Copy>(
 
     }
 
+    // inserts the remaining classes into singular_classes and returns
     for (idx, hm) in label_to_indices.into_iter().enumerate() {
         for (key, class) in hm.into_iter() {
             singular_classes[idx].insert(key, class);

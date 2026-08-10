@@ -12,6 +12,10 @@ use crate::directed_acyclic_graph::{DAGNode};
 use crate::directed_acyclic_graph::dag_from_partition::dag_from_partition;
 use crate::directed_acyclic_graph::dag_postprocessing::merge_passthrough;
 
+/// Looks for 'bridge' constraints within the circuit and creates an initial hierarchy based on this. A bridge constraint is one of the form `x = y` and is typically used when renaming signals for a different context. 
+///
+/// # Panics
+/// If the graph is not connected the merge_passthrough call may panic
 pub fn bridge_partitioning<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(circ: &'a S, strict_bridge: bool, hierarchy_mode: HierarchyMode, debug: usize) -> HashMap<usize, DAGNode<'a, C, S>> {
 
     // partition the constraints into clusters based on connectedness through non-bridge nodes
