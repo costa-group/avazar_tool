@@ -45,6 +45,7 @@ pub fn wrap_airdata(airdata: AIRData) -> AIRDataWrapper {
 
 impl Circuit<ExpressionWrapper> for AIRDataWrapper {
 
+    // TODO: NOTE we need to change the AIRData struct to include a prime
     fn prime(&self) -> &BigInt {unimplemented!("{EQUIV_ERR_MESSAGE}");}
     fn n_constraints(&self) -> usize {self.constraints.len()}
     fn n_wires(&self) -> usize {self.signals.len()}

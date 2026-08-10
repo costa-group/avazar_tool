@@ -19,9 +19,9 @@ use utils::assignment::Assignment;
 impl Constraint for ACIRConstraint {
 
     fn normalise<'a>(&'a self, prime: &'a BigInt) -> Vec<Self> where Self: Sized {
-
         let factors: Vec<Cow<'a, BigInt>>;
 
+        // factor is constant, then mult, then linear. This order doesn't matter as long as it is consistent.
         if self.constant != BigInt::from(0) {factors = vec![Cow::Borrowed(&self.constant)];}
         else if self.mult.len() > 0 {factors = division_normalise(self.mult.values(), prime, true); }
         else {factors = division_normalise(self.linear.values(), prime, true);}
@@ -36,6 +36,7 @@ impl Constraint for ACIRConstraint {
     }
     fn signals(&self) -> HashSet<usize> {self.linear.keys().copied().chain(self.mult.keys().flat_map(|&(l, r)| [l, r])).collect()}
 
+    // fingerprint is Vec<Signal, (VecOfMultOtherIndices, CoefInLinear)>, ConstantCoef
     type Fingerprint<'a, T: Hash + Eq + Default + Copy + Ord + Debug> = (Vec<(FingerprintIndex<T>, (Vec<(FingerprintIndex<T>, &'a BigInt)>, Option<&'a BigInt>))>, Option<&'a BigInt>) where Self: 'a;
 
     fn fingerprint<'a, T: Hash + Eq + Default + Copy + Ord + Debug>(&'a self, fingerprint: &mut Option<Self::Fingerprint<'a, T>>, signal_to_fingerprint: &HashMap<usize, T>) -> () {
@@ -162,6 +163,7 @@ impl Constraint for ACIRConstraint {
     }
 }
 
+// Calculates for every fingerprint usize what signals have that fingerprint.
 fn fingerprint_signals_in_current_norms<'a>(
     norms: &[&'a ACIRConstraint; 2],
     inverse_nonlinear_part: &[HashMap<usize, HashMap<&'a BigInt, Vec<usize>>>; 2],
@@ -188,6 +190,7 @@ fn fingerprint_signals_in_current_norms<'a>(
         curr_fingerprint_to_signals
     }
 
+// Encodes that at least one constraints, and correctness constraints for nonlinear handling
 fn encode_from_fingerprints(
         inverse_nonlinear_part: &[HashMap<usize, HashMap<&BigInt, Vec<usize>>>; 2], 
         signal_pair_encoder: &mut ObjectVarManager, 
@@ -199,6 +202,7 @@ fn encode_from_fingerprints(
 
         for fingerprint in curr_fingerprint_to_signals[0].keys() {for idx in 0..2 { for signal in curr_fingerprint_to_signals[idx][fingerprint].iter() {
 
+            // At least on signal pair must be true
             if !is_singular_class {
                 // if the class isn't singular then the fingerprints have been refined and the at least one must be added to the clauses
                 //      otherwise the fingerprints are unrefined and the at least one is covered in the bijection encoding elsewhere
@@ -215,7 +219,7 @@ fn encode_from_fingerprints(
                     // correctness clauses
                     //   for every pair (lsig, rsig) of potential signals (by fingerprint)
                     //     each other sig in mult paired with lsig and corresponding val v is mapped to at least one such osig for rsig and vice versa
-                    
+                    // i.e. If x <-> b and there is a nonlinear pair (x, z) on the left and (b, c) then z <-> c (extended to arbitrary numbers)
                     let sigs = if idx == 0 {[*signal, osig]} else {[osig, *signal]};
                     let pair_assignment = signal_pair_encoder.object_var::<(bool, [usize; 2])>((false, sigs.clone())).neg_lit();
 

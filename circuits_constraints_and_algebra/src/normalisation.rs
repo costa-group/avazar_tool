@@ -5,6 +5,7 @@ use std::borrow::Cow;
 use crate::num_bigint::BigInt;
 use crate::modular_arithmetic::{add, div, ArithmeticError};
 
+/// Normalises an unordered multiset of BigInts by returning the sum, errors if the sum is Zero
 fn non_zero_sum_normalise<'a>(lineq: impl Iterator<Item = &'a BigInt>, prime: &'a BigInt) -> Result<BigInt, ArithmeticError> {
     
     let sum: BigInt = lineq.into_iter().fold(BigInt::from(0), |curr, next| add(&curr, next, prime));
@@ -15,6 +16,9 @@ fn non_zero_sum_normalise<'a>(lineq: impl Iterator<Item = &'a BigInt>, prime: &'
     }
 }
 
+/// Normalises an unordered multiset of BigInts
+///
+/// If the sum of the lineq is nonzero, then returns that value. Otherwise, iteratively calculates all fractions from the lineq choosing only to keep the numerators from the smallest group until a fixed point is reached. The fixed point is of size $n$ only if the final set is a constant multiple of all $n$th roots of unity modulo prime.
 pub fn division_normalise<'a>(_lineq: impl Iterator<Item = &'a BigInt>, prime: &'a BigInt, early_exit: bool) -> Vec<Cow<'a, BigInt>> {
 
     // If can early exit then do

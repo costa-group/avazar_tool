@@ -5,6 +5,7 @@ use crate::num_bigint::{BigInt};
 use crate::circuit::Circuit;
 use crate::constraint::Constraint;
 
+// A generic subcircuit type that stores only references to constraints
 pub struct LightweightCircuit<'a, C: Constraint> {
     prime: &'a BigInt,
     constraints: Vec<&'a C>,

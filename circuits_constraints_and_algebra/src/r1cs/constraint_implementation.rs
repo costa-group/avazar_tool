@@ -70,6 +70,7 @@ impl Constraint for R1CSConstraint<usize> {
         self.a.keys().chain(self.b.keys()).chain(self.c.keys()).filter(|signal| **signal != 0).copied().collect() //probably quite ugly
     }
 
+    // Fingerprint is Vec<(Signal, ((Part A, _), Part B, Part C))> if ordered, Vec<(Signal, NonlinPair, SingleNonlinear, Part C))> if unordered
     type Fingerprint<'a, T: Hash + Eq + Default + Copy + Ord + Debug> = Vec<(FingerprintIndex<T>, ((Option<&'a BigInt>, Option<&'a BigInt>), Option<&'a BigInt>, Option<&'a BigInt>))>  where Self: 'a;
 
     fn fingerprint<'a, T: Hash + Eq + Default + Copy + Ord + Debug>(&'a self, fingerprint: &mut Option<Self::Fingerprint<'a, T>>, signal_to_fingerprint: &HashMap<usize, T>) -> () {
@@ -185,6 +186,7 @@ impl Constraint for R1CSConstraint<usize> {
 
     fn singular_class_requires_additional_constraints() -> bool {false}
 
+    // Returns clauses implied by pairing if assumed viable (including the implication). If clause is empty than pair is nonviable
     fn encode_single_norm_pair(
         norms: &[&R1CSConstraint<usize>; 2],
         is_ordered: bool,
@@ -200,7 +202,7 @@ impl Constraint for R1CSConstraint<usize> {
         let (app, inv) = if is_ordered {_compare_norms_with_ordered_parts(&dicts, &allkeys)} else {_compare_norms_with_unordered_parts(&dicts, &allkeys)};
 
         let mut clauses: Vec<Clause> = Vec::new();
-        for j in 0..3 {if !inv[0][j].keys().sorted().eq(inv[1][j].keys().sorted()) {return clauses}}
+        for j in 0..3 {if !inv[0][j].keys().sorted().eq(inv[1][j].keys().sorted()) {return clauses}} // Empty clauses means the pair is nonviable
 
         fn _get_value_for_key<'a>(dicts: &[[&'a HashMap<usize, BigInt>; 3];2], is_ordered: bool, i: usize, j: usize, key: &usize) -> PairKey<&'a BigInt> {
             if is_ordered || j == 2 {return PairKey::One(dicts[i][j].get(key).unwrap());}
@@ -268,6 +270,7 @@ enum PairKey<T: Hash + Eq + Ord> {
 
 fn sort_pair_bigint<'a>(left: Option<&'a BigInt>, right: Option<&'a BigInt>) -> (Option<&'a BigInt>, Option<&'a BigInt>) {if left <= right {(left, right)} else {(right, left)}}
 
+// preprocessing for comparison for norm with unordered parts
 fn _compare_norms_with_unordered_parts<'a>(dicts: &[[&'a HashMap<usize, BigInt>; 3];2], allkeys: &[HashSet<usize>; 2]
 ) -> ([HashMap<usize, Vec<usize>>;2], [[HashMap<PairKey<&'a BigInt>, Vec<usize>>; 3];2]) {
     // # inv[Ci][I][value] = set({keys in Ci with value I})
@@ -306,6 +309,7 @@ fn _compare_norms_with_unordered_parts<'a>(dicts: &[[&'a HashMap<usize, BigInt>;
     (app, inv)
 }
 
+// preprocessing for comparison for norm with ordered parts
 fn _compare_norms_with_ordered_parts<'a>(dicts: &[[&'a HashMap<usize, BigInt>; 3];2], _allkeys: &[HashSet<usize>; 2]
 ) -> ([HashMap<usize, Vec<usize>>;2], [[HashMap<PairKey<&'a BigInt>, Vec<usize>>; 3];2]) {
 
