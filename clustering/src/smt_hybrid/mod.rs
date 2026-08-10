@@ -118,6 +118,8 @@ pub fn structure_driven_circuit_and_smt_hybrid_clustering<'a, Cons: Constraint +
             }
         };
 
+        merge_passthrough_shared(&circuit_subcircuit, &smt_subcircuit, &mut circuit_clustering, &mut smt_clustering);
+
         // map indices back to previous and move cluster to toplevel -- signals are original signals due to LightweightCircuit
         let circ_inverse_constraint_mapping: Option<&[usize]> = Some(&node.constraints);
         let smt_inverse_constraint_mapping: Option<&[usize]> = Some(&smt_template_atoms);

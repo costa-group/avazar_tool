@@ -37,7 +37,7 @@ pub fn merge_passthrough_shared<'a, LCon: Constraint, Left: Circuit<LCon>, RCon:
     let right_sig_to_coni = signals_to_constraints_with_them::<RCon>(&right.constraints(), None, None);
     let mut left_coni_to_node: Vec<usize> = vec![0; left.n_constraints()];
     for (coni, node_id) in left_nodes.values().flat_map(|node| node.get_constraint_indices().map(|coni| (coni, node.get_id()))) { left_coni_to_node[coni] = node_id };
-    let mut right_coni_to_node: Vec<usize> = vec![0; left.n_constraints()];
+    let mut right_coni_to_node: Vec<usize> = vec![0; right.n_constraints()];
     for (coni, node_id) in right_nodes.values().flat_map(|node| node.get_constraint_indices().map(|coni| (coni, node.get_id()))) { right_coni_to_node[coni] = node_id };
     
     let left_passthrough_signals: HashSet<usize> = left_nodes.values().flat_map(|node| get_passthrough_signals(node)).collect();
