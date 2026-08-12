@@ -6,6 +6,7 @@ TODO: Implement Own Graph Version
 TODO: Better Error Handling (using Result and the like)
 
 */
+use std::collections::HashMap;
 use ansi_term::Colour;
 use std::fs::File;
 use std::io::{BufWriter};
@@ -15,6 +16,7 @@ use std::error::Error;
 use std::time::{Instant};
 use clap::Parser;
 use mimalloc::MiMalloc;
+use serde::{Serialize};
 
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
@@ -27,11 +29,14 @@ pub mod decompose_circuit;
 use utils::structure::StructureReader;
 use crate::decompose_circuit::decompose_circuit;
 use crate::argument_parsing::{Args};
-use crate::smt_hybrid::{circuit_and_smt_hybrid_clustering, structure_driven_circuit_and_smt_hybrid_clustering};
+use crate::smt_hybrid::{
+    circuit_and_smt_hybrid_clustering_into_structurereader,
+    structure_driven_circuit_and_smt_hybrid_clustering_into_structurereader};
 use utils::small_utilities::{DecomposeOptions, FileType};
 use circuits_constraints_and_algebra::r1cs::{R1CSData};
 use circuits_constraints_and_algebra::generic::{AIRDataWrapper};
 use circuits_constraints_and_algebra::acir::{ACIRCircuit};
+use circuits_constraints_and_algebra::constraint::Constraint;
 use circuits_constraints_and_algebra::circuit::Circuit;
 use circuits_constraints_and_algebra::smt_formula::{Formula, parse_formula};
 
@@ -48,7 +53,7 @@ fn main() {
     }
 }
 
-fn write_output_into_file<P: AsRef<Path>>(path: P, result: &StructureReader) -> Result<(), Box<dyn Error>> {
+fn write_output_into_file<P: AsRef<Path>>(path: P, result: &Output<StructureReader>) -> Result<(), Box<dyn Error>> {
     // Open the file in read-only mode with buffer.
 
     let file = File::create(path)?;
@@ -60,6 +65,16 @@ fn write_output_into_file<P: AsRef<Path>>(path: P, result: &StructureReader) -> 
     writer.flush()?;
     Ok(())
 }
+
+use crate::smt_hybrid::HybridClusteringOptions;
+use crate::smt_hybrid::TiebreakingStrategy;
+use crate::smt_hybrid::HybridClusteringMethodOptions;
+use crate::smt_hybrid::HybridClusteringMethods;
+use std::path::PathBuf;
+
+#[derive(Serialize)]
+#[serde(untagged)]
+enum Output<T> {Single(T), Pair(T, T), StructuredPair(HashMap<usize, (T,T)>)}
 
 fn start(args: Args) -> Result<(), Box<dyn Error>> {
     
@@ -88,65 +103,60 @@ fn start(args: Args) -> Result<(), Box<dyn Error>> {
 
         ..Default::default()
     };
+
+    let hybrid_clustering_options = HybridClusteringOptions {
+        guide_decompose_options: decompose_options.clone(),
+        hybrid_decompose_method: HybridClusteringMethods::default(),
+        hybrid_decompose_options: HybridClusteringMethodOptions {tiebreaking_strategy: TiebreakingStrategy::default(), recipient_requires_subsets: true} ,
+    };
     
-    // TODO: refactor some code to make the dyn work
-    let result = match args.file_type {
+    let mut structure_info: Option<StructureReader> = None;
+    if args.circuit_structure.is_some() {
+        use std::io::BufReader;
+        let file = File::open(args.circuit_structure.as_ref().unwrap())?;
+        let reader = BufReader::new(file);
+        structure_info = Some(serde_json::from_reader(reader).unwrap());
+    }
+
+    let selector: usize = if args.smt_formula.is_none() {0} else if args.smt_formula.is_some() && args.circuit_structure.is_none() {1} else if args.smt_formula.is_some() && args.circuit_structure.is_some() {2} else {3};
+
+    fn circuit_to_output<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
+        selector: usize, circuit: &S, smt_path: &Option<PathBuf>, structure_info: &Option<StructureReader>, decompose_options: DecomposeOptions<'a>, hybrid_clustering_options: HybridClusteringOptions<'a>, debug: usize
+    ) -> Output<StructureReader> {
+        let mut smt: Option<Formula> = None;
+        if smt_path.is_some() {
+            smt = Some(parse_formula(smt_path.as_ref().unwrap(), circuit.prime(), circuit.get_input_signals().collect(), circuit.get_output_signals().collect(), None).unwrap_or_else(|e| panic!("Error when parsing SMT {e}")));
+        }
+
+        match selector {
+            0 => Output::Single(decompose_circuit(circuit, decompose_options)),
+            1 => {
+                let (smt_clustering, circ_clustering) = circuit_and_smt_hybrid_clustering_into_structurereader(smt.as_ref().unwrap(), circuit, hybrid_clustering_options, debug);
+                Output::Pair(smt_clustering, circ_clustering)
+            },
+            2 => Output::StructuredPair(structure_driven_circuit_and_smt_hybrid_clustering_into_structurereader(circuit, structure_info.as_ref().unwrap(), smt.as_ref().unwrap(), hybrid_clustering_options, debug)),
+            _ => unreachable!(),
+        }
+    }
+
+    
+    // TODO: refactor some code to make the dyn work -- hmm looks like dyn just won't work so its this bodge forever
+    let result: Output<StructureReader> = match args.file_type {
         FileType::R1CS => {
             let circuit = R1CSData::parse_file(&args.filepath)?;
             if args.debug > 0 { println!("Took {:?} to parse", circuit_parsing_timer.elapsed()); }
-            if args.smt_formula.is_some() {
-                let smt = parse_formula(args.smt_formula.as_ref().unwrap(), circuit.prime(), circuit.get_input_signals().collect(), circuit.get_output_signals().collect(), None)?;
-
-                use crate::smt_hybrid::{HybridClusteringMethods, HybridClusteringOptions, HybridClusteringMethodOptions, TiebreakingStrategy};
-                use itertools::Itertools;
-
-                let options = HybridClusteringOptions {
-                    guide_decompose_options: decompose_options,
-                    hybrid_decompose_method: HybridClusteringMethods::default(),
-                    hybrid_decompose_options: HybridClusteringMethodOptions {tiebreaking_strategy: TiebreakingStrategy::default(), recipient_requires_subsets: true} ,
-                };
-
-                if args.circuit_structure.is_some() {
-
-                    use utils::structure::StructureReader; use std::io::BufReader;
-                    let file = File::open(args.circuit_structure.unwrap())?;
-                    let reader = BufReader::new(file);
-                    let structure_info: StructureReader = serde_json::from_reader(reader).unwrap();
-
-                    let results = structure_driven_circuit_and_smt_hybrid_clustering(&circuit, &structure_info, &smt, options, args.debug);
-
-                    println!("################## final_output #################");
-                    for (template_idx, (circ_clustering, smt_clustering) ) in results.into_iter() {
-
-                        println!("################## template idx {} #################", template_idx);
-                        println!("smt_clustering (cluster_id, signals) {:?}", smt_clustering.into_iter().map(|(key, node)| (key, node.signals().into_iter().sorted().collect::<Vec<_>>())).sorted().collect::<Vec<_>>());
-                        println!("circ_clustering (cluster_id, signals) {:?}", circ_clustering.into_iter().map(|(key, node)| (key, node.signals().into_iter().sorted().collect::<Vec<_>>())).sorted().collect::<Vec<_>>());
-                    }
-                    
-                    panic!("Have not yet decided on output format");
-                } else {
-                    let (smt_clustering, circ_clustering) = circuit_and_smt_hybrid_clustering(&smt, &circuit, options, args.debug);
-
-                    println!("################## final_output #################");
-                    println!("smt_clustering (cluster_id, signals) {:?}", smt_clustering.into_iter().map(|(key, node)| (key, node.signals().into_iter().sorted().collect::<Vec<_>>())).sorted().collect::<Vec<_>>());
-                    println!("circ_clustering (cluster_id, signals) {:?}", circ_clustering.into_iter().map(|(key, node)| (key, node.signals().into_iter().sorted().collect::<Vec<_>>())).sorted().collect::<Vec<_>>());
-
-                    panic!("Have not yet decided on output format");
-                }
-                
-            } else {
-                decompose_circuit(&circuit, decompose_options)
-            }},
+            circuit_to_output(selector, &circuit, &args.smt_formula, &structure_info, decompose_options, hybrid_clustering_options, args.debug)
+        },
         FileType::ACIR =>{
             let circuit = ACIRCircuit::parse_file(&args.filepath)?;
             if args.debug > 0 { println!("Took {:?} to parse", circuit_parsing_timer.elapsed()); }
-            decompose_circuit(&circuit, decompose_options)
-            }
+            circuit_to_output(selector, &circuit, &args.smt_formula, &structure_info, decompose_options, hybrid_clustering_options, args.debug)
+        },
         FileType::Generic =>{
             let circuit = AIRDataWrapper::parse_file(&args.filepath)?;
             if args.debug > 0 { println!("Took {:?} to parse", circuit_parsing_timer.elapsed()); }
-            decompose_circuit(&circuit, decompose_options)
-            }
+            circuit_to_output(selector, &circuit, &args.smt_formula, &structure_info, decompose_options, hybrid_clustering_options, args.debug)
+        }
     };
     
     let filepath_rev: String = args.filepath.chars().rev().collect();

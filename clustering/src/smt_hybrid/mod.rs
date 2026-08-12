@@ -6,9 +6,9 @@ use circuits_constraints_and_algebra::circuit::Circuit;
 use circuits_constraints_and_algebra::constraint::Constraint;
 use circuit_graphing::directed_acyclic_graph::DAGNode;
 use utils::small_utilities::{DecomposeOptions, CopyableDecomposeOptions};
-use crate::decompose_circuit::decompose_circuit_and_return_dagnodes;
+use crate::decompose_circuit::{decompose_circuit_and_return_dagnodes, convert_dagnodes_to_structure_reader};
 use crate::smt_hybrid::{guided_clustering::guided_clustering, shared_merge::merge_passthrough_shared};
-use utils::structure::StructureReader;
+use utils::structure::{StructureReader, TimingInfo};
 
 pub mod guided_clustering;
 pub mod shared_merge;
@@ -37,7 +37,7 @@ pub struct HybridClusteringOptions<'a> {
     pub hybrid_decompose_options: HybridClusteringMethodOptions,
 }
 
-pub fn circuit_and_smt_hybrid_clustering<'a, Cons: Constraint, Circ: Circuit<Cons> , Atom: Constraint, Smt: Circuit<Atom>>(
+fn circuit_and_smt_hybrid_clustering<'a, Cons: Constraint, Circ: Circuit<Cons> , Atom: Constraint, Smt: Circuit<Atom>>(
     circ: &'a Circ, smt: &'a Smt,
     options: HybridClusteringOptions<'a>,
     debug: usize
@@ -47,7 +47,7 @@ pub fn circuit_and_smt_hybrid_clustering<'a, Cons: Constraint, Circ: Circuit<Con
 
     let (_, mut guide_clustering) = decompose_circuit_and_return_dagnodes(circ, &mut (0..), guide_decompose_options);
 
-    let (mut recipient_clustering, _) = match options.hybrid_decompose_method {
+    let (mut recipient_clustering, _) = match hybrid_decompose_method {
         HybridClusteringMethods::GuidedClustering => {
             guided_clustering(circ, smt, &mut guide_clustering, hybrid_decompose_options, debug)
         }
@@ -59,6 +59,23 @@ pub fn circuit_and_smt_hybrid_clustering<'a, Cons: Constraint, Circ: Circuit<Con
     (guide_clustering, recipient_clustering)
 }
 
+pub fn circuit_and_smt_hybrid_clustering_into_structurereader<'a, Cons: Constraint, Circ: Circuit<Cons> , Atom: Constraint, Smt: Circuit<Atom>>(
+    circ: &'a Circ, smt: &'a Smt,
+    options: HybridClusteringOptions<'a>,
+    debug: usize
+) -> (StructureReader, StructureReader) {
+
+    let (guide_clustering, recipient_clustering) = circuit_and_smt_hybrid_clustering(circ, smt, options, debug);
+
+    let mut timers: TimingInfo = TimingInfo::default();
+
+    (
+        convert_dagnodes_to_structure_reader(timers, guide_clustering, None, None, None, None),
+        convert_dagnodes_to_structure_reader(timers, recipient_clustering, None, None, None, None)
+    )
+
+}
+
 use std::fs::File;
 use std::io::BufReader;
 use std::path::PathBuf;
@@ -66,7 +83,7 @@ use std::error::Error;
 use utils::structure::{NodeInfo};
 use circuits_constraints_and_algebra::smt_formula::{FormulaAtom, Formula, parse_formula};
 
-pub fn structure_driven_circuit_and_smt_hybrid_clustering<'a, Cons: Constraint + 'a, Circ: Circuit<Cons> + 'a>(
+fn structure_driven_circuit_and_smt_hybrid_clustering<'a, Cons: Constraint + 'a, Circ: Circuit<Cons> + 'a>(
     circ: &'a Circ, circuit_structure: &StructureReader, smt: &'a Formula,
     options: HybridClusteringOptions<'a>,
     debug: usize
@@ -151,3 +168,24 @@ pub fn structure_driven_circuit_and_smt_hybrid_clustering<'a, Cons: Constraint +
     clusterings
 }
 
+pub fn structure_driven_circuit_and_smt_hybrid_clustering_into_structurereader<'a, Cons: Constraint + 'a, Circ: Circuit<Cons> + 'a>(
+    circ: &'a Circ, circuit_structure: &StructureReader, smt: &'a Formula,
+    options: HybridClusteringOptions<'a>,
+    debug: usize
+) -> HashMap<usize, (StructureReader, StructureReader)> {
+
+    let clusterings = structure_driven_circuit_and_smt_hybrid_clustering(circ, circuit_structure, smt, options, debug);
+
+    let mut timers: TimingInfo = TimingInfo::default();
+
+    clusterings.into_iter().map(
+        |(key, (guide, recipient))| 
+        (
+            key,
+            (
+                convert_dagnodes_to_structure_reader(timers, guide, None, None, None, None),
+                convert_dagnodes_to_structure_reader(timers, recipient, None, None, None, None)
+            )
+        )
+    ).collect()
+}

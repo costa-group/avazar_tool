@@ -1,6 +1,5 @@
 use std::collections::{HashMap, HashSet};
 use std::time::{Instant};
-use std::borrow::Borrow;
 
 use circuits_constraints_and_algebra::num_bigint::BigInt;
 use circuits_constraints_and_algebra::lightweight_circuit::LightweightCircuit;
@@ -83,8 +82,8 @@ pub(crate) fn decompose_circuit_and_return_dagnodes<'a, C: Constraint, S: Circui
 
         // Write the result.
         let value = serde_json::to_string_pretty(&partition).unwrap();
-        writer.write(value.as_bytes());
-        writer.flush();
+        writer.write(value.as_bytes()).unwrap_or_else(|e| panic!("Error when extracting raw partition {e}"));
+        writer.flush().unwrap_or_else(|e| panic!("Error when extracting raw partition {e}"));
     }
 
     // Convert into DAG
@@ -174,6 +173,13 @@ fn decompose_circuit_over_dagnodes<'a, C: Constraint, S: Circuit<C>>(
     new_dagnodes
 }
 
+pub(crate) fn convert_dagnodes_to_structure_reader<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(timing: TimingInfo, dagnodes: HashMap<usize, DAGNode<'a, C, S>>, inverse_coni_mapping: Option<&[usize]>, inverse_sig_mapping: Option<&[usize]>, equivalency_local: Option<Vec<Vec<usize>>>, equivalency_structural: Option<Vec<Vec<usize>>>) -> StructureReader {
+
+    let mut dagnode_info: Vec<NodeInfo> = dagnodes.into_values().map(|node| node.to_json(inverse_coni_mapping, inverse_sig_mapping)).collect();
+    dagnode_info.sort_by_key(|node| node.node_id);
+    StructureReader {timing, nodes: dagnode_info, equivalency_local, equivalency_structural}
+}
+
 pub fn decompose_circuit<C: Constraint, S: Circuit<C>>(
     circuit: &S,
     mut decompose_options: DecomposeOptions
@@ -234,7 +240,5 @@ pub fn decompose_circuit<C: Constraint, S: Circuit<C>>(
     timing_info.equivalency = equivalency_timer.elapsed().as_secs_f32();
     timing_info.total += timing_info.equivalency;
     if debug > 0 {println!("LOG: Finished equivalence in {:?}s", timing_info.equivalency);}
-
-    let dagnode_info: Vec<NodeInfo> = dagnodes.into_values().map(|node| node.to_json(inverse_coni_mapping, inverse_sig_mapping)).collect();
-    StructureReader {timing: timing_info, nodes: dagnode_info, equivalency_local: equivalency_local, equivalency_structural: equivalency_structural}
+    convert_dagnodes_to_structure_reader(timing_info, dagnodes, inverse_coni_mapping, inverse_sig_mapping, equivalency_local, equivalency_structural)
 }

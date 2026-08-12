@@ -5,7 +5,7 @@ use std::path::Path;
 use std::error::Error;
 use std::ops::AddAssign;
 
-#[derive(Deserialize,Serialize, Debug)]
+#[derive(Deserialize,Serialize, Debug, Default, Clone, Copy)]
 pub struct TimingInfo{
     pub graph_construction: Option<f32>,
     pub clustering: f32,

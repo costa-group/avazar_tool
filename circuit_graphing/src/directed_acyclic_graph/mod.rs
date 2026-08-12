@@ -1,6 +1,7 @@
 use std::marker::PhantomData;
 use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet};
+use itertools::Itertools;
 
 use utils::structure::NodeInfo;
 use circuits_constraints_and_algebra::constraint::Constraint;
@@ -112,16 +113,16 @@ impl<'a, C: Constraint + 'a, S: Circuit<C> + 'a> DAGNode<'a, C, S> {
     pub fn to_json(self, inverse_constraint_mapping: Option<&[usize]>, inverse_signal_mapping: Option<&[usize]>) -> NodeInfo {
         let signal_mapping = |sig: usize| if inverse_signal_mapping.is_none() {sig} else {inverse_signal_mapping.unwrap()[sig]};
         let constraint_mapping = |coni: usize| if inverse_constraint_mapping.is_none() {coni} else {inverse_constraint_mapping.unwrap()[coni]};
-        let signals: Vec<usize> = self.constraints.iter().flat_map(|x| self.circ.get_constraint(*x).signals()).collect::<HashSet<usize>>().into_iter().map(signal_mapping).collect();
+        let signals: Vec<usize> = self.constraints.iter().flat_map(|x| self.circ.get_constraint(*x).signals()).collect::<HashSet<usize>>().into_iter().map(signal_mapping).sorted().collect();
 
         NodeInfo {
             node_name: format!("node_{}",self.id),
             component_name: format!("node_{}",self.id),
 
             node_id: self.id, 
-            constraints: self.constraints.into_iter().map(constraint_mapping).collect(), 
-            input_signals: self.input_signals.into_iter().map(signal_mapping).collect(), 
-            output_signals: self.output_signals.into_iter().map(signal_mapping).collect(), 
+            constraints: self.constraints.into_iter().map(constraint_mapping).sorted().collect(), 
+            input_signals: self.input_signals.into_iter().map(signal_mapping).sorted().collect(), 
+            output_signals: self.output_signals.into_iter().map(signal_mapping).sorted().collect(), 
             signals: signals, 
             is_custom: false,
             is_deterministic: false,
