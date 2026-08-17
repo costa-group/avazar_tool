@@ -12,6 +12,8 @@ pub enum TimingCategories {
     GraphConstruction,
     Clustering,
     DagConstruction,
+    SecondaryClustering,
+    SecondaryDagConstruction,
     Equivalency,
     Total
 }

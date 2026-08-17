@@ -2,10 +2,12 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use strum_macros::Display;
 use clap::ValueEnum;
 use itertools::Itertools;
+use std::time::{Instant};
 
 use circuits_constraints_and_algebra::circuit::Circuit;
 use circuits_constraints_and_algebra::constraint::Constraint;
 use circuit_graphing::directed_acyclic_graph::{mixed_graph::MixedGraph, DAGNode};
+use utils::structure::{TimingInfo, TimingCategories};
 
 use crate::smt_hybrid::{HybridClusteringMethodOptions, TiebreakingStrategy, shared_merge::dual_merge_until_property};
 
@@ -14,7 +16,10 @@ pub(crate) fn guided_clustering<'a, Cons: Constraint, Circ: Circuit<Cons> , Atom
     guide_clustering: &mut HashMap<usize, DAGNode<'a, Cons, Circ>>,
     options: HybridClusteringMethodOptions,
     debug: usize
-) -> (HashMap<usize, DAGNode<'a, Atom, Smt>>, HashMap<usize, usize>) {
+) -> (HashMap<usize, DAGNode<'a, Atom, Smt>>, HashMap<usize, usize>, TimingInfo) {
+
+    let mut timing_info = TimingInfo::new();
+    let secondary_clustering_timer = Instant::now();
 
     println!("{}, {}", guide.n_constraints(), recipient.n_constraints());
     println!("inputs: {:?}, outputs: {:?}", guide.get_input_signals().sorted().collect::<Vec<_>>(), guide.get_output_signals().sorted().collect::<Vec<_>>());
@@ -73,6 +78,10 @@ pub(crate) fn guided_clustering<'a, Cons: Constraint, Circ: Circuit<Cons> , Atom
         if !any_inserted {break;}
     }
 
+    timing_info.insert(TimingCategories::SecondaryClustering, secondary_clustering_timer.elapsed().as_secs_f32());
+    *timing_info.entry(TimingCategories::Total).or_default() += timing_info[&TimingCategories::SecondaryClustering];
+    if debug > 0 {println!("LOG: Finished secondary clustering in {:?}s", timing_info[&TimingCategories::SecondaryClustering]);}
+
     let printable = guide_clustering.into_iter().map(|(key, part)| (key, part.get_constraint_indices().flat_map(|atomi| guide.get_constraint(atomi).signals().into_iter()).sorted().dedup().collect::<Vec<_>>())).sorted().collect::<Vec<_>>();
     println!("left_signals: {:?}", printable);
 
@@ -119,15 +128,21 @@ pub(crate) fn guided_clustering<'a, Cons: Constraint, Circ: Circuit<Cons> , Atom
     }).collect();
 
     // Then we need to iteratively look to merge clusters that are not supersets in a manner until we reach a fixed-point which always occurs at least at the complete merge.
+    
+    let secondary_dag_construction_timer = Instant::now();
 
     if options.recipient_requires_subsets {
         merge_until_all_left_is_subset_to_right(recipient, guide, &mut recipient_clustering, guide_clustering);
     } else {
         merge_until_all_left_is_subset_to_right(guide, recipient, guide_clustering, &mut recipient_clustering);
     }
+
+    timing_info.insert(TimingCategories::SecondaryDagConstruction, secondary_dag_construction_timer.elapsed().as_secs_f32());
+    *timing_info.entry(TimingCategories::Total).or_default() += timing_info[&TimingCategories::SecondaryDagConstruction];
+    if debug > 0 {println!("LOG: Finished secondary dag construction in {:?}s", timing_info[&TimingCategories::SecondaryDagConstruction]);}
     
     let identity_map = recipient_clustering.keys().copied().map(|k| (k, k)).collect();
-    (recipient_clustering, identity_map)
+    (recipient_clustering, identity_map, timing_info)
 }
 
 fn merge_until_all_left_is_subset_to_right<'a, LCon: Constraint, Left: Circuit<LCon> , RCon: Constraint, Right: Circuit<RCon>>(left: &'a Left, right: &'a Right, core_nodes: &mut HashMap<usize, DAGNode<'a, LCon, Left>>, superset_nodes: &mut HashMap<usize, DAGNode<'a, RCon, Right>>) -> () {

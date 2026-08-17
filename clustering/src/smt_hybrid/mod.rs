@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use strum_macros::Display;
 use clap::ValueEnum;
+use std::time::{Instant};
 
 use circuits_constraints_and_algebra::circuit::Circuit;
 use circuits_constraints_and_algebra::constraint::Constraint;
@@ -8,7 +9,7 @@ use circuit_graphing::directed_acyclic_graph::DAGNode;
 use utils::small_utilities::{DecomposeOptions, CopyableDecomposeOptions};
 use crate::decompose_circuit::{decompose_circuit_and_return_dagnodes, convert_dagnodes_to_structure_reader};
 use crate::smt_hybrid::{guided_clustering::guided_clustering, shared_merge::merge_passthrough_shared};
-use utils::structure::{StructureReader, TimingInfo};
+use utils::structure::{StructureReader, TimingInfo, TimingCategories, add_timing_info};
 
 pub mod guided_clustering;
 pub mod shared_merge;
@@ -41,22 +42,30 @@ fn circuit_and_smt_hybrid_clustering<'a, Cons: Constraint, Circ: Circuit<Cons> ,
     circ: &'a Circ, smt: &'a Smt,
     options: HybridClusteringOptions<'a>,
     debug: usize
-) -> (HashMap<usize, DAGNode<'a, Cons, Circ>>, HashMap<usize, DAGNode<'a, Atom, Smt>>) { //  {
+) -> (TimingInfo, HashMap<usize, DAGNode<'a, Cons, Circ>>, HashMap<usize, DAGNode<'a, Atom, Smt>>) { //  {
 
     let HybridClusteringOptions { guide_decompose_options, hybrid_decompose_method, hybrid_decompose_options, .. } = options;
 
-    let (_, mut guide_clustering) = decompose_circuit_and_return_dagnodes(circ, &mut (0..), guide_decompose_options);
+    let (mut timing_info, mut guide_clustering) = decompose_circuit_and_return_dagnodes(circ, &mut (0..), guide_decompose_options);
 
-    let (mut recipient_clustering, _) = match hybrid_decompose_method {
+    let (mut recipient_clustering, _, secondary_timing) = match hybrid_decompose_method {
         HybridClusteringMethods::GuidedClustering => {
             guided_clustering(circ, smt, &mut guide_clustering, hybrid_decompose_options, debug)
         }
 
     };
 
+    add_timing_info(&mut timing_info, secondary_timing);
+
+    let shared_passthrough_removal = Instant::now();
     merge_passthrough_shared(circ, smt, &mut guide_clustering, &mut recipient_clustering);
-    
-    (guide_clustering, recipient_clustering)
+    let shared_passthrough_removal = shared_passthrough_removal.elapsed().as_secs_f32();
+
+    *timing_info.entry(TimingCategories::SecondaryDagConstruction).or_default() += shared_passthrough_removal;
+    *timing_info.entry(TimingCategories::Total).or_default() += shared_passthrough_removal;
+    if debug > 0 {println!("LOG: Finished shared passthrough merge in {:?}s", shared_passthrough_removal);}
+
+    (timing_info, guide_clustering, recipient_clustering)
 }
 
 pub fn circuit_and_smt_hybrid_clustering_into_structurereader<'a, Cons: Constraint, Circ: Circuit<Cons> , Atom: Constraint, Smt: Circuit<Atom>>(
@@ -65,13 +74,11 @@ pub fn circuit_and_smt_hybrid_clustering_into_structurereader<'a, Cons: Constrai
     debug: usize
 ) -> (StructureReader, StructureReader) {
 
-    let (guide_clustering, recipient_clustering) = circuit_and_smt_hybrid_clustering(circ, smt, options, debug);
-
-    // let mut timers: TimingInfo = TimingInfo::default();
+    let (timing_info, guide_clustering, recipient_clustering) = circuit_and_smt_hybrid_clustering(circ, smt, options, debug);
 
     (
-        convert_dagnodes_to_structure_reader(TimingInfo::new(), guide_clustering, None, None, None, None),
-        convert_dagnodes_to_structure_reader(TimingInfo::new(), recipient_clustering, None, None, None, None)
+        convert_dagnodes_to_structure_reader(timing_info.clone(), guide_clustering, None, None, None, None),
+        convert_dagnodes_to_structure_reader(timing_info, recipient_clustering, None, None, None, None)
     )
 
 }
@@ -87,7 +94,7 @@ fn structure_driven_circuit_and_smt_hybrid_clustering<'a, Cons: Constraint + 'a,
     circ: &'a Circ, circuit_structure: &StructureReader, smt: &'a Formula,
     options: HybridClusteringOptions<'a>,
     debug: usize
-) -> Vec<(HashMap<usize, DAGNode<'a, Cons, Circ>>, HashMap<usize, DAGNode<'a, FormulaAtom, Formula>>)> {
+) -> Vec<(TimingInfo, HashMap<usize, DAGNode<'a, Cons, Circ>>, HashMap<usize, DAGNode<'a, FormulaAtom, Formula>>)> {
 
     let HybridClusteringOptions { guide_decompose_options, hybrid_decompose_method, mut hybrid_decompose_options, .. } = options;
     hybrid_decompose_options.recipient_requires_subsets = true;
@@ -101,7 +108,7 @@ fn structure_driven_circuit_and_smt_hybrid_clustering<'a, Cons: Constraint + 'a,
     let mut id_generator = 0..;
 
     // the key for the pairs is the index of the template in the StructureReader nodes Vec
-    let mut clusterings: Vec< Option<(HashMap<usize, DAGNode<'a, Cons, Circ>>, HashMap<usize, DAGNode<'a, FormulaAtom, Formula>>)> > = (0..id_to_index.len()).into_iter().map(|_| None).collect();
+    let mut clusterings: Vec< Option<(TimingInfo, HashMap<usize, DAGNode<'a, Cons, Circ>>, HashMap<usize, DAGNode<'a, FormulaAtom, Formula>>)> > = (0..id_to_index.len()).into_iter().map(|_| None).collect();
 
     let mut name_components: Vec<&str> = vec!["main"];
 
@@ -111,7 +118,7 @@ fn structure_driven_circuit_and_smt_hybrid_clustering<'a, Cons: Constraint + 'a,
         guide_decompose_options: CopyableDecomposeOptions, hybrid_decompose_method: HybridClusteringMethods, hybrid_decompose_options: HybridClusteringMethodOptions, debug: usize,
         id_to_index: &HashMap<usize, usize>, visited: &mut HashSet<usize>,
         // TODO: add remaining things to finish this
-        clusterings: &mut Vec<Option<(HashMap<usize, DAGNode<'a, Cons, Circ>>, HashMap<usize, DAGNode<'a, FormulaAtom, Formula>>)>>, name_components: &mut Vec<&'b str>) -> () {
+        clusterings: &mut Vec<Option<(TimingInfo, HashMap<usize, DAGNode<'a, Cons, Circ>>, HashMap<usize, DAGNode<'a, FormulaAtom, Formula>>)>>, name_components: &mut Vec<&'b str>) -> () {
 
         if visited.contains(&id) {panic!("Given circuit structure is not a tree");}
 
@@ -127,15 +134,23 @@ fn structure_driven_circuit_and_smt_hybrid_clustering<'a, Cons: Constraint + 'a,
         let circuit_subcircuit = circ.take_subcircuit(&node.constraints, Some(&inputs), Some(&outputs), None, None);
         let smt_subcircuit    = smt.take_subcircuit(&smt_template_atoms, Some(&inputs), Some(&outputs), None, None);
 
-        let (_, mut smt_clustering) = decompose_circuit_and_return_dagnodes(&smt_subcircuit, id_generator, guide_decompose_options.into_decompose_options());
+        let (mut timing_info, mut smt_clustering) = decompose_circuit_and_return_dagnodes(&smt_subcircuit, id_generator, guide_decompose_options.into_decompose_options());
 
-        let (mut circuit_clustering, _) = match hybrid_decompose_method {
+        let (mut circuit_clustering, _, other_timing) = match hybrid_decompose_method {
             HybridClusteringMethods::GuidedClustering => {
                 guided_clustering(&smt_subcircuit, &circuit_subcircuit, &mut smt_clustering, hybrid_decompose_options, debug)
             }
         };
 
+        add_timing_info(&mut timing_info, other_timing);
+
+        let shared_passthrough_removal = Instant::now();
         merge_passthrough_shared(&circuit_subcircuit, &smt_subcircuit, &mut circuit_clustering, &mut smt_clustering);
+        let shared_passthrough_removal = shared_passthrough_removal.elapsed().as_secs_f32();
+
+        *timing_info.entry(TimingCategories::SecondaryDagConstruction).or_default() += shared_passthrough_removal;
+        *timing_info.entry(TimingCategories::Total).or_default() += shared_passthrough_removal;
+        if debug > 0 {println!("LOG: Finished shared passthrough merge in {:?}s", shared_passthrough_removal);}
 
         // map indices back to previous and move cluster to toplevel -- signals are original signals due to LightweightCircuit
         let circ_inverse_constraint_mapping: Option<&[usize]> = Some(&node.constraints);
@@ -149,7 +164,7 @@ fn structure_driven_circuit_and_smt_hybrid_clustering<'a, Cons: Constraint + 'a,
         ).collect();
 
         // add to clusterings
-        clusterings[id_to_index[&id]] =  Some((circuit_clustering, smt_clustering));
+        clusterings[id_to_index[&id]] =  Some((timing_info, circuit_clustering, smt_clustering));
         visited.insert(id);
 
         // Move on to children
@@ -179,10 +194,10 @@ pub fn structure_driven_circuit_and_smt_hybrid_clustering_into_structurereader<'
     // let mut timers: TimingInfo = TimingInfo::default();
 
     clusterings.into_iter().map(
-        |(guide, recipient)| 
+        |(timing, guide, recipient)| 
         (
-            convert_dagnodes_to_structure_reader(TimingInfo::new(), guide, None, None, None, None),
-            convert_dagnodes_to_structure_reader(TimingInfo::new(), recipient, None, None, None, None)
+            convert_dagnodes_to_structure_reader(timing.clone(), guide, None, None, None, None),
+            convert_dagnodes_to_structure_reader(timing, recipient, None, None, None, None)
         )
     ).collect()
 }
