@@ -67,11 +67,11 @@ pub fn circuit_and_smt_hybrid_clustering_into_structurereader<'a, Cons: Constrai
 
     let (guide_clustering, recipient_clustering) = circuit_and_smt_hybrid_clustering(circ, smt, options, debug);
 
-    let mut timers: TimingInfo = TimingInfo::default();
+    // let mut timers: TimingInfo = TimingInfo::default();
 
     (
-        convert_dagnodes_to_structure_reader(timers, guide_clustering, None, None, None, None),
-        convert_dagnodes_to_structure_reader(timers, recipient_clustering, None, None, None, None)
+        convert_dagnodes_to_structure_reader(TimingInfo::new(), guide_clustering, None, None, None, None),
+        convert_dagnodes_to_structure_reader(TimingInfo::new(), recipient_clustering, None, None, None, None)
     )
 
 }
@@ -176,13 +176,13 @@ pub fn structure_driven_circuit_and_smt_hybrid_clustering_into_structurereader<'
 
     let clusterings = structure_driven_circuit_and_smt_hybrid_clustering(circ, circuit_structure, smt, options, debug);
 
-    let mut timers: TimingInfo = TimingInfo::default();
+    // let mut timers: TimingInfo = TimingInfo::default();
 
     clusterings.into_iter().map(
         |(guide, recipient)| 
         (
-            convert_dagnodes_to_structure_reader(timers, guide, None, None, None, None),
-            convert_dagnodes_to_structure_reader(timers, recipient, None, None, None, None)
+            convert_dagnodes_to_structure_reader(TimingInfo::new(), guide, None, None, None, None),
+            convert_dagnodes_to_structure_reader(TimingInfo::new(), recipient, None, None, None, None)
         )
     ).collect()
 }

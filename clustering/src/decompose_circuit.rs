@@ -5,7 +5,7 @@ use circuits_constraints_and_algebra::num_bigint::BigInt;
 use circuits_constraints_and_algebra::lightweight_circuit::LightweightCircuit;
 use circuits_constraints_and_algebra::circuit::Circuit;
 use circuits_constraints_and_algebra::constraint::Constraint;
-use utils::structure::{NodeInfo, StructureReader, TimingInfo};
+use utils::structure::{NodeInfo, StructureReader, TimingInfo, TimingCategories, add_timing_info};
 use circuit_graphing::directed_acyclic_graph::{DAGNode};
 use circuit_graphing::directed_acyclic_graph::dag_from_partition::dag_from_partition;
 use circuit_graphing::directed_acyclic_graph::dag_postprocessing::merge_passthrough;
@@ -33,23 +33,17 @@ pub(crate) fn decompose_circuit_and_return_dagnodes<'a, C: Constraint, S: Circui
 ) -> (TimingInfo, HashMap<usize, DAGNode<'a, C, S>>) {
 
     if decompose_options.debug > 0 {println!("LOG: Beginning Clustering of {:?} constraints", circuit.n_constraints());}
-    let mut timing_info: TimingInfo = TimingInfo{
-    	clustering: 0.0,
-        graph_construction: Some(0.0),
-    	dag_construction: 0.0,
-    	equivalency: 0.0,
-    	total: 0.0,
-    };
+    let mut timing_info = TimingInfo::new();
 
     let partition: Vec<Vec<usize>>;
     if decompose_options.existing_partition.is_none() {
         let graph_construction_timer = Instant::now();
         let (graph, clique_clusters): (Box<dyn CanLeiden>, Vec<Vec<usize>>) = shared_signal_graph(circuit, decompose_options.graph_backend, decompose_options.clique_cluster_size, decompose_options.debug);
         
-        timing_info.graph_construction = Some(graph_construction_timer.elapsed().as_secs_f32());
-        timing_info.total += timing_info.graph_construction.unwrap();
+        timing_info.insert(TimingCategories::GraphConstruction, graph_construction_timer.elapsed().as_secs_f32());
+        *timing_info.entry(TimingCategories::Total).or_default() += timing_info[&TimingCategories::GraphConstruction];
 
-        if decompose_options.debug > 0 {println!("LOG: Finished graph construction in {:?}s", timing_info.graph_construction.unwrap());}
+        if decompose_options.debug > 0 {println!("LOG: Finished graph construction in {:?}s", timing_info[&TimingCategories::GraphConstruction]);}
 
         // Partition Graph
         let partition_timer = Instant::now();
@@ -64,9 +58,9 @@ pub(crate) fn decompose_circuit_and_return_dagnodes<'a, C: Constraint, S: Circui
         };
         
         //insert_and_print_timing(debug, &mut timing, "clustering", partition_timer.elapsed());
-        timing_info.clustering = partition_timer.elapsed().as_secs_f32();
-        timing_info.total += timing_info.clustering;
-        if decompose_options.debug > 0 {println!("LOG: Finished clustering in {:?}s", timing_info.clustering);}
+        timing_info.insert(TimingCategories::Clustering, partition_timer.elapsed().as_secs_f32());
+        *timing_info.entry(TimingCategories::Total).or_default() += timing_info[&TimingCategories::Clustering];
+        if decompose_options.debug > 0 {println!("LOG: Finished clustering in {:?}s", timing_info[&TimingCategories::Clustering]);}
         if decompose_options.debug > 1{println!("LOG: Partitioned into {:?} parts", partition.len());}
     } else {
         partition = decompose_options.existing_partition.unwrap();
@@ -93,13 +87,14 @@ pub(crate) fn decompose_circuit_and_return_dagnodes<'a, C: Constraint, S: Circui
     merge_passthrough(circuit, &mut dagnodes);
     
     //insert_and_print_timing(debug, &mut timing, "dag_construction_merging", dagnode_timer.elapsed());
-    timing_info.dag_construction = dagnode_timer.elapsed().as_secs_f32();
-    timing_info.total += timing_info.dag_construction;
+    timing_info.insert(TimingCategories::DagConstruction, dagnode_timer.elapsed().as_secs_f32());
+    *timing_info.entry(TimingCategories::Total).or_default() += timing_info[&TimingCategories::DagConstruction];
+
 
     if decompose_options.inverse_coni_mapping.is_some() || decompose_options.inverse_sig_mapping.is_some() {
         for node in dagnodes.values_mut() {node.map_internal_indices(decompose_options.inverse_coni_mapping, decompose_options.inverse_sig_mapping);} 
     }
-    if decompose_options.debug > 0 {println!("LOG: Finished DAG construction in {:?}s", timing_info.dag_construction);}
+    if decompose_options.debug > 0 {println!("LOG: Finished DAG construction in {:?}s", timing_info[&TimingCategories::DagConstruction]);}
     if decompose_options.debug > 1{println!("LOG: DAG has {:?} nodes", dagnodes.len());}
 
     (timing_info, dagnodes)
@@ -150,7 +145,7 @@ fn decompose_circuit_over_dagnodes<'a, C: Constraint, S: Circuit<C>>(
 
         previd_to_newids.insert(*nodid, iteration_dagnodes.keys().copied().collect());
         new_dagnodes.extend(iteration_dagnodes.into_iter().map(|(id, node)| (id, node.replace_circ(circuit))));
-        *timing += new_timing;
+        add_timing_info(timing, new_timing);
     }
 
     // fix predecessor/successor links between nodes
@@ -185,13 +180,7 @@ pub fn decompose_circuit<C: Constraint, S: Circuit<C>>(
     mut decompose_options: DecomposeOptions
 ) -> StructureReader {
 
-    let mut timing_info: TimingInfo = TimingInfo{
-    	clustering: 0.0,
-        graph_construction: Some(0.0),
-    	dag_construction: 0.0,
-    	equivalency: 0.0,
-    	total: 0.0,
-    };
+    let mut timing_info = TimingInfo::new();
 
     // Options required for 2nd part and not first
     let equivalence_mode = decompose_options.equivalence_mode;
@@ -206,7 +195,7 @@ pub fn decompose_circuit<C: Constraint, S: Circuit<C>>(
             let (new_timing, new_dagnodes) = decompose_circuit_and_return_dagnodes(
                 circuit, &mut (0..), decompose_options
             );
-            timing_info += new_timing;
+            add_timing_info(&mut timing_info, new_timing);
             new_dagnodes
         }
         _ => {
@@ -237,8 +226,8 @@ pub fn decompose_circuit<C: Constraint, S: Circuit<C>>(
         }
     };
 
-    timing_info.equivalency = equivalency_timer.elapsed().as_secs_f32();
-    timing_info.total += timing_info.equivalency;
-    if debug > 0 {println!("LOG: Finished equivalence in {:?}s", timing_info.equivalency);}
+    timing_info.insert(TimingCategories::Equivalency, equivalency_timer.elapsed().as_secs_f32());
+    *timing_info.entry(TimingCategories::Total).or_default() += timing_info[&TimingCategories::Equivalency];
+    if debug > 0 {println!("LOG: Finished equivalence in {:?}s", timing_info[&TimingCategories::Equivalency]);}
     convert_dagnodes_to_structure_reader(timing_info, dagnodes, inverse_coni_mapping, inverse_sig_mapping, equivalency_local, equivalency_structural)
 }

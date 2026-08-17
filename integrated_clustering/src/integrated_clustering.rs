@@ -2,7 +2,7 @@ use std::time::{Instant};
 use std::marker::{Send, Sync};
 
 use circuits_constraints_and_algebra::algebra::EncodableConstraint;
-use utils::structure::{TimingInfo, StructureInfo, NodeInfo};
+use utils::structure::{TimingInfo, StructureInfo, NodeInfo, TimingCategories};
 use utils::small_utilities::{DecomposeOptions};
 use crate::hierarchy_solver::{hierarchy_solver, HierarchyOptions, IntegratedHierarchy, determinism::DeterminismFormula};
 use circuits_constraints_and_algebra::constraint::Constraint;
@@ -24,23 +24,17 @@ pub fn decompose_circuit_and_check_determinism<C: Constraint + EncodableConstrai
     // Step 1: Get partition
 
     if decompose_options.debug > 0 {println!("LOG: Beginning Clustering of {:?} constraints", circuit.n_constraints());}
-    let mut timing_info = TimingInfo {
-    	clustering: 0.0,
-        graph_construction: Some(0.0),
-    	dag_construction: 0.0,
-    	equivalency: 0.0,
-    	total: 0.0,
-    };
+    let mut timing_info = TimingInfo::new();
 
     let partition: Vec<Vec<usize>>;
     if decompose_options.existing_partition.is_none() {
         let graph_construction_timer = Instant::now();
         let (graph, clique_clusters): (Box<dyn CanLeiden>, Vec<Vec<usize>>) = shared_signal_graph(circuit, decompose_options.graph_backend, decompose_options.clique_cluster_size, decompose_options.debug);
         
-        timing_info.graph_construction = Some(graph_construction_timer.elapsed().as_secs_f32());
-        timing_info.total += timing_info.graph_construction.unwrap();
+        timing_info.insert(TimingCategories::GraphConstruction, graph_construction_timer.elapsed().as_secs_f32());
+        *timing_info.entry(TimingCategories::Total).or_default() += timing_info[&TimingCategories::GraphConstruction];
 
-        if decompose_options.debug > 0 {println!("LOG: Finished graph construction in {:?}s", timing_info.graph_construction.unwrap());}
+        if decompose_options.debug > 0 {println!("LOG: Finished graph construction in {:?}s", timing_info[&TimingCategories::GraphConstruction]);}
 
         // Partition Graph
         let partition_timer = Instant::now();
@@ -55,9 +49,9 @@ pub fn decompose_circuit_and_check_determinism<C: Constraint + EncodableConstrai
         };
         
         //insert_and_print_timing(debug, &mut timing, "clustering", partition_timer.elapsed());
-        timing_info.clustering = partition_timer.elapsed().as_secs_f32();
-        timing_info.total += timing_info.clustering;
-        if decompose_options.debug > 0 {println!("LOG: Finished clustering in {:?}s", timing_info.clustering);}
+        timing_info.insert(TimingCategories::Clustering, partition_timer.elapsed().as_secs_f32());
+        *timing_info.entry(TimingCategories::Total).or_default() += timing_info[&TimingCategories::Clustering];
+        if decompose_options.debug > 0 {println!("LOG: Finished clustering in {:?}s", timing_info[&TimingCategories::Clustering]);}
         if decompose_options.debug > 1 {println!("LOG: Partitioned into {:?} parts", partition.len());}
     } else {
         partition = decompose_options.existing_partition.unwrap();

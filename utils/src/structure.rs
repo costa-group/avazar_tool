@@ -1,29 +1,27 @@
 use serde::{Serialize,Deserialize};
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
 use std::error::Error;
 use std::ops::AddAssign;
 
-#[derive(Deserialize,Serialize, Debug, Default, Clone, Copy)]
-pub struct TimingInfo{
-    pub graph_construction: Option<f32>,
-    pub clustering: f32,
-    pub dag_construction: f32,
-    pub equivalency: f32,
-    pub total: f32,
+#[derive(Deserialize, Serialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub enum TimingCategories {
+    GraphConstruction,
+    Clustering,
+    DagConstruction,
+    Equivalency,
+    Total
 }
+pub type TimingInfo = HashMap<TimingCategories, f32>;
 
-impl AddAssign for TimingInfo {
-    
-    fn add_assign(&mut self, other: Self) -> () {
-        self.graph_construction = self.graph_construction.map(|x| other.graph_construction.map(|y| x + y)).flatten();
-        self.clustering += other.clustering;
-        self.dag_construction += other.dag_construction;
-        self.equivalency += other.equivalency;
-        self.total += other.total;
+pub fn add_timing_info(fst: &mut TimingInfo, snd: TimingInfo) -> () {
+    for (key, val) in snd.into_iter() {
+        *fst.entry(key).or_default() += val;
     }
-} 
+}
 
 #[derive(Deserialize,Serialize, Debug, Clone)]
 pub struct NodeInfo{
@@ -111,13 +109,7 @@ pub fn generate_empty_structure(
 ) -> StructureInfo{
     
 
-    let aux_timing = TimingInfo{
-        clustering: 0.0,
-        graph_construction: Some(0.0),
-        dag_construction: 0.0,
-        equivalency: 0.0,
-        total: 0.0
-    };
+    let aux_timing = TimingInfo::new();
 
     let node = NodeInfo{
         node_name: "main".to_string(),
