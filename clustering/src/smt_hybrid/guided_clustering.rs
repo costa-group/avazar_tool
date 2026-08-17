@@ -1,5 +1,4 @@
 use std::collections::{HashMap, HashSet, VecDeque};
-use strum_macros::Display;
 use clap::ValueEnum;
 use itertools::Itertools;
 use std::time::{Instant};
@@ -16,7 +15,7 @@ pub(crate) fn guided_clustering<'a, Cons: Constraint, Circ: Circuit<Cons> , Atom
     guide_clustering: &mut HashMap<usize, DAGNode<'a, Cons, Circ>>,
     options: HybridClusteringMethodOptions,
     debug: usize
-) -> (HashMap<usize, DAGNode<'a, Atom, Smt>>, HashMap<usize, usize>, TimingInfo) {
+) -> (HashMap<usize, DAGNode<'a, Atom, Smt>>, TimingInfo) {
 
     let mut timing_info = TimingInfo::new();
     let secondary_clustering_timer = Instant::now();
@@ -138,8 +137,7 @@ pub(crate) fn guided_clustering<'a, Cons: Constraint, Circ: Circuit<Cons> , Atom
     *timing_info.entry(TimingCategories::Total).or_default() += timing_info[&TimingCategories::SecondaryDagConstruction];
     if debug > 0 {println!("LOG: Finished secondary dag construction in {:?}s", timing_info[&TimingCategories::SecondaryDagConstruction]);}
     
-    let identity_map = recipient_clustering.keys().copied().map(|k| (k, k)).collect();
-    (recipient_clustering, identity_map, timing_info)
+    (recipient_clustering, timing_info)
 }
 
 fn merge_until_all_left_is_subset_to_right<'a, LCon: Constraint, Left: Circuit<LCon> , RCon: Constraint, Right: Circuit<RCon>>(left: &'a Left, right: &'a Right, core_nodes: &mut HashMap<usize, DAGNode<'a, LCon, Left>>, superset_nodes: &mut HashMap<usize, DAGNode<'a, RCon, Right>>) -> () {

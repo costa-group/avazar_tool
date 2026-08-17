@@ -38,6 +38,8 @@ pub struct HybridClusteringOptions<'a> {
     pub hybrid_decompose_options: HybridClusteringMethodOptions,
 }
 
+// NOTE: the semantic link between nodes is given by the nodes having the same usize identifier -- this is vital and assumed in later functions
+
 fn circuit_and_smt_hybrid_clustering<'a, Cons: Constraint, Circ: Circuit<Cons> , Atom: Constraint, Smt: Circuit<Atom>>(
     circ: &'a Circ, smt: &'a Smt,
     options: HybridClusteringOptions<'a>,
@@ -48,7 +50,7 @@ fn circuit_and_smt_hybrid_clustering<'a, Cons: Constraint, Circ: Circuit<Cons> ,
 
     let (mut timing_info, mut guide_clustering) = decompose_circuit_and_return_dagnodes(circ, &mut (0..), guide_decompose_options);
 
-    let (mut recipient_clustering, _, secondary_timing) = match hybrid_decompose_method {
+    let (mut recipient_clustering, secondary_timing) = match hybrid_decompose_method {
         HybridClusteringMethods::GuidedClustering => {
             guided_clustering(circ, smt, &mut guide_clustering, hybrid_decompose_options, debug)
         }
@@ -136,7 +138,7 @@ fn structure_driven_circuit_and_smt_hybrid_clustering<'a, Cons: Constraint + 'a,
 
         let (mut timing_info, mut smt_clustering) = decompose_circuit_and_return_dagnodes(&smt_subcircuit, id_generator, guide_decompose_options.into_decompose_options());
 
-        let (mut circuit_clustering, _, other_timing) = match hybrid_decompose_method {
+        let (mut circuit_clustering, other_timing) = match hybrid_decompose_method {
             HybridClusteringMethods::GuidedClustering => {
                 guided_clustering(&smt_subcircuit, &circuit_subcircuit, &mut smt_clustering, hybrid_decompose_options, debug)
             }
