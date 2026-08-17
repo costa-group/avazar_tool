@@ -74,7 +74,7 @@ use std::path::PathBuf;
 
 #[derive(Serialize)]
 #[serde(untagged)]
-enum Output<T> {Single(T), Pair(T, T), StructuredPair(HashMap<usize, (T,T)>)}
+enum Output<T> {Single(T), Pair(T, T), StructuredPair(Vec<(T,T)>)}
 
 fn start(args: Args) -> Result<(), Box<dyn Error>> {
     

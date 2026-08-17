@@ -87,7 +87,7 @@ fn structure_driven_circuit_and_smt_hybrid_clustering<'a, Cons: Constraint + 'a,
     circ: &'a Circ, circuit_structure: &StructureReader, smt: &'a Formula,
     options: HybridClusteringOptions<'a>,
     debug: usize
-) -> HashMap<usize, (HashMap<usize, DAGNode<'a, Cons, Circ>>, HashMap<usize, DAGNode<'a, FormulaAtom, Formula>>)> {
+) -> Vec<(HashMap<usize, DAGNode<'a, Cons, Circ>>, HashMap<usize, DAGNode<'a, FormulaAtom, Formula>>)> {
 
     let HybridClusteringOptions { guide_decompose_options, hybrid_decompose_method, mut hybrid_decompose_options, .. } = options;
     hybrid_decompose_options.recipient_requires_subsets = true;
@@ -101,7 +101,7 @@ fn structure_driven_circuit_and_smt_hybrid_clustering<'a, Cons: Constraint + 'a,
     let mut id_generator = 0..;
 
     // the key for the pairs is the index of the template in the StructureReader nodes Vec
-    let mut clusterings: HashMap<usize, (HashMap<usize, DAGNode<'a, Cons, Circ>>, HashMap<usize, DAGNode<'a, FormulaAtom, Formula>>)> = HashMap::new();
+    let mut clusterings: Vec< Option<(HashMap<usize, DAGNode<'a, Cons, Circ>>, HashMap<usize, DAGNode<'a, FormulaAtom, Formula>>)> > = (0..id_to_index.len()).into_iter().map(|_| None).collect();
 
     let mut name_components: Vec<&str> = vec!["main"];
 
@@ -111,7 +111,7 @@ fn structure_driven_circuit_and_smt_hybrid_clustering<'a, Cons: Constraint + 'a,
         guide_decompose_options: CopyableDecomposeOptions, hybrid_decompose_method: HybridClusteringMethods, hybrid_decompose_options: HybridClusteringMethodOptions, debug: usize,
         id_to_index: &HashMap<usize, usize>, visited: &mut HashSet<usize>,
         // TODO: add remaining things to finish this
-        clusterings: &mut HashMap<usize, (HashMap<usize, DAGNode<'a, Cons, Circ>>, HashMap<usize, DAGNode<'a, FormulaAtom, Formula>>)>, name_components: &mut Vec<&'b str>) -> () {
+        clusterings: &mut Vec<Option<(HashMap<usize, DAGNode<'a, Cons, Circ>>, HashMap<usize, DAGNode<'a, FormulaAtom, Formula>>)>>, name_components: &mut Vec<&'b str>) -> () {
 
         if visited.contains(&id) {panic!("Given circuit structure is not a tree");}
 
@@ -149,7 +149,7 @@ fn structure_driven_circuit_and_smt_hybrid_clustering<'a, Cons: Constraint + 'a,
         ).collect();
 
         // add to clusterings
-        clusterings.insert(id_to_index[&id], (circuit_clustering, smt_clustering));
+        clusterings[id_to_index[&id]] =  Some((circuit_clustering, smt_clustering));
         visited.insert(id);
 
         // Move on to children
@@ -165,27 +165,24 @@ fn structure_driven_circuit_and_smt_hybrid_clustering<'a, Cons: Constraint + 'a,
 
     dfs_tree_visit(0, &mut id_generator, circ, smt, circuit_structure, guide_decompose_options.into_copy_decompose_options(), hybrid_decompose_method, hybrid_decompose_options, debug, &id_to_index, &mut visited, &mut clusterings, &mut name_components);
 
-    clusterings
+    clusterings.into_iter().enumerate().map(|(idx, option)| option.expect(&format!("Didn't produce clustering for index instance with idx {idx}"))).collect()
 }
 
 pub fn structure_driven_circuit_and_smt_hybrid_clustering_into_structurereader<'a, Cons: Constraint + 'a, Circ: Circuit<Cons> + 'a>(
     circ: &'a Circ, circuit_structure: &StructureReader, smt: &'a Formula,
     options: HybridClusteringOptions<'a>,
     debug: usize
-) -> HashMap<usize, (StructureReader, StructureReader)> {
+) -> Vec<(StructureReader, StructureReader)> {
 
     let clusterings = structure_driven_circuit_and_smt_hybrid_clustering(circ, circuit_structure, smt, options, debug);
 
     let mut timers: TimingInfo = TimingInfo::default();
 
     clusterings.into_iter().map(
-        |(key, (guide, recipient))| 
+        |(guide, recipient)| 
         (
-            key,
-            (
-                convert_dagnodes_to_structure_reader(timers, guide, None, None, None, None),
-                convert_dagnodes_to_structure_reader(timers, recipient, None, None, None, None)
-            )
+            convert_dagnodes_to_structure_reader(timers, guide, None, None, None, None),
+            convert_dagnodes_to_structure_reader(timers, recipient, None, None, None, None)
         )
     ).collect()
 }
