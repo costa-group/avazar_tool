@@ -20,17 +20,13 @@ pub(crate) fn guided_clustering<'a, Cons: Constraint, Circ: Circuit<Cons> , Atom
 
     let mut timing_info = TimingInfo::new();
     let secondary_clustering_timer = Instant::now();
-
-    println!("{}, {}", guide.n_constraints(), recipient.n_constraints());
-    println!("inputs: {:?}, outputs: {:?}", guide.get_input_signals().sorted().collect::<Vec<_>>(), guide.get_output_signals().sorted().collect::<Vec<_>>());
-    
     // Idea here is that we since we want the SMT clusters to have subsets of the signals then lets just start with the Circuit clustering and get those subsets first
     //    -- I don't know if SMT formuale have any requirements for sub-formulae it feels like its not going to be present
 
     let mut circ_cluster_signals: HashMap<usize, HashSet<usize>> = guide_clustering.into_iter().map(|(k, v)| (*k, v.signals())).collect();
 
     let printable = circ_cluster_signals.clone().into_iter().map(|(key, val)| (key, val.into_iter().sorted().collect::<Vec<_>>())).sorted().collect::<Vec<_>>();
-    println!("inits_signals: {:?}", printable);
+    if debug > 2 { println!("cluster_to_signal initial: {:?}", printable); }
 
     let mut signals_to_clusters: HashMap<usize, Vec<usize>> = HashMap::new();
     for (cluster_id, signals) in circ_cluster_signals.iter() {for sig in signals.into_iter().copied() {
@@ -82,18 +78,19 @@ pub(crate) fn guided_clustering<'a, Cons: Constraint, Circ: Circuit<Cons> , Atom
     *timing_info.entry(TimingCategories::Total).or_default() += timing_info[&TimingCategories::SecondaryClustering];
     if debug > 0 {println!("LOG: Finished secondary clustering in {:?}s", timing_info[&TimingCategories::SecondaryClustering]);}
 
-    let printable = guide_clustering.into_iter().map(|(key, part)| (key, part.get_constraint_indices().flat_map(|atomi| guide.get_constraint(atomi).signals().into_iter()).sorted().dedup().collect::<Vec<_>>())).sorted().collect::<Vec<_>>();
-    println!("left_signals: {:?}", printable);
+    if debug > 2 { 
+        let printable = guide_clustering.into_iter().map(|(key, part)| (key, part.get_constraint_indices().flat_map(|atomi| guide.get_constraint(atomi).signals().into_iter()).sorted().dedup().collect::<Vec<_>>())).sorted().collect::<Vec<_>>();
+        println!("left cluster_to_signals: {:?}", printable);
 
-    let printable = guide_clustering.into_iter().map(|(key, part)| (key, part.get_constraint_indices().sorted().collect::<Vec<_>>())).sorted().collect::<Vec<_>>();
-    println!("left_clusters: {:?}", printable);
+        let printable = guide_clustering.into_iter().map(|(key, part)| (key, part.get_constraint_indices().sorted().collect::<Vec<_>>())).sorted().collect::<Vec<_>>();
+        println!("left cluster_to_coni: {:?}", printable);
 
-
-    let printable = recipient_clusters.clone().into_iter().map(|(key, part)| (key, part.into_iter().flat_map(|atomi| recipient.get_constraint(atomi).signals().into_iter()).sorted().dedup().collect::<Vec<_>>())).sorted().collect::<Vec<_>>();
-    println!("right_signals: {:?}", printable);
-
-    let printable = recipient_clusters.clone().into_iter().map(|(key, part)| (key, part.into_iter().sorted().collect::<Vec<_>>())).sorted().collect::<Vec<_>>();
-    println!("right_clusters: {:?}", printable);
+        let printable = recipient_clusters.clone().into_iter().map(|(key, part)| (key, part.into_iter().flat_map(|atomi| recipient.get_constraint(atomi).signals().into_iter()).sorted().dedup().collect::<Vec<_>>())).sorted().collect::<Vec<_>>();
+        println!("right cluster_to_signals: {:?}", printable);
+  
+        let printable = recipient_clusters.clone().into_iter().map(|(key, part)| (key, part.into_iter().sorted().collect::<Vec<_>>())).sorted().collect::<Vec<_>>();
+        println!("right cluster_to_coni: {:?}", printable);
+    }
 
     // First step is convert this clustering to a DAG
     //  -- it remains to orient the remaining edges which is always possible
@@ -176,7 +173,7 @@ fn merge_until_all_left_is_subset_to_right<'a, LCon: Constraint, Left: Circuit<L
         // for each remaining signal get list of right_clusters that contain that signal
         let mut signal_to_clusterid: HashMap<usize, HashSet<usize>> = remaining_signals.map(|sig| (*sig, right_signal_to_coni[sig].iter().copied().map(|coni| right_coni_to_node[coni]).filter(|id| *id != root).collect()) ).collect();
         for (sig, prospective) in signal_to_clusterid.into_iter() {
-            println!("root_id {:?}, signal {:?}, prospective node_ids with signal {:?}", root, sig, prospective.clone());
+            // println!("root_id {:?}, signal {:?}, prospective node_ids with signal {:?}", root, sig, prospective.clone());
             if prospective.len() == 0 {panic!("No potential clusters for missing signal {sig}");}
             if prospective.iter().any(|id| to_merge.contains(id)) {continue;}
 
@@ -192,7 +189,7 @@ fn merge_until_all_left_is_subset_to_right<'a, LCon: Constraint, Left: Circuit<L
                     if !visited.contains(adj) {visited.insert(*adj); queue.push_back(*adj);}
                 }
             }
-            println!("BFS visited {:?}", visited);
+            // println!("BFS visited {:?}", visited);
             to_merge.insert(chosen.expect("Signal {sig} has no prospective nodes connected to {root} on right"));
         }
 

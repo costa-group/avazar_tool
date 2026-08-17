@@ -123,7 +123,7 @@ fn structure_driven_circuit_and_smt_hybrid_clustering<'a, Cons: Constraint + 'a,
         if visited.contains(&id) {panic!("Given circuit structure is not a tree");}
 
         let template_name = name_components.join(".").to_string();
-        println!("{}", template_name.clone());
+        if debug > 1 { println!("----------------- template_name {} ------------------", template_name.clone()); }
         let smt_template_atoms = smt.get_atomrange_for_component(&template_name).expect("No template found with name").collect();
 
         // get subcircuits for each, pass subcircuits to clustering to get DAGNodes, convert DAGNodes to toplevel circuits, add to clusterings

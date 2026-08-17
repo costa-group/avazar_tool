@@ -128,7 +128,7 @@ pub(crate) fn dual_merge_until_property<'a, LCon: Constraint, Left: Circuit<LCon
         let val = stack.pop().unwrap();
         if !left_nodes.contains_key(&val) {continue;}
         if node_meets_property(&left_nodes[&val], &right_nodes[&val]) {continue;}
-        println!("----------------------------------------------");
+        // println!("----------------------------------------------");
 
         // doing it this way actually takes longer but is cleaner code
         let left_adjacency : HashMap<usize, &Vec<usize>> = left_nodes.iter().map(|(k, node)| (*k, node.get_successors())).collect();
@@ -140,7 +140,7 @@ pub(crate) fn dual_merge_until_property<'a, LCon: Constraint, Left: Circuit<LCon
         if to_merge.len() <= 1 {panic!("Merging solo cluster");}
         let root = *to_merge.iter().next().expect("Merging Empty");
 
-        println!("merged {:?} into {}", to_merge.clone(), root);
+        // println!("merged {:?} into {}", to_merge.clone(), root);
         DAGNode::merge_nodes(root, &to_merge, left_nodes, &left_sig_to_coni, &mut left_coni_to_node);
         DAGNode::merge_nodes(root, &to_merge, right_nodes, &right_sig_to_coni, &mut right_coni_to_node);
 
