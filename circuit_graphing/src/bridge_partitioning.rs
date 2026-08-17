@@ -1,5 +1,4 @@
 use std::collections::{HashMap, HashSet};
-use std::borrow::Borrow;
 use std::time::{Instant};
 
 use circuits_constraints_and_algebra::circuit::Circuit;

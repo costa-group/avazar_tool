@@ -6,8 +6,6 @@ use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::fs::File;
 use std::io::BufReader;
-
-use crate::constraint::Constraint;
 use crate::circuit::Circuit;
 use crate::lightweight_circuit::LightweightCircuit;
 use super::{AIRData, AIRDataWrapper, ExpressionWrapper, ExpressionData};

@@ -1,11 +1,10 @@
 use std::collections::{HashMap, HashSet, VecDeque};
-use clap::ValueEnum;
 use itertools::Itertools;
 use std::time::{Instant};
 
 use circuits_constraints_and_algebra::circuit::Circuit;
 use circuits_constraints_and_algebra::constraint::Constraint;
-use circuit_graphing::directed_acyclic_graph::{mixed_graph::MixedGraph, DAGNode};
+use circuit_graphing::directed_acyclic_graph::{DAGNode};
 use utils::structure::{TimingInfo, TimingCategories};
 
 use crate::smt_hybrid::{HybridClusteringMethodOptions, TiebreakingStrategy, shared_merge::dual_merge_until_property};
@@ -46,7 +45,7 @@ pub(crate) fn guided_clustering<'a, Cons: Constraint, Circ: Circuit<Cons> , Atom
 
         let mut circ_to_max_associated: Vec<Option<(usize, Vec<usize>)>> = vec![None; recipient.n_constraints()];
         
-        for (atomi, atom) in recipient.constraints().into_iter().enumerate().filter(|(atomi, atom)| !atom_clustered[*atomi]) {
+        for atomi in (0..recipient.n_constraints()).into_iter().filter(|atomi| !atom_clustered[*atomi]) {
             let atom_signals = &atomi_to_signals[atomi];
             for cluster_id in atom_signals.iter().copied().flat_map(|sig| signals_to_clusters.get(&sig).unwrap_or_else(|| &empty).iter()).collect::<HashSet<_>>().into_iter() {
                 let num_signals_in_common: usize = circ_cluster_signals[cluster_id].intersection(atom_signals).count();
@@ -98,14 +97,14 @@ pub(crate) fn guided_clustering<'a, Cons: Constraint, Circ: Circuit<Cons> , Atom
     let id_to_order: HashMap<usize, usize> = topological_ordering.into_iter().enumerate().map(|(order, idx)| (idx, order)).collect();
 
     // recalc these without pollution from previous
-    let mut recipient_cluster_to_signals: HashMap<usize, HashSet<usize>> = recipient_clusters.iter().map(
+    let recipient_cluster_to_signals: HashMap<usize, HashSet<usize>> = recipient_clusters.iter().map(
         |(key, part)| (*key, part.into_iter().copied().flat_map(|coni| recipient.get_constraint(coni).signals().into_iter()).collect())
     ).collect();
 
 
     // redo this to eliminate pollution from guide
     let mut signals_to_clusters: HashMap<usize, Vec<usize>> = HashMap::new();
-    for (cluster_id, part) in recipient_clusters.iter() {for sig in recipient_cluster_to_signals[cluster_id].iter().copied() {signals_to_clusters.entry(sig).or_insert_with(|| Vec::new()).push(*cluster_id);}}
+    for (cluster_id, part) in recipient_cluster_to_signals.iter() {for sig in part.into_iter().copied() {signals_to_clusters.entry(sig).or_insert_with(|| Vec::new()).push(*cluster_id);}}
 
     let mut recipient_clustering: HashMap<usize, _> = recipient_clusters.into_iter().map(
         |(cluster_id, part)| {
@@ -152,7 +151,7 @@ fn merge_until_all_left_is_subset_to_right<'a, LCon: Constraint, Left: Circuit<L
 
     fn select_right_nodes_that_meet_superset_of_left<'a, LCon: Constraint, Left: Circuit<LCon> , RCon: Constraint, Right: Circuit<RCon>>(
         root: usize, left_nodes: &HashMap<usize, DAGNode<'a, LCon, Left>>, right_nodes: &HashMap<usize, DAGNode<'a, RCon, Right>>,
-        left_signal_to_coni: &HashMap<usize, Vec<usize>>, left_coni_to_node: &Vec<usize>, right_signal_to_coni: &HashMap<usize, Vec<usize>>, right_coni_to_node: &Vec<usize>
+        _left_signal_to_coni: &HashMap<usize, Vec<usize>>, _left_coni_to_node: &Vec<usize>, right_signal_to_coni: &HashMap<usize, Vec<usize>>, right_coni_to_node: &Vec<usize>
     ) -> (HashSet<usize>, bool) {
 
         // need to choose clusters on right that will get all remaining signals not in left
@@ -169,7 +168,7 @@ fn merge_until_all_left_is_subset_to_right<'a, LCon: Constraint, Left: Circuit<L
         let mut to_merge: HashSet<usize> = [root].into_iter().collect();
 
         // for each remaining signal get list of right_clusters that contain that signal
-        let mut signal_to_clusterid: HashMap<usize, HashSet<usize>> = remaining_signals.map(|sig| (*sig, right_signal_to_coni[sig].iter().copied().map(|coni| right_coni_to_node[coni]).filter(|id| *id != root).collect()) ).collect();
+        let signal_to_clusterid: HashMap<usize, HashSet<usize>> = remaining_signals.map(|sig| (*sig, right_signal_to_coni[sig].iter().copied().map(|coni| right_coni_to_node[coni]).filter(|id| *id != root).collect()) ).collect();
         for (sig, prospective) in signal_to_clusterid.into_iter() {
             // println!("root_id {:?}, signal {:?}, prospective node_ids with signal {:?}", root, sig, prospective.clone());
             if prospective.len() == 0 {panic!("No potential clusters for missing signal {sig}");}

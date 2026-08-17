@@ -115,7 +115,7 @@ pub struct CopyableDecomposeOptions {
 
 // Version that can be copied at the cost of reduced options
 impl CopyableDecomposeOptions {
-    pub fn into_decompose_options(&self) -> DecomposeOptions {
+    pub fn into_decompose_options(&self) -> DecomposeOptions<'_> {
         DecomposeOptions {
             resolution: self.resolution,
             target_size: self.target_size,

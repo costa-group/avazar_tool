@@ -1,5 +1,4 @@
 use std::collections::{HashMap, HashSet};
-use itertools::Itertools;
 
 use circuits_constraints_and_algebra::circuit::Circuit;
 use circuits_constraints_and_algebra::constraint::Constraint;

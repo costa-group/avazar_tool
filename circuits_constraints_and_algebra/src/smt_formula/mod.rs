@@ -1,7 +1,6 @@
 mod circuit_implementation;
 mod constraint_implementation;
 
-use serde_json::Value;
 use itertools::Itertools;
 
 use std::fs::File;

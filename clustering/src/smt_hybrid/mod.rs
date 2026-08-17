@@ -85,12 +85,7 @@ pub fn circuit_and_smt_hybrid_clustering_into_structurereader<'a, Cons: Constrai
 
 }
 
-use std::fs::File;
-use std::io::BufReader;
-use std::path::PathBuf;
-use std::error::Error;
-use utils::structure::{NodeInfo};
-use circuits_constraints_and_algebra::smt_formula::{FormulaAtom, Formula, parse_formula};
+use circuits_constraints_and_algebra::smt_formula::{FormulaAtom, Formula};
 
 fn structure_driven_circuit_and_smt_hybrid_clustering<'a, Cons: Constraint + 'a, Circ: Circuit<Cons> + 'a>(
     circ: &'a Circ, circuit_structure: &StructureReader, smt: &'a Formula,

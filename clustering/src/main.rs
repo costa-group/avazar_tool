@@ -6,7 +6,6 @@ TODO: Implement Own Graph Version
 TODO: Better Error Handling (using Result and the like)
 
 */
-use std::collections::HashMap;
 use ansi_term::Colour;
 use std::fs::File;
 use std::io::{BufWriter};

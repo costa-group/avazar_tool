@@ -5,12 +5,9 @@ use std::collections::{HashMap, HashSet};
 use std::error::Error;
 
 use crate::num_bigint::{BigInt};
-use crate::constraint::Constraint;
 use crate::circuit::Circuit;
 use crate::lightweight_circuit::LightweightCircuit;
 use super::{Formula, FormulaAtom};
-
-const EQUIV_ERR_MESSAGE: &str = "Equivalence is not supported for Formula Expressions";
 
 impl Circuit<FormulaAtom> for Formula {
 
