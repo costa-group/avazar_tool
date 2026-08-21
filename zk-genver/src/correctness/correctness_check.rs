@@ -15,6 +15,8 @@ use indexmap::IndexMap;
 
 use crate::correctness::processing_correctness_utils::{process_correspondence_node_macro, build_macros, get_all_signals_macro, get_equivalent_signal_in_macro, get_equivalent_subcomponent_signal_in_macro, get_input_signals_macro};
 
+use llzk_smt_preprocessor::graph::find_call_target;
+
 use crate::report;
 use crate::correctness::modular_reasoning::check_node;
 
@@ -76,13 +78,16 @@ pub fn prove_correctness(user_input: Input) -> Result<(), ()> {
 
     let formula_str: &str = &main_macro.formula.to_string();
 
-    let main_template = if let Some(idx) = formula_str.find('@') {
-        let till_end = &formula_str[idx..];
-        
-        let first_split = till_end.split_whitespace().next().unwrap_or("");
-        first_split.trim_matches(|c| c == ')' || c == '(' || c == ' ').to_string()
-    } else {
-        unreachable!()
+    // Exactly one '@...' call, or the specification is unusable: none leaves nothing to
+    // check against, several would silently follow only the first. Shared with the
+    // preprocessor -- and therefore with --check_semantic_equivalence -- so that both
+    // modes accept exactly the same specifications.
+    let main_template = match find_call_target(formula_str) {
+        Ok(name) => name,
+        Err(msg) => {
+            eprintln!("Could not read the specification: {}", msg);
+            return Err(());
+        }
     };
 
 
@@ -161,7 +166,7 @@ pub fn prove_correctness(user_input: Input) -> Result<(), ()> {
     print_pretty_results(&results, &structure, &nodeid2pos);
 
     if let Some(report_path) = &user_input.report_output {
-        let rep = build_equivalence_report(&user_input, &results, &structure, &nodeid2pos);
+        let rep = build_correctness_report(&user_input, &results, &structure, &nodeid2pos);
         report::write_report(&rep, report_path);
     }
 
@@ -315,7 +320,7 @@ fn update_result_for_class(node_result: &PossibleResult, equiv_class: &Vec<usize
 
 
 
-fn build_equivalence_report(
+fn build_correctness_report(
     input: &crate::Input,
     results: &ResultInfoCorrectness,
     structure: &StructureInfo,
@@ -352,11 +357,13 @@ fn build_equivalence_report(
     }).collect();
     nodes.sort_by_key(|n| n.node_id);
 
-    let second_circuit = input.check_equivalence.as_ref()
+    // The specification checked against, not `check_equivalence`: this mode never reads that
+    // argument, so the field was always null here.
+    let second_circuit = input.check_correctness.as_ref()
         .map(|p| p.display().to_string());
 
     report::VerificationReport {
-        check_type: report::CheckType::Equivalence,
+        check_type: report::CheckType::Correctness,
         input_circuit: input.input_r1cs.display().to_string(),
         second_circuit,
         solver: report::solver_to_str(input.solver_option).to_string(),

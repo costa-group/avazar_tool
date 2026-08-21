@@ -23,9 +23,14 @@ pub struct Input {
     pub target_size: usize,
     pub limit_size: usize,
     pub extra_rounds: usize,
+
     pub check_equivalence: Option<PathBuf>,
     pub check_correctness: Option<PathBuf>,
+    pub check_semantic_equivalence: Option<PathBuf>,
     pub report_output: Option<PathBuf>,
+    pub dump_dir: Option<PathBuf>,
+    pub spec_adjacency: bool,
+    pub instance_adjacency: bool,
 }
 
 
@@ -51,8 +56,13 @@ impl Input {
         let extra_rounds = input_processing::get_extra_rounds(&matches)?;
         let check_equivalence = input_processing::get_check_equivalence(&matches)?;
         let check_correctness = input_processing::get_check_correctness(&matches)?;
+        let check_semantic_equivalence = input_processing::get_check_semantic_equivalence(&matches)?;
+
         let limit_size = input_processing::get_limit_size(&matches)?;
         let report_output = input_processing::get_report_output(&matches);
+        let dump_dir = matches.value_of("dump_dir").map(PathBuf::from);
+        let spec_adjacency = matches.is_present("spec_adjacency");
+        let instance_adjacency = matches.is_present("instance_adjacency");
 
         Result::Ok(Input {
             input_r1cs,
@@ -74,7 +84,12 @@ impl Input {
             limit_size,
             check_equivalence,
             check_correctness,
+            check_semantic_equivalence,
+
             report_output,
+            dump_dir,
+            spec_adjacency,
+            instance_adjacency,
         })
     }
 }
@@ -143,6 +158,19 @@ mod input_processing {
                 Result::Ok(Some(route))
             } else {
                 Result::Err(eprintln!("{}", Colour::Red.paint("invalid file to check correctness")))
+            }
+        } else{
+            Ok(None)
+        }
+    }
+
+    pub fn get_check_semantic_equivalence(matches: &ArgMatches) -> Result<Option<PathBuf>, ()> {
+        if matches.is_present("check_semantic_equivalence"){
+            let route = Path::new(matches.value_of("check_semantic_equivalence").unwrap()).to_path_buf();
+            if route.is_file() {
+                Result::Ok(Some(route))
+            } else {
+                Result::Err(eprintln!("{}", Colour::Red.paint("invalid file to check semantic equivalence")))
             }
         } else{
             Ok(None)
@@ -360,6 +388,16 @@ mod input_processing {
                     .display_order(130)
             )
             .arg(
+                Arg::with_name("check_semantic_equivalence")
+                    .long("check_semantic_equivalence")
+                    .hidden(false)
+                    .takes_value(true)
+                    .conflicts_with_all(&["check_correctness", "check_equivalence"])
+                    .requires_all(&["input_structure", "correspondence"])
+                    .help("Argument to activate the semantic equivalence check mode. It checks the circuit against the given llzk specification (the same JSON --check_correctness takes), verifying one hybrid cluster pair at a time instead of one circom template at a time. Requires --input_structure and --correspondence")
+                    .display_order(131)
+            )
+            .arg(
                 Arg::with_name("timeout")
                     .long("timeout")
                     .takes_value(true)
@@ -467,9 +505,30 @@ mod input_processing {
                     .takes_value(true)
                     .default_value("0")
                     .display_order(600)
-                    .help("To choose the number of extra rounds of adding successors/predecessors when a node makes timeout. The default value is 0."),
+                    .help("How many times a node whose query came back inconclusive is retried with more context. In --check_correctness, --check_equivalence and the determinism mode: rounds of adding successors/predecessors after a timeout. In --check_semantic_equivalence: rounds of asserting the neighbouring clusters in full instead of abstracting them, each round reaching one hop further. 0, the default, means one query per node"),
             )
             
+            .arg(
+                Arg::with_name("instance_adjacency")
+                    .long("instance_adjacency")
+                    .takes_value(false)
+                    .help("Treat every cluster of the same instance as a neighbour. Splitting an instance across clusters is the clustering algorithm's choice, not a semantic boundary, and the split can leave one cluster holding the constraints that feed a child's inputs while another holds the constraint consuming its output -- the second then carries an implication whose antecedent nothing in its own query can discharge, and its counterexample is reported as conclusive")
+                    .display_order(134)
+            )
+            .arg(
+                Arg::with_name("spec_adjacency")
+                    .long("spec_adjacency")
+                    .takes_value(false)
+                    .help("Count a cluster's neighbours in the specification dag as neighbours as well as the ones in the circuit dag. The two clusterings share ids but not their edges, so a cluster the specification orders after another can still look isolated on the circuit side -- in which case nothing is abstracted, no refinement round runs, and a counterexample caused by the missing neighbour is reported as conclusive")
+                    .display_order(133)
+            )
+            .arg(
+                Arg::with_name("dump_dir")
+                    .long("dump_dir")
+                    .takes_value(true)
+                    .display_order(901)
+                    .help("--check_semantic_equivalence only: directory to write the debug artefacts of the run into, created if missing. `resolved.json` is the specification as the clustering sees it (macro -> instance -> tag -> signals, the shape llzk_smt_preprocessor writes, so the two can be diffed); `raw_clustering.json` is the hybrid clustering exactly as the algorithm returned it, every instance including those no query was built for; `clusters.json` is one record per cluster pair actually verified, with its verdict, its interface and its atoms"),
+            )
             .arg(
                 Arg::with_name("report")
                     .long("report")

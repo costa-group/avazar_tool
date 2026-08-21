@@ -9,6 +9,7 @@ pub enum CheckType {
     Determinism,
     Equivalence,
     Correctness,
+    SemanticEquivalence,
 }
 
 /// Top-level verdict for the entire circuit.

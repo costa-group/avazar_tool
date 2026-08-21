@@ -106,7 +106,7 @@ pub fn build_correspondence_and_prefixes(
             .or_else(|| macro_studied.components_info.get(&hashify_brackets(suc_name)))
             .unwrap_or_else(|| {
                 panic!(
-                    "El subcomponente '{}' no aparece en components_info de la macro '{}'",
+                    "subcomponent '{}' does not appear in the components_info of macro '{}'",
                     suc_name, macro_name
                 )
             });
@@ -131,15 +131,51 @@ pub fn build_correspondence_and_prefixes(
     }
 }
 
-/// Looks for the first `@Name` call in a formula (e.g. the `"main"`
-/// macro's, in the specification JSON), which is how the specific macro
-/// that instantiates the circuit's root node is identified (same criterion
-/// `zk-genver::correctness::correctness_check::prove_correctness` uses).
-pub fn find_call_target(formula: &str) -> Option<String> {
-    let idx = formula.find('@')?; // the formula's first '@'.
-    let till_end = &formula[idx..]; // from there to the end: "@Name v_0 v_1 ...) ...".
-    let first_token = till_end.split_whitespace().next()?; // the first "chunk": "@Name" (may have parens stuck to it).
-    Some(first_token.trim_matches(|c| c == ')' || c == '(' || c == ' ').to_string())
+/// The `@Name` call of a wrapper formula: how the macro that instantiates the
+/// circuit's root node is identified, from the `"main"` macro of the
+/// specification JSON.
+///
+/// There must be EXACTLY one. `main` carries no specification of its own — its
+/// whole body is the call to the macro that does — so:
+///
+/// - none means there is nothing to check the circuit against (a circuit that
+///   imposes no constraint comes out as `main = true`);
+/// - two or more means the walk would follow the first and silently never map
+///   whatever the rest reach, which reads as a verified run over a
+///   specification that was only half consumed.
+///
+/// Both are the specification's problem, not an impossible state, so both come
+/// back as `Err` with the names found.
+pub fn find_call_target(formula: &str) -> Result<String, String> {
+    let calls = macro_calls(formula);
+    match calls.len() {
+        1 => Ok(calls.into_iter().next().unwrap()),
+        0 => Err("no '@...' call found in the 'main' macro of the specification JSON: there is \
+                  no template to check the circuit against"
+            .to_string()),
+        n => Err(format!(
+            "the 'main' macro of the specification JSON makes {} '@...' calls ({}), and it must \
+             make exactly one: it is a wrapper around the macro that carries the specification, \
+             so only the first would ever be followed",
+            n,
+            calls.join(", ")
+        )),
+    }
+}
+
+/// Every `@Name` token in a formula, in the order they appear. A macro name
+/// carries its `@` only at the front, so one occurrence is one call.
+fn macro_calls(formula: &str) -> Vec<String> {
+    formula
+        .match_indices('@')
+        .filter_map(|(idx, _)| {
+            formula[idx..]
+                .split_whitespace()
+                .next()
+                .map(|token| token.trim_matches(|c| c == ')' || c == '(' || c == ' ').to_string())
+        })
+        .filter(|name| !name.is_empty())
+        .collect()
 }
 
 /// Resolves, for every node in the graph reachable from `root_node_id`, the
@@ -230,9 +266,7 @@ pub fn resolve_full(
     let main_macro = macro_defs
         .get("main")
         .ok_or_else(|| "the specification JSON has no 'main' macro".to_string())?;
-    let root_macro_name = find_call_target(&main_macro.formula).ok_or_else(|| {
-        "no '@...' call found in the 'main' macro of the specification JSON".to_string()
-    })?;
+    let root_macro_name = find_call_target(&main_macro.formula)?;
 
     let root_pos = *nodeid2pos
         .get(&0)
@@ -279,6 +313,31 @@ pub fn resolve_full(
 mod tests {
     use super::*;
     use utils::structure::{NodeInfo, TimingInfo};
+
+    #[test]
+    fn one_call_is_the_root_macro() {
+        assert_eq!(
+            find_call_target("(@IsZero_0 v_0 v_1 v_2)").unwrap(),
+            "@IsZero_0"
+        );
+        // No arguments: the closing paren sticks to the token.
+        assert_eq!(find_call_target("(@Foo)").unwrap(), "@Foo");
+    }
+
+    #[test]
+    fn no_call_is_refused() {
+        let err = find_call_target("true").unwrap_err();
+        assert!(err.contains("no '@...' call found"), "{}", err);
+    }
+
+    #[test]
+    fn more_than_one_call_is_refused() {
+        // `main` is a wrapper: two calls mean only the first would be followed
+        // and the rest of the specification would never be mapped.
+        let err = find_call_target("(and (@A v_0) (@B v_1))").unwrap_err();
+        assert!(err.contains("makes 2 '@...' calls"), "{}", err);
+        assert!(err.contains("@A, @B"), "{}", err);
+    }
 
     #[test]
     fn hashify_brackets_converts_each_bracket_group() {
