@@ -165,17 +165,33 @@ pub fn find_call_target(formula: &str) -> Result<String, String> {
 
 /// Every `@Name` token in a formula, in the order they appear. A macro name
 /// carries its `@` only at the front, so one occurrence is one call.
+///
+/// Occurrences inside a double-quoted string are SKIPPED. Every call llzk emits
+/// is wrapped in its own annotation — `(! (@Foo v_0 ...) :meta-data "call @Foo
+/// (%arg0) to out")` — so the name appears a second time as documentation, and
+/// counting that one made a one-call `main` look like a two-call one.
 fn macro_calls(formula: &str) -> Vec<String> {
-    formula
-        .match_indices('@')
-        .filter_map(|(idx, _)| {
-            formula[idx..]
-                .split_whitespace()
-                .next()
-                .map(|token| token.trim_matches(|c| c == ')' || c == '(' || c == ' ').to_string())
-        })
-        .filter(|name| !name.is_empty())
-        .collect()
+    let bytes = formula.as_bytes();
+    let mut calls = Vec::new();
+    let mut in_string = false;
+    for idx in 0..bytes.len() {
+        match bytes[idx] {
+            // SMT-LIB escapes a quote by doubling it, so the two toggles of a
+            // `""` cancel and the literal stays closed, as it should.
+            b'"' => in_string = !in_string,
+            b'@' if !in_string => {
+                // `idx` is the offset of an ASCII byte, hence a char boundary.
+                if let Some(token) = formula[idx..].split_whitespace().next() {
+                    let name = token.trim_matches(|c| c == ')' || c == '(' || c == ' ');
+                    if !name.is_empty() {
+                        calls.push(name.to_string());
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    calls
 }
 
 /// Resolves, for every node in the graph reachable from `root_node_id`, the
@@ -335,6 +351,22 @@ mod tests {
         // `main` is a wrapper: two calls mean only the first would be followed
         // and the rest of the specification would never be mapped.
         let err = find_call_target("(and (@A v_0) (@B v_1))").unwrap_err();
+        assert!(err.contains("makes 2 '@...' calls"), "{}", err);
+        assert!(err.contains("@A, @B"), "{}", err);
+    }
+
+    #[test]
+    fn the_name_inside_a_meta_data_string_is_not_a_second_call() {
+        // The shape llzk actually emits for the root call of `main`: one call,
+        // annotated with a string that names it again.
+        let formula = r#" (and  (! (@GreaterThan_2 v_0 v_1) :meta-data "call @GreaterThan_2 (%arg0) to out") (= v_236 v_2) ) "#;
+        assert_eq!(find_call_target(formula).unwrap(), "@GreaterThan_2");
+    }
+
+    #[test]
+    fn two_real_calls_are_still_refused_when_one_is_annotated() {
+        let formula = r#"(and (! (@A v_0) :meta-data "call @A to out") (@B v_1))"#;
+        let err = find_call_target(formula).unwrap_err();
         assert!(err.contains("makes 2 '@...' calls"), "{}", err);
         assert!(err.contains("@A, @B"), "{}", err);
     }
