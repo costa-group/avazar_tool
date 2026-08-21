@@ -39,8 +39,10 @@ pub fn merge_passthrough_shared<'a, LCon: Constraint, Left: Circuit<LCon>, RCon:
     let mut right_coni_to_node: Vec<usize> = vec![0; right.n_constraints()];
     for (coni, node_id) in right_nodes.values().flat_map(|node| node.get_constraint_indices().map(|coni| (coni, node.get_id()))) { right_coni_to_node[coni] = node_id };
     
-    let left_passthrough_signals: HashSet<usize> = left_nodes.values().flat_map(|node| get_passthrough_signals(node)).collect();
-    let right_passthrough_signals: HashSet<usize> = right_nodes.values().flat_map(|node| get_passthrough_signals(node)).collect();
+    let mut left_passthrough_signals: Vec<usize> = left_nodes.values().flat_map(|node| get_passthrough_signals(node)).collect::<HashSet<usize>>().into_iter().collect();
+    left_passthrough_signals.sort();
+    let mut right_passthrough_signals: Vec<usize> = right_nodes.values().flat_map(|node| get_passthrough_signals(node)).collect::<HashSet<usize>>().into_iter().collect();
+    right_passthrough_signals.sort();
 
     fn get_to_merge<'a, C: Constraint + 'a, S: Circuit<C> + 'a>(
         signal: usize, nodes: &HashMap<usize, DAGNode<'a, C, S>>, sig_to_coni: &HashMap<usize, Vec<usize>>, coni_to_node: &Vec<usize>, adjacency_hashmap: &HashMap<usize, &Vec<usize>>
@@ -49,7 +51,9 @@ pub fn merge_passthrough_shared<'a, LCon: Constraint, Left: Circuit<LCon>, RCon:
         // find nodes that contain signal as input but not as output
         let mut non_passthrough_nodes: Vec<usize> = Vec::new();
         let mut passthrough_nodes: Vec<usize> = Vec::new();
-        for nodeid in sig_to_coni[&signal].iter().map(|coni| coni_to_node[*coni]).collect::<HashSet<usize>>().into_iter() {
+        let mut holders: Vec<usize> = sig_to_coni[&signal].iter().map(|coni| coni_to_node[*coni]).collect::<HashSet<usize>>().into_iter().collect();
+        holders.sort();
+        for nodeid in holders.into_iter() {
             if is_passthrough_for_signal(&nodes[&nodeid], &signal) {passthrough_nodes.push(nodeid);} else {non_passthrough_nodes.push(nodeid);}
         }
         if passthrough_nodes.len() == 0 {return HashSet::new();}
@@ -61,7 +65,9 @@ pub fn merge_passthrough_shared<'a, LCon: Constraint, Left: Circuit<LCon>, RCon:
         //find lexicographically most/least node that is passthrough for signal        
         let extremal_passthrough_key = |node_id: &usize|  
             {if non_passthrough_is_parent {nodes[node_id].get_predecessors()} else {nodes[node_id].get_successors()}}.into_iter().filter(|onode_id| is_passthrough_for_signal(&nodes[onode_id], &signal)).count();
-        let chosen_extremal_passthrough: usize = passthrough_nodes.into_iter().max_by_key(extremal_passthrough_key).unwrap();
+        // The node id breaks ties: max_by_key alone keeps the LAST maximum, which depends on the
+        // order the candidates were pushed in.
+        let chosen_extremal_passthrough: usize = passthrough_nodes.into_iter().max_by_key(|node_id| (extremal_passthrough_key(node_id), *node_id)).unwrap();
 
         // do the dfs_can_reach_target_from_sources for those two
         let (parent, child) = if non_passthrough_is_parent {(chosen_non_passthrough, chosen_extremal_passthrough)} else {(chosen_extremal_passthrough, chosen_non_passthrough)};
@@ -91,7 +97,7 @@ pub fn merge_passthrough_shared<'a, LCon: Constraint, Left: Circuit<LCon>, RCon:
         let to_merge = agree_on_merge(to_merge, !is_left, &left_adjacency, &right_adjacency);
 
         if to_merge.len() <= 1 {panic!("Merging solo cluster");}
-        let root = *to_merge.iter().next().expect("Merging Empty");
+        let root = *to_merge.iter().min().expect("Merging Empty");
 
         DAGNode::merge_nodes(root, &to_merge, left_nodes, &left_sig_to_coni, &mut left_coni_to_node);
         DAGNode::merge_nodes(root, &to_merge, right_nodes, &right_sig_to_coni, &mut right_coni_to_node);
@@ -137,7 +143,7 @@ pub(crate) fn dual_merge_until_property<'a, LCon: Constraint, Left: Circuit<LCon
         let to_merge = agree_on_merge(min_merge, left_side, &left_adjacency, &right_adjacency);
 
         if to_merge.len() <= 1 {panic!("Merging solo cluster");}
-        let root = *to_merge.iter().next().expect("Merging Empty");
+        let root = *to_merge.iter().min().expect("Merging Empty");
 
         // println!("merged {:?} into {}", to_merge.clone(), root);
         DAGNode::merge_nodes(root, &to_merge, left_nodes, &left_sig_to_coni, &mut left_coni_to_node);

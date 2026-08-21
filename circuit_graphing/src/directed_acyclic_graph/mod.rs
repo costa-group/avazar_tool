@@ -173,7 +173,7 @@ impl<'a, C: Constraint + 'a, S: Circuit<C> + 'a> DAGNode<'a, C, S> {
         let newnode = DAGNode { circ: circ, id: root, 
             constraints: new_constraints, 
             input_signals: new_input_signals, output_signals: new_output_signals, 
-            successors: new_successors.into_iter().collect(), predecessors: new_predecessors.into_iter().collect(), 
+            successors: {let mut v: Vec<usize> = new_successors.into_iter().collect(); v.sort(); v}, predecessors: {let mut v: Vec<usize> = new_predecessors.into_iter().collect(); v.sort(); v}, 
             _phantom: PhantomData 
         };
 
@@ -229,7 +229,7 @@ impl<'a, C: Constraint + 'a, S: Circuit<C> + 'a> DAGNode<'a, C, S> {
 
         while unvisited.len() > 0 {
 
-            let val = *unvisited.iter().next().unwrap();
+            let val = *unvisited.iter().min().unwrap();
             let mut currently_visited: HashSet<usize> = HashSet::new();
         
             dfs_search(val, nodes, &mut result, &mut unvisited, &mut currently_visited);

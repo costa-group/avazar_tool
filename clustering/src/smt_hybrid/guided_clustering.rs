@@ -47,7 +47,7 @@ pub(crate) fn guided_clustering<'a, Cons: Constraint, Circ: Circuit<Cons> , Atom
         
         for atomi in (0..recipient.n_constraints()).into_iter().filter(|atomi| !atom_clustered[*atomi]) {
             let atom_signals = &atomi_to_signals[atomi];
-            for cluster_id in atom_signals.iter().copied().flat_map(|sig| signals_to_clusters.get(&sig).unwrap_or_else(|| &empty).iter()).collect::<HashSet<_>>().into_iter() {
+            for cluster_id in atom_signals.iter().copied().flat_map(|sig| signals_to_clusters.get(&sig).unwrap_or_else(|| &empty).iter()).collect::<HashSet<_>>().into_iter().sorted() {
                 let num_signals_in_common: usize = circ_cluster_signals[cluster_id].intersection(atom_signals).count();
                 if circ_to_max_associated[atomi].as_ref().is_none_or(|inner| inner.0 < num_signals_in_common) {
                     circ_to_max_associated[atomi] = Some((num_signals_in_common, vec![*cluster_id]));
@@ -111,8 +111,8 @@ pub(crate) fn guided_clustering<'a, Cons: Constraint, Circ: Circuit<Cons> , Atom
 
             let signals = &recipient_cluster_to_signals[&cluster_id];
             let cluster_order = id_to_order[&cluster_id];
-            let predecessors = signals.iter().copied().flat_map(|sig| signals_to_clusters[&sig].iter().copied()).filter(|oid| id_to_order[oid] < cluster_order).collect::<HashSet<_>>().into_iter().collect::<Vec<_>>();
-            let successors = signals.iter().copied().flat_map(|sig| signals_to_clusters[&sig].iter().copied()).filter(|oid| id_to_order[oid] > cluster_order).collect::<HashSet<_>>().into_iter().collect::<Vec<_>>();
+            let predecessors = signals.iter().copied().flat_map(|sig| signals_to_clusters[&sig].iter().copied()).filter(|oid| id_to_order[oid] < cluster_order).collect::<HashSet<_>>().into_iter().sorted().collect::<Vec<_>>();
+            let successors = signals.iter().copied().flat_map(|sig| signals_to_clusters[&sig].iter().copied()).filter(|oid| id_to_order[oid] > cluster_order).collect::<HashSet<_>>().into_iter().sorted().collect::<Vec<_>>();
 
             let predecessor_signals: HashSet<usize> = predecessors.iter().copied().flat_map(|okey| circ_cluster_signals[&okey].iter().copied() ).collect();
             let successor_signals: HashSet<usize> = successors.iter().copied().flat_map(|okey| circ_cluster_signals[&okey].iter().copied() ).collect();
@@ -159,7 +159,7 @@ fn merge_until_all_left_is_subset_to_right<'a, LCon: Constraint, Left: Circuit<L
         let left_signals = left.signals();
         if left_signals.len() == 0 {
             // left is empty -- merge with arbitrary right adjacent
-            let chosen = *right.get_predecessors().into_iter().chain(right.get_successors().into_iter()).next().expect("Empty cluster on left has no adjent on right");
+            let chosen = *right.get_predecessors().into_iter().chain(right.get_successors().into_iter()).min().expect("Empty cluster on left has no adjent on right");
             return ([root, chosen].into_iter().collect(), false);
         }
         let right_signals = right.signals();
@@ -168,7 +168,7 @@ fn merge_until_all_left_is_subset_to_right<'a, LCon: Constraint, Left: Circuit<L
         let mut to_merge: HashSet<usize> = [root].into_iter().collect();
 
         // for each remaining signal get list of right_clusters that contain that signal
-        let signal_to_clusterid: HashMap<usize, HashSet<usize>> = remaining_signals.map(|sig| (*sig, right_signal_to_coni[sig].iter().copied().map(|coni| right_coni_to_node[coni]).filter(|id| *id != root).collect()) ).collect();
+        let signal_to_clusterid: BTreeMap<usize, HashSet<usize>> = remaining_signals.map(|sig| (*sig, right_signal_to_coni[sig].iter().copied().map(|coni| right_coni_to_node[coni]).filter(|id| *id != root).collect()) ).collect();
         for (sig, prospective) in signal_to_clusterid.into_iter() {
             // println!("root_id {:?}, signal {:?}, prospective node_ids with signal {:?}", root, sig, prospective.clone());
             if prospective.len() == 0 {panic!("No potential clusters for missing signal {sig}");}
