@@ -19,6 +19,10 @@
 //! - **No refinement rounds by default**, only under `--extra_rounds` — with one
 //!   difference from the template modes: there a counterexample keeps expanding
 //!   whatever the flag says, here every round counts against it.
+//!
+//! `--apply_predecessors` and `--apply_bidirectional` mean the same here as in
+//! the template modes: which way to look for the neighbours to abstract, and
+//! then to inline. Successors by default.
 
 use indexmap::IndexMap;
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -433,8 +437,9 @@ pub fn prove_semantic_equivalence(user_input: Input) -> Result<(), ()> {
         table: &table,
         macros: &macros,
         field: &field,
-        spec_adjacency: user_input.spec_adjacency,
         instance_adjacency: user_input.instance_adjacency,
+        apply_predecessors: user_input.apply_predecessors,
+        apply_bidirectional: user_input.apply_bidirectional,
         timeout: user_input.timeout,
         solver: user_input.solver_option,
         verbose: user_input.flag_verbose,
@@ -532,24 +537,26 @@ fn verify_instance(
     let spec_by_id = index_by_id(&spec_clusters.nodes);
     let instance_info = ctx.table.instance(instance);
 
-    // By id, which is the order the clusters are written in: nothing here depends
-    // on verifying them dependency-first, since every query is self-contained.
-    let mut ordered: Vec<&NodeInfo> = circuit_clusters.nodes.iter().collect();
+    // Driven from the SPECIFICATION side, like everything else in this mode: it is
+    // the specification that says what a cluster's interface is and what has to be
+    // proved about it, so it is also what decides which clusters there are to
+    // verify. By id, since every query is self-contained.
+    let mut ordered: Vec<&NodeInfo> = spec_clusters.nodes.iter().collect();
     ordered.sort_by_key(|n| n.node_id);
 
-    for circuit_node in ordered.into_iter() {
-        let spec_node = match spec_by_id.get(&circuit_node.node_id) {
-            Some(n) => *n,
-            None => {
-                // Both clusterings are built with the same ids by
-                // construction; if that ever stops holding, the semantic link
-                // is gone and there is nothing meaningful to verify.
-                panic!(
-                    "Cluster {} exists on the circuit side but not on the specification side",
-                    circuit_node.node_id
-                );
-            }
-        };
+    for spec_node in ordered.into_iter() {
+        let circuit_node = *circuit_by_id.get(&spec_node.node_id).unwrap_or_else(|| {
+            // The two clusterings are built with the same id set by construction:
+            // `dual_merge_until_property` merges the same ids on both sides and
+            // asserts the keysets match. A missing counterpart is a broken
+            // clustering, not a specification the tool should try to work around.
+            unreachable!(
+                "Cluster {} of instance {} exists on the specification side but not on the \
+                 circuit side. The hybrid clustering is supposed to keep one id set for both \
+                 sides -- this is a bug in clustering::smt_hybrid, not in the input.",
+                spec_node.node_id, instance
+            )
+        });
 
         let pair = ClusterPair {
             instance,
@@ -559,23 +566,26 @@ fn verify_instance(
 
         println!(
             "LOG: considering cluster {} of {} ({} constraints, {} atoms)",
-            circuit_node.node_id,
+            spec_node.node_id,
             instance,
             circuit_node.constraints.len(),
             spec_node.constraints.len()
         );
 
-        let unbound = unbound_boundary_signals(circuit_node, instance_info);
+        // The specification node, because `check_cluster` states the obligation over
+        // `bound_boundary(pair.spec, ...)`: warning about the circuit node's ports
+        // would be reporting a boundary the query never uses.
+        let unbound = unbound_boundary_signals(spec_node, instance_info);
         if !unbound.is_empty() {
             println!(
                 "WARNING: cluster {} has {} boundary signal(s) the specification never names: {:?}",
-                circuit_node.node_id,
+                spec_node.node_id,
                 unbound.len(),
                 unbound
             );
             results
                 .unbound_signals
-                .insert(circuit_node.node_id, unbound);
+                .insert(spec_node.node_id, unbound);
         }
 
         let outcome = verify_cluster_with_refinement(&pair, &circuit_by_id, &spec_by_id, interface, ctx);
@@ -585,17 +595,17 @@ fn verify_instance(
                 println!(
                     "NOTE: cluster {} has no output signal the specification names, so there is \
                      nothing to verify for it (a query would be vacuously unsat).",
-                    circuit_node.node_id
+                    spec_node.node_id
                 );
                 results
                     .clusters
-                    .insert(circuit_node.node_id, ClusterVerdict::NothingToVerify);
+                    .insert(spec_node.node_id, ClusterVerdict::NothingToVerify);
                 results
                     .cluster_instance
-                    .insert(circuit_node.node_id, instance.to_string());
+                    .insert(spec_node.node_id, instance.to_string());
                 results
                     .cluster_size
-                    .insert(circuit_node.node_id, circuit_node.constraints.len());
+                    .insert(spec_node.node_id, circuit_node.constraints.len());
                 record_cluster(results, instance, circuit_node, spec_node,
                                ClusterVerdict::NothingToVerify);
                 continue;
@@ -604,28 +614,29 @@ fn verify_instance(
 
         if verdict == ClusterVerdict::Failed {
             println!(
-                "NOTE: nothing was abstracted in the query for cluster {} -- every cluster it \
-                 borders was asserted in full -- so the circuit really does disagree with its \
+                "NOTE: cluster {} borders no cluster that was not asserted in full, so nothing \
+                 was left abstracted and the circuit really does disagree with its \
                  specification here.",
-                circuit_node.node_id
+                spec_node.node_id
             );
         }
         if verdict == ClusterVerdict::LocalCounterexample {
             println!(
-                "NOTE: the counterexample for cluster {} is local to its boundary. \
-                 Neighbouring clusters were abstracted, not asserted, so this does NOT \
-                 show the circuit disagrees with its specification.",
-                circuit_node.node_id
+                "NOTE: the counterexample for cluster {} is local to its boundary. It borders \
+                 clusters that were not asserted in full -- abstracted, or not looked at because \
+                 of --apply_predecessors/--apply_bidirectional -- so this does NOT show the \
+                 circuit disagrees with its specification.",
+                spec_node.node_id
             );
         }
 
-        results.clusters.insert(circuit_node.node_id, verdict);
+        results.clusters.insert(spec_node.node_id, verdict);
         results
             .cluster_instance
-            .insert(circuit_node.node_id, instance.to_string());
+            .insert(spec_node.node_id, instance.to_string());
         results
             .cluster_size
-            .insert(circuit_node.node_id, circuit_node.constraints.len());
+            .insert(spec_node.node_id, circuit_node.constraints.len());
         record_cluster(results, instance, circuit_node, spec_node, verdict);
     }
 }
@@ -662,6 +673,36 @@ fn record_cluster(
     });
 }
 
+/// The counterpart of a cluster id on the circuit side.
+///
+/// Both clusterings carry the same id set by construction --
+/// `dual_merge_until_property` asserts the keysets match and merges the same ids
+/// on both sides -- so a miss is a broken clustering. Never skipped: dropping an
+/// id here would quietly shrink the abstraction, and a query with fewer
+/// hypotheses than intended reports its counterexample as conclusive.
+fn circuit_of<'a>(circuit_by_id: &HashMap<usize, &'a NodeInfo>, id: &usize) -> &'a NodeInfo {
+    circuit_by_id.get(id).copied().unwrap_or_else(|| {
+        unreachable!(
+            "Cluster {} has no counterpart on the circuit side. The hybrid clustering is \
+             supposed to keep one id set for both sides -- this is a bug in \
+             clustering::smt_hybrid, not in the input.",
+            id
+        )
+    })
+}
+
+/// The same, on the specification side. See [`circuit_of`].
+fn spec_of<'a>(spec_by_id: &HashMap<usize, &'a NodeInfo>, id: &usize) -> &'a NodeInfo {
+    spec_by_id.get(id).copied().unwrap_or_else(|| {
+        unreachable!(
+            "Cluster {} has no counterpart on the specification side. The hybrid clustering is \
+             supposed to keep one id set for both sides -- this is a bug in \
+             clustering::smt_hybrid, not in the input.",
+            id
+        )
+    })
+}
+
 /// Runs one cluster's query, widening the asserted region while the verdict is
 /// inconclusive and `--extra_rounds` allows it.
 ///
@@ -679,18 +720,47 @@ fn verify_cluster_with_refinement(
     interface: &InstanceInterface,
     ctx: &VerificationContext,
 ) -> Option<ClusterVerdict> {
-    // BTreeSet, not HashSet: `inlined` is built from it and ends up as the
-    // order the constraints are written into the .smt2, which should not move
-    // between runs.
-    let mut asserted: BTreeSet<usize> = BTreeSet::from([pair.circuit.node_id]);
+
+    let mut asserted: BTreeSet<usize> = BTreeSet::from([pair.spec.node_id]);
     let mut round: usize = 0;
 
     loop {
         // Everything bordering the asserted region, minus the region itself.
+        //
+        // The SPECIFICATION's edges, and only those. The two clusterings share ids
+        // but not edge sets: a pair joined only on the circuit side shares a signal
+        // the specification never names, and `bound_boundary` drops unbound signals,
+        // so no implication about that wire could be built anyway -- abstracting
+        // such a neighbour would add hypotheses about OTHER signals, not about what
+        // makes them neighbours.
+        //
+        // Which DIRECTION is read comes from the same two flags the template-level
+        // modes use, with the same defaults: successors, unless told otherwise.
+        let take_successors = !ctx.apply_predecessors || ctx.apply_bidirectional;
+        let take_predecessors = ctx.apply_predecessors || ctx.apply_bidirectional;
         let mut abstracted_ids: BTreeSet<usize> = BTreeSet::new();
+        // Everything the region borders in the specification dag, both ways,
+        // whatever the direction flags say. Kept apart from `abstracted_ids` because
+        // the two answer different questions: that one is what this query abstracts,
+        // this one is whether there was anything to abstract at all -- which is what
+        // makes a counterexample conclusive or not.
+        let mut bordering_ids: BTreeSet<usize> = BTreeSet::new();
         for id in asserted.iter() {
-            if let Some(node) = circuit_by_id.get(id) {
-                for adjacent in node.predecessors.iter().chain(node.successors.iter()) {
+            let node = spec_of(spec_by_id, id);
+            for adjacent in node.successors.iter().chain(node.predecessors.iter()) {
+                if !asserted.contains(adjacent) {
+                    bordering_ids.insert(*adjacent);
+                }
+            }
+            if take_successors {
+                for adjacent in node.successors.iter() {
+                    if !asserted.contains(adjacent) {
+                        abstracted_ids.insert(*adjacent);
+                    }
+                }
+            }
+            if take_predecessors {
+                for adjacent in node.predecessors.iter() {
                     if !asserted.contains(adjacent) {
                         abstracted_ids.insert(*adjacent);
                     }
@@ -699,35 +769,27 @@ fn verify_cluster_with_refinement(
             if ctx.instance_adjacency {
                 // Every cluster here belongs to the instance being verified:
                 // `verify_instance` is called once per structure node.
-                for other in circuit_by_id.keys() {
+                for other in spec_by_id.keys() {
                     if !asserted.contains(other) {
                         abstracted_ids.insert(*other);
-                    }
-                }
-            }
-            if ctx.spec_adjacency {
-                if let Some(node) = spec_by_id.get(id) {
-                    for adjacent in node.predecessors.iter().chain(node.successors.iter()) {
-                        if !asserted.contains(adjacent) {
-                            abstracted_ids.insert(*adjacent);
-                        }
+                        bordering_ids.insert(*other);
                     }
                 }
             }
         }
+        // The SPECIFICATION node of each neighbour: its abstraction has to be the
+        // obligation its own query discharges, and that query states it over the
+        // specification's split into inputs and outputs, not the circuit's.
         let abstracted: Vec<&NodeInfo> = abstracted_ids
             .iter()
-            .filter_map(|id| circuit_by_id.get(id).copied())
+            .map(|id| spec_of(spec_by_id, id))
             .collect();
         // Every cluster asserted on top of this one, paired with its
         // specification counterpart by the shared id.
         let inlined: Vec<(&NodeInfo, &NodeInfo)> = asserted
             .iter()
-            .filter(|id| **id != pair.circuit.node_id)
-            .filter_map(|id| match (circuit_by_id.get(id), spec_by_id.get(id)) {
-                (Some(c), Some(s)) => Some((*c, *s)),
-                _ => None,
-            })
+            .filter(|id| **id != pair.spec.node_id)
+            .map(|id| (circuit_of(circuit_by_id, id), spec_of(spec_by_id, id)))
             .collect();
 
         let (result, logs) = check_cluster(pair, &abstracted, &inlined, interface, ctx)?;
@@ -737,9 +799,10 @@ fn verify_cluster_with_refinement(
 
         let verdict = match result {
             PossibleResult::VERIFIED => ClusterVerdict::Verified,
-            // A counterexample only counts as a real failure when nothing was
-            // abstracted to reach it.
-            PossibleResult::FAILED if abstracted.is_empty() => ClusterVerdict::Failed,
+            // Conclusive only when there was nothing left to abstract -- the region
+            // borders no other cluster, either because it never did or because the
+            // refinement rounds swallowed them all.
+            PossibleResult::FAILED if bordering_ids.is_empty() => ClusterVerdict::Failed,
             PossibleResult::FAILED => ClusterVerdict::LocalCounterexample,
             _ => ClusterVerdict::Unknown,
         };
@@ -750,7 +813,7 @@ fn verify_cluster_with_refinement(
                 println!(
                     "LOG: cluster {} settled as {} after {} refinement round(s), with {} \
                      neighbouring cluster(s) asserted",
-                    pair.circuit.node_id,
+                    pair.spec.node_id,
                     verdict.as_str(),
                     round,
                     inlined.len()
@@ -763,7 +826,7 @@ fn verify_cluster_with_refinement(
         println!(
             "LOG: cluster {} came back {}; refinement round {} of {}: asserting {} neighbouring \
              cluster(s) in full instead of abstracting them",
-            pair.circuit.node_id,
+            pair.spec.node_id,
             verdict.as_str(),
             round,
             ctx.extra_rounds,
@@ -1091,7 +1154,7 @@ fn print_pretty_results(results: &ResultInfoSemanticEquivalence) {
         print_cluster_list(
             results,
             ClusterVerdict::Failed,
-            "Cluster pairs that disagree with the specification (nothing was abstracted to find it): ",
+            "Cluster pairs that disagree with the specification (nothing was left abstracted to find it): ",
         );
         print_cluster_list(
             results,

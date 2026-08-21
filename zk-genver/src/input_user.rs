@@ -29,7 +29,6 @@ pub struct Input {
     pub check_semantic_equivalence: Option<PathBuf>,
     pub report_output: Option<PathBuf>,
     pub dump_dir: Option<PathBuf>,
-    pub spec_adjacency: bool,
     pub instance_adjacency: bool,
 }
 
@@ -61,7 +60,6 @@ impl Input {
         let limit_size = input_processing::get_limit_size(&matches)?;
         let report_output = input_processing::get_report_output(&matches);
         let dump_dir = matches.value_of("dump_dir").map(PathBuf::from);
-        let spec_adjacency = matches.is_present("spec_adjacency");
         let instance_adjacency = matches.is_present("instance_adjacency");
 
         Result::Ok(Input {
@@ -88,7 +86,6 @@ impl Input {
 
             report_output,
             dump_dir,
-            spec_adjacency,
             instance_adjacency,
         })
     }
@@ -436,7 +433,7 @@ mod input_processing {
                     .long("apply_predecessors")
                     .takes_value(false)
                     .hidden(false)
-                    .help("Activate to start adding predecessors instead of childs")
+                    .help("Abstract/expand towards the predecessors instead of the successors. Read by --check_correctness, --check_equivalence, the determinism mode and --check_semantic_equivalence alike")
                     .display_order(600)
             )
             .arg(
@@ -444,7 +441,7 @@ mod input_processing {
                     .long("apply_bidirectional")
                     .takes_value(false)
                     .hidden(false)
-                    .help("Activate to start adding predecessors and childs")
+                    .help("Abstract/expand towards both the predecessors and the successors. Read by --check_correctness, --check_equivalence, the determinism mode and --check_semantic_equivalence alike")
                     .display_order(600)
             )
             .arg(
@@ -514,13 +511,6 @@ mod input_processing {
                     .takes_value(false)
                     .help("Treat every cluster of the same instance as a neighbour. Splitting an instance across clusters is the clustering algorithm's choice, not a semantic boundary, and the split can leave one cluster holding the constraints that feed a child's inputs while another holds the constraint consuming its output -- the second then carries an implication whose antecedent nothing in its own query can discharge, and its counterexample is reported as conclusive")
                     .display_order(134)
-            )
-            .arg(
-                Arg::with_name("spec_adjacency")
-                    .long("spec_adjacency")
-                    .takes_value(false)
-                    .help("Count a cluster's neighbours in the specification dag as neighbours as well as the ones in the circuit dag. The two clusterings share ids but not their edges, so a cluster the specification orders after another can still look isolated on the circuit side -- in which case nothing is abstracted, no refinement round runs, and a counterexample caused by the missing neighbour is reported as conclusive")
-                    .display_order(133)
             )
             .arg(
                 Arg::with_name("dump_dir")

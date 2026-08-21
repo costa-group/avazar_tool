@@ -91,27 +91,23 @@ pub struct VerificationContext<'a> {
     /// renders a macro left out as `true`, which frees that call's output.
     pub macros: &'a IndexMap<String, String>,
     pub field: &'a BigInt,
-    /// Count the SPECIFICATION dag's edges as adjacency too, on top of the
-    /// circuit dag's.
-    ///
-    /// Every circuit edge is also a spec edge (the subset property forces
-    /// signals(circuit k) ⊆ signals(spec k)) but not the reverse: two clusters
-    /// can share only a spec-side signal, typically a synthetic id for an llzk
-    /// temporary. Such a pair looks isolated, so nothing is abstracted, no
-    /// refinement round runs, and its counterexample is reported as conclusive.
-    ///
-    /// Only ever ADDS hypotheses, each of them some cluster's own obligation, so
-    /// it cannot turn a real counterexample into a proof. Costs query size.
-    pub spec_adjacency: bool,
-    /// Every cluster of the instance counts as a neighbour, edge or no edge.
-    /// Subsumes `spec_adjacency` — it is the complete graph over the instance.
+    /// Every cluster of the instance counts as a neighbour, edge or no edge —
+    /// the complete graph over the instance, beyond what either side's edges say.
     ///
     /// Where an instance gets split is the algorithm's choice, not a semantic
     /// boundary: the constraints feeding a child's inputs can land in one cluster
     /// while the constraint consuming its output lands in another, leaving the
     /// second with a child implication whose antecedent nothing in its own query
-    /// discharges. Same soundness argument as `spec_adjacency`, more cost.
+    /// discharges. Only ever ADDS hypotheses, each of them some cluster's own
+    /// obligation, so it cannot turn a real counterexample into a proof; it costs
+    /// query size.
     pub instance_adjacency: bool,
+    /// Which way to look for the neighbours to abstract, exactly as
+    /// `correctness::modular_reasoning` and `determinism::modular_reasoning` read
+    /// the same two flags: successors by default, predecessors instead under
+    /// `--apply_predecessors`, both under `--apply_bidirectional`.
+    pub apply_predecessors: bool,
+    pub apply_bidirectional: bool,
     pub timeout: u64,
     pub solver: PossibleSolver,
     pub verbose: bool,
@@ -128,8 +124,10 @@ pub struct VerificationContext<'a> {
 /// The `inputs ⇒ outputs` abstraction of one adjacent cluster: **that cluster's
 /// own obligation, written as a formula**.
 ///
-/// Through [`bound_boundary`], the same function the neighbour's own query uses,
-/// so antecedent and consequent are exactly what it assumes and proves.
+/// `node` must be the neighbour's SPECIFICATION node, through the same
+/// [`bound_boundary`] its own query goes through, or the abstraction concludes
+/// something other than what that query proves. Synthetic ids are dropped by the
+/// caller: they have no circuit wire to be equated to.
 fn neighbour_implication(
     node: &NodeInfo,
     instance: &InstanceInfo,
@@ -171,6 +169,15 @@ pub fn check_cluster(
     ctx: &VerificationContext,
 ) -> Option<(PossibleResult, Vec<String>)> {
     let instance = ctx.table.instance(pair.instance);
+    // The ids the preprocessor invented for specification variables with no r1cs
+    // wire behind them. Needed early: the boundary and the neighbour abstractions
+    // are read off SPECIFICATION nodes now, whose ports can include one of these,
+    // and there is no circuit signal to equate it to -- declaring `s_<id>` for it
+    // would invent a wire and hand the solver a free variable.
+    let synthetic: HashSet<usize> = ctx.table.unresolved_ids.values().copied().collect();
+    let drop_synthetic = |bound: Vec<(usize, String)>| -> Vec<(usize, String)> {
+        bound.into_iter().filter(|(s, _)| !synthetic.contains(s)).collect()
+    };
 
     // ---- circuit side ----------------------------------------------------
     // Deduplicated: one `declare-fun` per entry of `signals_1`, and a cluster's
@@ -194,7 +201,7 @@ pub fn check_cluster(
         .circuit
         .constraints
         .iter()
-        .map(|c| format!("r1cs constraint {} of cluster {}", c, pair.circuit.node_id))
+        .map(|c| format!("r1cs constraint {} of cluster {}", c, pair.spec.node_id))
         .collect();
     for (circuit_node, _) in inlined.iter() {
         for signal in circuit_node.signals.iter().copied() {
@@ -263,8 +270,8 @@ pub fn check_cluster(
     // constraints producing it. Measured over circomlib: recovers four circuits,
     // removes a false FAILED, changes nothing in the ten that already worked.
     let (assumed, proved) = bound_boundary(pair.spec, instance);
-    let (inputs_1, mut inputs_2) = split(assumed);
-    let (outputs_1, mut outputs_2) = split(proved);
+    let (inputs_1, mut inputs_2) = split(drop_synthetic(assumed));
+    let (outputs_1, mut outputs_2) = split(drop_synthetic(proved));
 
     // No output the spec names means a VACUOUS query: the disagreement clause
     // becomes `(assert (not true))` and is `unsat` whatever the circuit says.
@@ -280,10 +287,13 @@ pub fn check_cluster(
     let mut abstracted_ids: Vec<usize> = Vec::new();
     let mut seen: HashSet<usize> = inlined.iter().map(|(c, _)| c.node_id).collect();
     for node in adjacent {
-        if node.node_id == pair.circuit.node_id || !seen.insert(node.node_id) {
+        if node.node_id == pair.spec.node_id || !seen.insert(node.node_id) {
             continue;
         }
-        let implication = neighbour_implication(node, instance);
+        let implication = {
+            let (ins, outs) = neighbour_implication(node, instance);
+            (drop_synthetic(ins), drop_synthetic(outs))
+        };
         // Declare exactly what the implication mentions, taken from it rather
         // than from the node's ports: no longer the same set.
         for (signal, _) in implication.0.iter().chain(implication.1.iter()) {
@@ -389,18 +399,15 @@ pub fn check_cluster(
     // Always `cluster_N`, never the DAGNode's own `node_name`: that one defaults
     // to `node_N`, which reads on disk like a circom template rather than a
     // cluster the algorithm chose.
-    let node_name = format!("cluster_{}", pair.circuit.node_id);
+    let node_name = format!("cluster_{}", pair.spec.node_id);
 
     // ---- annotations -----------------------------------------------------
     // Everything a person needs to read this query without the correspondence
     // file and the structure open beside it.
     let mut annotations = ProblemAnnotations::default();
-    // Collected once per query: the ids the preprocessor invented for variables
-    // with no r1cs signal behind them.
-    let synthetic: HashSet<usize> = ctx.table.unresolved_ids.values().copied().collect();
     annotations.header.push(format!(
         "semantic equivalence: cluster {} of instance {}",
-        pair.circuit.node_id, pair.instance
+        pair.spec.node_id, pair.instance
     ));
     let kept_atoms = pair.spec.constraints.len() - dropped_atoms.len();
     annotations.header.push(format!(
