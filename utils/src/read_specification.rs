@@ -5,6 +5,7 @@ use std::io::BufReader;
 use std::path::Path;
 use std::error::Error;
 use indexmap::IndexMap;
+use num_bigint_dig::BigInt;
 
 
 
@@ -51,9 +52,21 @@ pub struct MainSection {
 /// Top-level structure of the concrete specification JSON.
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct SpecificationInfo {
-    pub prime: u64,
+    pub prime: serde_json::Value,
     pub macros: IndexMap<String, MacroDef>,
     pub main: MainSection,
+}
+
+impl SpecificationInfo {
+    pub fn prime_as_bigint(&self) -> Result<BigInt, String> {
+        let text = match &self.prime {
+            serde_json::Value::String(s) => s.clone(),
+            serde_json::Value::Number(n) => n.to_string(),
+            other => return Err(format!("prime is neither a number nor a string: {}", other)),
+        };
+        text.parse::<BigInt>()
+            .map_err(|e| format!("could not parse prime '{}': {}", text, e))
+    }
 }
 
 pub fn read_smt_specification<P: AsRef<Path>>(path: P) -> Result<SpecificationInfo, Box<dyn Error>> {
