@@ -118,7 +118,10 @@ pub(crate) fn dual_merge_until_property<'a, LCon: Constraint, Left: Circuit<LCon
     assert_eq!(left_nodes.len(), right_nodes.len());
     assert!(left_nodes.keys().all(|k| right_nodes.contains_key(k)));
 
+    // Sorted: this is the order the offending clusters get merged in, and merges are not
+    // commutative, so HashMap key order would make the outcome vary between runs.
     let mut stack: Vec<usize> = left_nodes.keys().copied().filter(|key| !node_meets_property(&left_nodes[key], &right_nodes[key])).collect();
+    //stack.sort();
 
     let left_sig_to_coni = signals_to_constraints_with_them::<LCon>(&left.constraints(), None, None);
     let mut left_coni_to_node: Vec<usize> = vec![0; left.n_constraints()];
