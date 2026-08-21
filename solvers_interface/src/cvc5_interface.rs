@@ -24,7 +24,7 @@ pub fn study_correctness(problem: &CorrectnessVerification)-> (PossibleResult, V
     let mut logs = Vec::new();
 
     let smt2_problem: LinkedList<String> = correctness_problem_to_smt2(problem);
-    let file_name = crate::correctness_smt2_name(&problem.original_file, &problem.template_name, "cvc5");
+    let file_name = crate::correctness_smt2_name(&problem.file_prefix, &problem.original_file, &problem.template_name, "cvc5");
 
     let result_solver = handling_cvc5_call(&smt2_problem, problem.verification_timeout, problem.verbose, None, file_name);
 
@@ -168,7 +168,7 @@ pub fn study_correctness_with_cancel(problem: &CorrectnessVerification, cancel_f
     }
 
     let smt2_problem: LinkedList<String> = correctness_problem_to_smt2(problem);
-    let file_name = crate::correctness_smt2_name(&problem.original_file, &problem.template_name, "cvc5");
+    let file_name = crate::correctness_smt2_name(&problem.file_prefix, &problem.original_file, &problem.template_name, "cvc5");
     let result_solver = handling_cvc5_call(&smt2_problem, problem.verification_timeout, problem.verbose, Some(cancel_flag), file_name);
 
     match result_solver {

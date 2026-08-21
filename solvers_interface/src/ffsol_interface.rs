@@ -120,7 +120,7 @@ pub fn study_correctness(problem: &CorrectnessVerification, config: &FfsolConfig
     let mut logs = Vec::new();
 
     let smt2_problem: LinkedList<String> = correctness_problem_to_smt2(problem);
-    let file_name = crate::correctness_smt2_name(&problem.original_file, &problem.template_name, "ffsol");
+    let file_name = crate::correctness_smt2_name(&problem.file_prefix, &problem.original_file, &problem.template_name, "ffsol");
 
     let result_solver = handling_ffsol_call(&smt2_problem, config, None, file_name);
 
@@ -269,7 +269,7 @@ pub fn study_correctness_with_cancel(problem: &CorrectnessVerification, cancel_f
     }
 
     let smt2_problem: LinkedList<String> = correctness_problem_to_smt2(problem);
-    let file_name = crate::correctness_smt2_name(&problem.original_file, &problem.template_name, "ffsol");
+    let file_name = crate::correctness_smt2_name(&problem.file_prefix, &problem.original_file, &problem.template_name, "ffsol");
     let result_solver = handling_ffsol_call(&smt2_problem, config, Some(cancel_flag), file_name);
 
     match result_solver {

@@ -1,37 +1,65 @@
 
-use std::collections::{HashMap, LinkedList};
-use crate::{BigInt, SafetyVerification,EquivalenceVerification,CorrectnessVerification};
+use std::collections::{HashMap, HashSet, LinkedList};
+use crate::{BigInt, SafetyVerification,EquivalenceVerification,CorrectnessVerification, comment, with_comment};
 use circuits_constraints_and_algebra::algebra::EncodableConstraint;
 
 pub fn correctness_problem_to_smt2(problem: &CorrectnessVerification)->LinkedList<String>{
     let mut smt2_problem = LinkedList::new();
+    let notes = &problem.annotations;
+
+    // What this query is, before what it says. Only present when the caller
+    // filled it in; `--check_correctness` passes no annotations.
+    for line in notes.header.iter() {
+        smt2_problem.push_back(comment(line));
+    }
+    if !notes.header.is_empty() {
+        smt2_problem.push_back(String::new());
+    }
+
     let mut header = declare_header(&problem.field);
     smt2_problem.append(&mut header);
 
     let mut signal_to_name = HashMap::new();
- 
+
+    smt2_problem.push_back(comment("---- circuit signals ----"));
+    // The wire's own name carries into the symbol -- `r1cs_main_isz_in` rather
+    // than `s_5` -- so a counterexample reads without consulting the comment or
+    // the correspondence file. Only when the caller supplied names: the other
+    // modes leave `notes.signals` empty and keep the plain `s_N`.
+    let mut taken: HashSet<String> = HashSet::new();
     for s in &problem.signals_1 {
-        let name = format!("s_{}",s);
-        smt2_problem.push_back(declare_signal(&name)); 
+        let name = match notes.signals.get(s) {
+            Some(wire) => unique_symbol(&format!("r1cs_{}", sanitize_symbol(wire)), *s, &mut taken),
+            None => format!("s_{}", s),
+        };
+        smt2_problem.push_back(with_comment(declare_signal(&name), notes.signals.get(s)));
         signal_to_name.insert(*s,name.clone());
     }
 
+    smt2_problem.push_back(comment("---- specification variables ----"));
     for s in &problem.signals_2 {
-        smt2_problem.push_back(declare_signal(s)); 
+        smt2_problem.push_back(with_comment(declare_signal(s), notes.spec_vars.get(s)));
     }
 
-    for constraint in &problem.constraints_1 {
+    smt2_problem.push_back(comment(&format!("---- circuit constraints ({}) ----", problem.constraints_1.len())));
+    for (idx, constraint) in problem.constraints_1.iter().enumerate() {
 
         smt2_problem.push_back(
-            format!("(assert {})",
-                constraint.constraint_to_smt2(&signal_to_name)
+            with_comment(
+                format!("(assert {})",
+                    constraint.constraint_to_smt2(&signal_to_name)
+                ),
+                notes.constraints.get(idx)
             )
         );
-        
+
     }
 
 
     // include the macros!!!
+    if !problem.macros.is_empty() {
+        smt2_problem.push_back(comment(&format!("---- specification macros ({}) ----", problem.macros.len())));
+    }
     for (_, macro_info) in &problem.macros{
         smt2_problem.push_back(
             macro_info.to_string()
@@ -39,31 +67,42 @@ pub fn correctness_problem_to_smt2(problem: &CorrectnessVerification)->LinkedLis
     }
 
 
-    for constraint in &problem.constraints_2 {
+    smt2_problem.push_back(comment(&format!("---- specification ({} assertion(s)) ----", problem.constraints_2.len())));
+    for (idx, constraint) in problem.constraints_2.iter().enumerate() {
 
         smt2_problem.push_back(
-            format!("(assert {})",
-                constraint
+            with_comment(
+                format!("(assert {})", constraint),
+                notes.atoms.get(idx)
             )
         );
-        
+
     }
 
-    for imp in &problem.implications_equivalence{
+    if !problem.implications_equivalence.is_empty() {
+        smt2_problem.push_back(comment(&format!(
+            "---- {} abstracted neighbour(s): assumed to agree on their outputs if they agree on their inputs ----",
+            problem.implications_equivalence.len()
+        )));
+    }
+    for (idx, imp) in problem.implications_equivalence.iter().enumerate() {
         let new_imp = correctness_implication_to_smt2(imp,&signal_to_name);
         smt2_problem.push_back(
-            format!("(assert {})",
-                new_imp
+            with_comment(
+                format!("(assert {})", new_imp),
+                notes.implications.get(idx)
             )
         );
     }
 
+    smt2_problem.push_back(comment("---- hypothesis: the inputs agree with the specification ----"));
     smt2_problem.push_back(
         format!("(assert {})",
             declare_all_signals_equal_2(&problem.inputs_1, &signal_to_name, &problem.inputs_2)
         )
     );
 
+    smt2_problem.push_back(comment("---- goal: refute a disagreement on the outputs (unsat = verified) ----"));
     smt2_problem.push_back(
         format!("(assert (not {}))",
             declare_all_signals_equal_2(&problem.outputs_1, &signal_to_name, &problem.outputs_2)
@@ -223,6 +262,39 @@ pub fn safety_problem_to_smt2<C: EncodableConstraint>(problem: &SafetyVerificati
     smt2_problem.push_back(format!("(check-sat)"));
     smt2_problem
     
+}
+
+
+/// A circom wire name (`main.lt.in[0]`) as an SMT-LIB symbol (`main_lt_in_0`).
+/// Anything outside `[A-Za-z0-9_]` becomes `_`, and runs of `_` collapse so the
+/// result stays readable.
+pub fn sanitize_symbol(name: &str) -> String {
+    let mut out = String::with_capacity(name.len());
+    for c in name.chars() {
+        if c.is_ascii_alphanumeric() || c == '_' {
+            out.push(c);
+        } else if !out.ends_with('_') {
+            out.push('_');
+        }
+    }
+    out.trim_matches('_').to_string()
+}
+
+/// Two wires must never share a symbol, whatever the sanitising did to them, so
+/// a clash falls back to appending the signal id -- which is unique by
+/// construction.
+fn unique_symbol(candidate: &str, id: usize, taken: &mut HashSet<String>) -> String {
+    let name = if candidate.is_empty() {
+        format!("s_{}", id)
+    } else {
+        candidate.to_string()
+    };
+    if taken.insert(name.clone()) {
+        return name;
+    }
+    let with_id = format!("{}_s{}", name, id);
+    taken.insert(with_id.clone());
+    with_id
 }
 
 pub fn declare_signal(signal_name: &String)->String{

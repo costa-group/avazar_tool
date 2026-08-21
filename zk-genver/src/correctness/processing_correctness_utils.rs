@@ -60,7 +60,16 @@ pub fn get_equivalent_subcomponent_signal_in_macro(signal: usize, studied_macro:
     let signal_name: String = format!("{}.{}", last_access[1], last_access[0]);
 
 
-    let signal_info_macro = studied_macro.vars_info.get(&signal_name).unwrap();
+    // Not `unwrap`: a specification whose `components_info` announces a subcomponent that
+    // `vars_info` never gives variables for is a malformed spec, and the bare
+    // `Option::unwrap() on a None value` says nothing about which one. Name it.
+    let signal_info_macro = studied_macro.vars_info.get(&signal_name).unwrap_or_else(|| panic!(
+        "The specification has no vars_info entry '{}' (for circuit signal '{}'). \
+         Its components_info declares {:?}. The specification is inconsistent: it announces \
+         subcomponents it does not publish the variables of.",
+        signal_name, complete_signal_name,
+        studied_macro.components_info.keys().collect::<Vec<_>>()
+    ));
     if signal_info_macro.is_array(){
         assert!(possible_array_access.is_some());
         signal_info_macro.as_array().unwrap()[possible_array_access.unwrap()].to_string()
@@ -95,7 +104,12 @@ pub fn get_equivalent_signal_in_macro(signal: usize, studied_macro: &MacroDef, s
     let last_access: Vec<&str> = remaining.rsplit('.').take(1).collect();
     let signal_name: String = last_access[0].to_string();
 
-    let signal_info_macro = studied_macro.vars_info.get(&signal_name).unwrap();
+    let signal_info_macro = studied_macro.vars_info.get(&signal_name).unwrap_or_else(|| panic!(
+        "The specification has no vars_info entry '{}' (for circuit signal '{}'). \
+         Known entries: {:?}",
+        signal_name, complete_signal_name,
+        studied_macro.vars_info.keys().take(20).collect::<Vec<_>>()
+    ));
     if signal_info_macro.is_array(){
         assert!(possible_array_access.is_some());
         let acc = &signal_info_macro.as_array().unwrap()[possible_array_access.unwrap()];
@@ -111,7 +125,14 @@ pub fn get_input_signals_macro(number_inputs: usize, studied_macro: &MacroDef) -
     let mut input_var_index = 0;
     while inputs.len() < number_inputs{
         let arg_name = format!("%arg{}", input_var_index);
-        let signal_info_macro = studied_macro.vars_info.get(&arg_name).unwrap();
+        // The loop walks %arg0, %arg1, ... until it has collected `number_inputs` names, so it
+        // runs off the end whenever the macro declares fewer arguments than the circuit has
+        // input signals -- a mismatch worth naming rather than unwrapping.
+        let signal_info_macro = studied_macro.vars_info.get(&arg_name).unwrap_or_else(|| panic!(
+            "The specification's macro has no '{}': it declares fewer arguments than the {} \
+             input signal(s) the circuit node has",
+            arg_name, number_inputs
+        ));
         if signal_info_macro.is_array(){
             if let Some(array) = signal_info_macro.as_array() {
                 for s in array {

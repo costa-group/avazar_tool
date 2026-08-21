@@ -7,8 +7,9 @@ pub mod nia_z3_interface;
 pub mod z3_interface;
 pub mod parallel_interface;
 mod smt2_utils;
+pub use smt2_utils::sanitize_symbol;
 use indexmap::IndexMap;
-use std::collections::{HashSet, LinkedList};
+use std::collections::{HashMap, HashSet, LinkedList};
 use std::path::Path;
 use num_bigint_dig::BigInt;
 use serde::{Serialize,Deserialize};
@@ -220,19 +221,19 @@ pub fn equivalence_smt2_name(original_file: &str, template_name: &str, solver: &
     }
 }
 
-pub fn correctness_smt2_name(original_file: &str, template_name: &str, solver: &str) -> String {
+pub fn correctness_smt2_name(prefix: &str, original_file: &str, template_name: &str, solver: &str) -> String {
     let random: u32 = rand::Rng::gen(&mut rand::thread_rng());
     let original = sanitize_name(original_file, false);
     if template_name.is_empty() {
-        let file_name = format!("correctness_{}_{}_{}.smt2", original, solver, random);
+        let file_name = format!("{}_{}_{}_{}.smt2", prefix, original, solver, random);
         ensure_safe_length(file_name, original_file, template_name, |o, _t| {
-            format!("correctness_{}_{}_{}.smt2", o, solver, random)
+            format!("{}_{}_{}_{}.smt2", prefix, o, solver, random)
         })
     } else {
         let template = sanitize_name(template_name, false);
-        let file_name = format!("correctness_{}_{}_{}_{}.smt2", original, template, solver, random);
+        let file_name = format!("{}_{}_{}_{}_{}.smt2", prefix, original, template, solver, random);
         ensure_safe_length(file_name, original_file, template_name, |o, t| {
-            format!("correctness_{}_{}_{}_{}.smt2", o, t, solver, random)
+            format!("{}_{}_{}_{}_{}.smt2", prefix, o, t, solver, random)
         })
     }
 }
@@ -315,6 +316,58 @@ impl EquivalenceVerification{
 
 
 
+/// Debug annotations carried into the generated `.smt2` as comments.
+///
+/// A query is written in `s_{id}` and `spec_..._v_k`, which say nothing about
+/// which wire of the circom program or which tag of the specification they came
+/// from. Reading a failed query then means cross-referencing the correspondence
+/// file by hand. These are what the emitter turns into `;` comments so the file
+/// explains itself.
+///
+/// Every field is optional: an empty `ProblemAnnotations` produces the same
+/// query as before, minus nothing.
+#[derive(Default, Clone, Debug)]
+pub struct ProblemAnnotations {
+    /// Lines for the block at the top of the file (what problem this is).
+    pub header: Vec<String>,
+    /// Circuit signal id -> its name in the original program (`main.lt.in[0]`).
+    pub signals: HashMap<usize, String>,
+    /// Specification variable -> what it is bound to.
+    pub spec_vars: HashMap<String, String>,
+    /// Parallel to `constraints_1`: where each constraint comes from.
+    pub constraints: Vec<String>,
+    /// Parallel to `constraints_2`: where each atom comes from.
+    pub atoms: Vec<String>,
+    /// Parallel to `implications_equivalence`: what each implication stands in
+    /// for, and who is on the hook for proving it.
+    pub implications: Vec<String>,
+}
+
+impl ProblemAnnotations {
+    pub fn is_empty(&self) -> bool {
+        self.header.is_empty()
+            && self.signals.is_empty()
+            && self.spec_vars.is_empty()
+            && self.constraints.is_empty()
+            && self.atoms.is_empty()
+    }
+}
+
+/// One line of SMT-LIB comment. Newlines are flattened: a comment runs to the
+/// end of the line, so an embedded one would turn the rest of the note into
+/// code the solver tries to parse.
+pub fn comment(text: &str) -> String {
+    format!("; {}", text.replace('\n', " ").replace('\r', " "))
+}
+
+/// Appends `; note` to a line of SMT-LIB.
+pub fn with_comment(line: String, note: Option<&String>) -> String {
+    match note {
+        Some(note) => format!("{}   ; {}", line, note.replace('\n', " ").replace('\r', " ")),
+        None => line,
+    }
+}
+
 #[derive(Clone)]
 pub struct CorrectnessVerification {
     pub template_name: String,
@@ -333,6 +386,15 @@ pub struct CorrectnessVerification {
     pub added_nodes: HashSet<usize>,
     pub verbose: bool,
     pub macros: IndexMap<String, String>,
+    /// Prefix of the `.smt2` this problem gets written to.
+    ///
+    /// `--check_correctness` and `--check_semantic_equivalence` share this
+    /// struct and its encoder, so without this their files are
+    /// indistinguishable on disk. Defaults to `"correctness"`; the semantic
+    /// mode overrides it with [`CorrectnessVerification::with_file_prefix`].
+    pub file_prefix: String,
+    /// What the emitter turns into comments. See [`ProblemAnnotations`].
+    pub annotations: ProblemAnnotations,
 }
 
 impl CorrectnessVerification{
@@ -377,8 +439,24 @@ impl CorrectnessVerification{
             verification_timeout, 
             added_nodes: HashSet::new(),
             verbose,
-            macros
+            macros,
+            file_prefix: "correctness".to_string(),
+            annotations: ProblemAnnotations::default()
         }
     }
-    
+
+    /// Names the `.smt2` files of this problem after `prefix` instead of
+    /// `correctness`. Kept as a builder rather than an argument to `new` so the
+    /// template-level caller does not have to change.
+    pub fn with_file_prefix(mut self, prefix: &str) -> CorrectnessVerification {
+        self.file_prefix = prefix.to_string();
+        self
+    }
+
+    /// Attaches the comments the generated `.smt2` is annotated with.
+    pub fn with_annotations(mut self, annotations: ProblemAnnotations) -> CorrectnessVerification {
+        self.annotations = annotations;
+        self
+    }
+
 }

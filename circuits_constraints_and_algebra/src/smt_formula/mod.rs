@@ -29,8 +29,46 @@ pub struct Formula {
 }
 
 impl Formula {
+    /// The atoms in the order the clustering indexes them, so a caller holding
+    /// atom ids from elsewhere can line the two up.
+    pub fn atoms(&self) -> &Vec<FormulaAtom> {
+        &self.atoms
+    }
+
     pub fn get_atomrange_for_component(&self, component_name: &String) -> Option<std::ops::Range<usize>> {
         self.component_to_atomrange.get(component_name).map(|&(l, r)| l..r)
+    }
+
+    /// Builds a `Formula` from atoms already in memory, instead of from the
+    /// JSON `parse_formula` reads.
+    ///
+    /// `atoms_by_component` lists, per component instance, that instance's
+    /// atoms; the atoms are laid out in the order given, so each instance
+    /// ends up occupying a CONTIGUOUS range — which is what
+    /// `get_atomrange_for_component` relies on, and what lets a caller map
+    /// an atom index back to whatever it kept alongside it.
+    ///
+    /// Unlike `parse_formula`, no atom is dropped here: an atom with an empty
+    /// signal list is kept. Silently dropping atoms weakens the formula, and
+    /// a caller that is verifying against it needs to see all of them.
+    pub fn from_atoms(
+        prime: &BigInt,
+        atoms_by_component: Vec<(String, Vec<FormulaAtom>)>,
+        input_signals: HashSet<usize>,
+        output_signals: HashSet<usize>,
+    ) -> Formula {
+        let mut component_to_atomrange: HashMap<String, (usize, usize)> = HashMap::new();
+        let mut atoms: Vec<FormulaAtom> = Vec::new();
+
+        for (component_name, component_atoms) in atoms_by_component.into_iter() {
+            let start = atoms.len();
+            atoms.extend(component_atoms.into_iter());
+            component_to_atomrange.insert(component_name, (start, atoms.len()));
+        }
+
+        let signals: Vec<_> = atoms.iter().flat_map(|atom| atom.signals.iter().copied()).collect::<HashSet<_>>().into_iter().sorted().collect();
+
+        Formula {prime: prime.clone(), atoms, signals, input_signals, output_signals, component_to_atomrange}
     }
 }
 
