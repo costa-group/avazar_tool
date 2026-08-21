@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use itertools::Itertools;
 use std::time::{Instant};
 
@@ -64,12 +64,37 @@ pub(crate) fn guided_clustering<'a, Cons: Constraint, Circ: Circuit<Cons> , Atom
                 let chosen_cluster_id = &circ_to_max_associated[atomi].as_ref().unwrap().1[0];
                 recipient_clusters.get_mut(chosen_cluster_id).unwrap().push(atomi);
                 circ_cluster_signals.get_mut(chosen_cluster_id).unwrap().extend(atomi_to_signals[atomi].iter().copied());
+                // Keep the reverse index in step with circ_cluster_signals. Without this, a
+                // signal that only ever appears in the specification -- never in the r1cs, so
+                // absent from the initial index -- stays unindexed even after the atom carrying
+                // it joins a cluster. Any later atom whose signals are all of that kind then
+                // finds no candidate cluster at all, the round places nothing, and the loop
+                // exits leaving those atoms unassigned.
+                for sig in atomi_to_signals[atomi].iter().copied() {
+                    let holders = signals_to_clusters.entry(sig).or_insert_with(Vec::new);
+                    if !holders.contains(chosen_cluster_id) { holders.push(*chosen_cluster_id); }
+                }
                 any_inserted = true;
                 atom_clustered[atomi] = true;
             } 
         }
 
         if !any_inserted {break;}
+    }
+
+    // The clustering has to be a PARTITION of the recipient. The loop above stops as soon as a
+    // round places nothing, which leaves every constraint whose signals never meet a cluster
+    // unassigned. On the specification side that is a piece of the spec no query would ever
+    // assert, so a verification built on this clustering could report success having silently
+    // ignored it -- abort instead of returning a partial clustering.
+    let unassigned: Vec<usize> = (0..recipient.n_constraints()).filter(|coni| !atom_clustered[*coni]).collect();
+    if !unassigned.is_empty() {
+        panic!(
+            "Guided clustering covered only {} of {} recipient constraints: {:?}{} share no signal with any cluster of the guide, so nothing covers them",
+            recipient.n_constraints() - unassigned.len(), recipient.n_constraints(),
+            unassigned.iter().take(10).collect::<Vec<_>>(),
+            if unassigned.len() > 10 {format!(" (and {} more)", unassigned.len() - 10)} else {String::new()}
+        );
     }
 
     timing_info.insert(TimingCategories::SecondaryClustering, secondary_clustering_timer.elapsed().as_secs_f32());
@@ -142,9 +167,38 @@ pub(crate) fn guided_clustering<'a, Cons: Constraint, Circ: Circuit<Cons> , Atom
 fn merge_until_all_left_is_subset_to_right<'a, LCon: Constraint, Left: Circuit<LCon> , RCon: Constraint, Right: Circuit<RCon>>(left: &'a Left, right: &'a Right, core_nodes: &mut HashMap<usize, DAGNode<'a, LCon, Left>>, superset_nodes: &mut HashMap<usize, DAGNode<'a, RCon, Right>>) -> () {
 
     //
+    /// The signals of `left` that could ever be matched on the right at all,
+    /// i.e. that the right-hand circuit mentions SOMEWHERE.
+    ///
+    /// The subset property can only ever be about these. In a real pairing the
+    /// two sides do not name the same set of signals: an r1cs has witness-only
+    /// wires the specification never mentions (circom's `inv` in `IsZero` is
+    /// one: the specification computes with an internal temporary and only
+    /// constrains `out`), and a specification has internal temporaries that
+    /// correspond to no wire. Demanding that a cluster cover a signal the
+    /// other side never mentions is not a property that can be reached by
+    /// merging — there is no cluster over there that holds it — so it would
+    /// merge everything into one node and then panic.
+    fn matchable_signals<'a, LCon: Constraint, Left: Circuit<LCon>, RCon: Constraint, Right: Circuit<RCon>>(
+        left: &DAGNode<'a, LCon, Left>, right: &DAGNode<'a, RCon, Right>
+    ) -> HashSet<usize> {
+        let right_circuit_signals: HashSet<usize> = right.get_circ().get_signals().collect();
+        left.signals().into_iter().filter(|sig| right_circuit_signals.contains(sig)).collect()
+    }
+
     fn is_left_signals_nonempty_and_a_subset_of_right_signals<'a, LCon: Constraint, Left: Circuit<LCon> , RCon: Constraint, Right: Circuit<RCon>>(left: &DAGNode<'a, LCon, Left>, right: &DAGNode<'a, RCon, Right>) -> bool {
-        let left_signals = left.signals();
-        if left_signals.len() == 0 {return false;}
+        let left_signals = matchable_signals(left, right);
+        // Nothing to match: the property holds vacuously and merging would not
+        // change that. This is NOT the same as the old "cluster with no signals
+        // at all, merge it away" case — a cluster can be full of signals and
+        // still share none with the other side (constant folding on witness
+        // wires the specification never mentions). Forcing a merge there ends
+        // up demanding a neighbour that may not exist.
+        //
+        // A caller must treat such a cluster as "nothing to verify", not as
+        // verified: its interface with the other side is empty, so any query
+        // built from it is vacuous.
+        if left_signals.len() == 0 {return true;}
         let right_signals = right.signals();
         left_signals.is_subset(&right_signals)
     }
@@ -156,10 +210,11 @@ fn merge_until_all_left_is_subset_to_right<'a, LCon: Constraint, Left: Circuit<L
 
         // need to choose clusters on right that will get all remaining signals not in left
         let (left, right) = (&left_nodes[&root], &right_nodes[&root]);
-        let left_signals = left.signals();
+        // Only the signals the right-hand side can match: see `matchable_signals`.
+        let left_signals = matchable_signals(left, right);
         if left_signals.len() == 0 {
             // left is empty -- merge with arbitrary right adjacent
-            let chosen = *right.get_predecessors().into_iter().chain(right.get_successors().into_iter()).min().expect("Empty cluster on left has no adjent on right");
+            let chosen = *right.get_predecessors().into_iter().chain(right.get_successors().into_iter()).min().expect("Empty cluster on left has no adjacent on right");
             return ([root, chosen].into_iter().collect(), false);
         }
         let right_signals = right.signals();
@@ -187,7 +242,27 @@ fn merge_until_all_left_is_subset_to_right<'a, LCon: Constraint, Left: Circuit<L
                 }
             }
             // println!("BFS visited {:?}", visited);
-            to_merge.insert(chosen.expect("Signal {sig} has no prospective nodes connected to {root} on right"));
+            // `expect` takes a plain &str and never formats, so the braces used to reach the
+            // log verbatim -- exactly the two values needed to diagnose this.
+            // The BFS is a preference, not a requirement: it merges along a path so the
+            // result stays compact in the DAG. What correctness needs is only that the
+            // merged cluster ends up holding `sig`, and `prospective` already lists every
+            // cluster that does. When root sits in a component of the right DAG that
+            // reaches none of them -- which happens: an isolated cluster has neither
+            // predecessors nor successors to walk -- merge with a holder directly rather
+            // than giving up on the whole circuit.
+            let chosen = chosen.unwrap_or_else(|| {
+                let fallback = *prospective.iter().min().expect("prospective is non-empty here");
+                println!(
+                    "WARNING: cluster {root} needs signal {sig}, but no path in the \
+                     specification DAG leads from it to any of the {} cluster(s) holding it \
+                     ({:?}); the BFS only reached {} node(s). Merging with {fallback} directly.",
+                    prospective.len(), prospective.iter().sorted().collect::<Vec<_>>(),
+                    visited.len()
+                );
+                fallback
+            });
+            to_merge.insert(chosen);
         }
 
         (to_merge, false)
