@@ -357,7 +357,7 @@ mod input_processing {
                     .long("input_structure")
                     .hidden(false)
                     .takes_value(true)
-                    .help("Structure in which the circuit is initially processed. If not given, the circuit is clusterized by ZK-GENVER")
+                    .help("Structure in which the circuit is initially processed. If not given, the circuit is clusterized by ZK-GENVER; in --check_semantic_equivalence it is derived from the specification's components_info and vars_info instead")
                     .display_order(460)
             )
             .arg(
@@ -390,8 +390,8 @@ mod input_processing {
                     .hidden(false)
                     .takes_value(true)
                     .conflicts_with_all(&["check_correctness", "check_equivalence"])
-                    .requires_all(&["input_structure", "correspondence"])
-                    .help("Argument to activate the semantic equivalence check mode. It checks the circuit against the given llzk specification (the same JSON --check_correctness takes), verifying one hybrid cluster pair at a time instead of one circom template at a time. Requires --input_structure and --correspondence")
+                    .requires("correspondence")
+                    .help("Argument to activate the semantic equivalence check mode. It checks the circuit against the given llzk specification (the same JSON --check_correctness takes), verifying one hybrid cluster pair at a time instead of one circom template at a time. Requires --correspondence; --input_structure is optional, and without it the structure is derived from the specification")
                     .display_order(131)
             )
             .arg(

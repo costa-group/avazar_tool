@@ -42,6 +42,8 @@ use utils::read_correspondence::read_signal_correspondence;
 use utils::read_specification::read_smt_specification;
 use utils::small_utilities::DecomposeOptions;
 use utils::structure::{transform_structure_reader, NodeInfo, StructureInfo, StructureReader};
+use crate::semantic_equivalence::structure_from_spec::derive_structure;
+use circuits_constraints_and_algebra::constraint::Constraint as _;
 
 use crate::processing_utils::process_constraints;
 use crate::report;
@@ -221,32 +223,6 @@ pub fn prove_semantic_equivalence(user_input: Input) -> Result<(), ()> {
     let outputs: Vec<usize> = (1..n_outputs + 1).collect();
     let inputs: Vec<usize> = (n_outputs + 1..n_outputs + n_inputs + 1).collect();
 
-    // The structure is REQUIRED here, unlike in correctness: the preprocessor
-    // needs it to know each macro's instance prefix, and the hybrid clustering
-    // needs it as the tree it walks.
-    let structure_path = match user_input.input_structure.as_ref() {
-        Some(p) => p,
-        None => {
-            eprintln!("--check_semantic_equivalence requires --input_structure");
-            return Err(());
-        }
-    };
-    let structure_reader: StructureReader = match std::fs::File::open(structure_path)
-        .map_err(|e| e.to_string())
-        .and_then(|f| serde_json::from_reader(BufReader::new(f)).map_err(|e| e.to_string()))
-    {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("Could not read the circuit structure: {}", e);
-            return Err(());
-        }
-    };
-    if let Err(msg) = check_structure_is_usable(&structure_reader) {
-        eprintln!("{}", msg);
-        return Err(());
-    }
-    let structure: StructureInfo = transform_structure_reader(clone_reader(&structure_reader));
-
     let correspondence_path = match user_input.input_correspondence.as_ref() {
         Some(p) => p,
         None => {
@@ -270,6 +246,59 @@ pub fn prove_semantic_equivalence(user_input: Input) -> Result<(), ()> {
             return Err(());
         }
     };
+
+    // ---- the circuit structure -------------------------------------------
+    // Derived from the specification and the correspondence unless
+    // --input_structure hands one over. `components_info` is the component
+    // tree, the parent's `vars_info` holds each child's ports, and the
+    // correspondence turns those into signal ids; only the constraint-to-
+    // instance split has to be inferred. See `structure_from_spec`.
+    let structure_reader: StructureReader = match user_input.input_structure.as_ref() {
+        Some(path) => match std::fs::File::open(path)
+            .map_err(|e| e.to_string())
+            .and_then(|f| serde_json::from_reader(BufReader::new(f)).map_err(|e| e.to_string()))
+        {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("Could not read the circuit structure: {}", e);
+                return Err(());
+            }
+        },
+        None => {
+            let constraint_signals: Vec<Vec<usize>> = constraints
+                .iter()
+                .map(|c| {
+                    let mut s: Vec<usize> = c.signals().into_iter().collect();
+                    s.sort_unstable();
+                    s
+                })
+                .collect();
+            match derive_structure(
+                &spec.macros,
+                &name_to_signal,
+                n_outputs,
+                n_inputs,
+                &constraint_signals,
+            ) {
+                Ok(s) => {
+                    println!(
+                        "LOG: derived the circuit structure from the specification: {} instance(s)",
+                        s.nodes.len()
+                    );
+                    s
+                }
+                Err(e) => {
+                    eprintln!("Could not derive the circuit structure: {}", e);
+                    return Err(());
+                }
+            }
+        }
+    };
+    if let Err(msg) = check_structure_is_usable(&structure_reader) {
+        eprintln!("{}", msg);
+        return Err(());
+    }
+    let structure: StructureInfo = transform_structure_reader(clone_reader(&structure_reader));
 
     // ---- one prime for both sides ----------------------------------------
     let field: BigInt = match reconcile_prime(&spec, &user_input.prime) {
