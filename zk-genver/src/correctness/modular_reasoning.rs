@@ -78,6 +78,13 @@ pub type CorrectnessImplication = (Vec<(usize, String)>, Vec<(usize, String)>);
 
         let mut macros_to_include = HashSet::new();
         macros_to_include.insert(macro_name.clone());
+        let checked_by_some_node: HashSet<&String> =
+            correspondence_nodeid_macros.values().collect();
+        for name in macros.keys() {
+            if !checked_by_some_node.contains(name) {
+                macros_to_include.insert(name.clone());
+            }
+        }
         let unpacked_macros = build_macros(macros, &macros_to_include);
 
         let mut logs =  Vec::new();
