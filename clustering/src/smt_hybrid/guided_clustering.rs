@@ -64,12 +64,14 @@ pub(crate) fn guided_clustering<'a, Cons: Constraint, Circ: Circuit<Cons> , Atom
                 let chosen_cluster_id = &circ_to_max_associated[atomi].as_ref().unwrap().1[0];
                 recipient_clusters.get_mut(chosen_cluster_id).unwrap().push(atomi);
                 circ_cluster_signals.get_mut(chosen_cluster_id).unwrap().extend(atomi_to_signals[atomi].iter().copied());
-                // Keep the reverse index in step with circ_cluster_signals. Without this, a
-                // signal that only ever appears in the specification -- never in the r1cs, so
-                // absent from the initial index -- stays unindexed even after the atom carrying
-                // it joins a cluster. Any later atom whose signals are all of that kind then
-                // finds no candidate cluster at all, the round places nothing, and the loop
-                // exits leaving those atoms unassigned.
+                // Keep the reverse index in step with circ_cluster_signals. It starts from the
+                // GUIDE's signals only, so a signal the guide never mentions -- with the
+                // specification as the guide, a witness-only wire of the r1cs such as circom's
+                // `inv` in `IsZero` -- is absent from it, and stays absent even after the
+                // constraint carrying it joins a cluster. Any later constraint whose signals are
+                // all of that kind then finds no candidate cluster at all (the `flat_map` over
+                // `signals_to_clusters` yields nothing), the round places nothing, and the loop
+                // exits leaving those constraints unassigned.
                 for sig in atomi_to_signals[atomi].iter().copied() {
                     let holders = signals_to_clusters.entry(sig).or_insert_with(Vec::new);
                     if !holders.contains(chosen_cluster_id) { holders.push(*chosen_cluster_id); }
@@ -84,9 +86,11 @@ pub(crate) fn guided_clustering<'a, Cons: Constraint, Circ: Circuit<Cons> , Atom
 
     // The clustering has to be a PARTITION of the recipient. The loop above stops as soon as a
     // round places nothing, which leaves every constraint whose signals never meet a cluster
-    // unassigned. On the specification side that is a piece of the spec no query would ever
-    // assert, so a verification built on this clustering could report success having silently
-    // ignored it -- abort instead of returning a partial clustering.
+    // unassigned -- and the result is then returned as if it were complete. With the circuit as
+    // the recipient that is an r1cs constraint no query ever asserts, so a verification built on
+    // this clustering could report success without it: the outputs would be proved from fewer
+    // constraints than the circuit actually imposes. Abort instead of returning a partial
+    // clustering.
     let unassigned: Vec<usize> = (0..recipient.n_constraints()).filter(|coni| !atom_clustered[*coni]).collect();
     if !unassigned.is_empty() {
         panic!(

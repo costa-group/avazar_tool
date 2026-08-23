@@ -33,6 +33,11 @@ pub struct FfsolConfig {
     pub la_with_overflowing_constraints: bool,
     pub linear_solver: bool,
     pub grobner_basis: bool,
+    /// Which engine computes the Grobner bases: `cocoa`, `maple`, `macaulay2`
+    /// or `parallel`. `parallel` starts every available engine at once and takes
+    /// whichever answers first, so it is never slower than the best of them on a
+    /// given query and does not need anybody to guess which that is.
+    pub gb_mode: String,
     pub simple_deductions: bool,
     pub complete_deductions: bool,
     pub complete_non_overflowing_deductions: bool,
@@ -54,6 +59,7 @@ impl FfsolConfig {
             la_with_overflowing_constraints: false,
             linear_solver: true,
             grobner_basis: true,
+            gb_mode: "parallel".to_string(),
             simple_deductions: true,
             complete_deductions: false,
             complete_non_overflowing_deductions: true,
@@ -89,6 +95,11 @@ impl FfsolConfig {
         if let Some(model) = &self.model {
             args.push("-model".to_string());
             args.push(model.clone());
+        }
+
+        if !self.gb_mode.is_empty() {
+            args.push("-gb_mode".to_string());
+            args.push(self.gb_mode.clone());
         }
 
         push_bool_arg(&mut args, "-success", self.success);

@@ -225,6 +225,17 @@ pub fn check_cluster(
         .iter()
         .map(|atom| ctx.table.atom(*atom).formula.clone())
         .collect();
+    // Parallel to `constraints_2`: each atom's own tag. A call whose tag IS the
+    // atom -- `call @Constants_3 () to cst.out` -- has the annotation lifted out
+    // when the atom is built, so its text no longer says `:meta-data "call `; only
+    // a call NESTED inside a wider tag keeps one. Reading the tag catches both.
+    let mut atom_tags: Vec<String> = pair
+        .spec
+        .constraints
+        .iter()
+        .map(|atom| ctx.table.atom(*atom).tag.clone())
+        .collect();
+
     // Parallel to `constraints_2`: which tag of which macro each assertion is.
     let atom_note = |atom: &usize, cluster: usize| {
         let info = ctx.table.atom(*atom);
@@ -240,6 +251,12 @@ pub fn check_cluster(
         .map(|atom| atom_note(atom, pair.spec.node_id))
         .collect();
     for (_, spec_node) in inlined.iter() {
+        atom_tags.extend(
+            spec_node
+                .constraints
+                .iter()
+                .map(|atom| ctx.table.atom(*atom).tag.clone()),
+        );
         constraints_2.extend(
             spec_node
                 .constraints
@@ -303,8 +320,8 @@ pub fn check_cluster(
         }
         implications.push(implication);
         implication_notes.push(format!(
-            "sibling cluster {} abstracted: assumed to agree on its outputs given its inputs, \
-             which is what its own query proves",
+            "sibling: cluster {} of this same instance, assumed to agree on its outputs given \
+             its inputs, which is what its own query proves",
             node.node_id
         ));
         abstracted_ids.push(node.node_id);
@@ -345,11 +362,13 @@ pub fn check_cluster(
         }
         implications.push(implication);
         implication_notes.push(format!(
-            "child instance {} (cluster {}) abstracted: its formula is left out of this query \
-             because its own query proves this implication",
+            "child: instance {}, structure node {} -- NOT a cluster id, and the two numberings \
+             are unrelated. Its formula is left out of this query because the queries of ITS \
+             OWN clusters, however many the clustering gave it, prove this implication between \
+             them",
             child.instance, child.node_id
         ));
-        abstracted_children.push(format!("{} (node {})", child.instance, child.node_id));
+        abstracted_children.push(format!("{} (structure node {})", child.instance, child.node_id));
     }
 
     let mut dropped_atoms: Vec<usize> = Vec::new();
@@ -368,24 +387,40 @@ pub fn check_cluster(
             .collect();
         let own = pair.spec.constraints.len();
         let mut drop: Vec<bool> = vec![false; constraints_2.len()];
-        for i in 0..constraints_2.len() {
-            if !constraints_2[i].contains(":meta-data \"call ") {
-                continue;
-            }
-            let bound = spec_variables(&constraints_2[i]);
-            let uncovered: Vec<&String> = bound
-                .iter()
-                .filter(|v| !covered.contains(v.as_str()))
-                .collect();
-            let read_elsewhere = constraints_2.iter().enumerate().any(|(j, other)| {
-                j != i && uncovered.iter().any(|v| mentions_identifier(other, v))
-            });
-            if !read_elsewhere {
-                drop[i] = true;
-                // Atom ids are the circuit's, so a silent gap reads like a loss.
-                if i < own {
-                    dropped_atoms.push(pair.spec.constraints[i]);
+        // To a FIXED POINT, not one pass: "read elsewhere" has to mean read by an
+        // atom that SURVIVES. A child's call and its sibling's often bind the same
+        // wire -- one produces it, the other consumes it -- so each looks read by
+        // the other and neither goes, even once both children are abstracted.
+        // Dropping one makes the other droppable, so the sweep repeats until a
+        // round marks nothing new. Terminates because `drop` only ever gains
+        // entries and it is bounded by the number of atoms.
+        loop {
+            let mut marked_this_round = false;
+            for i in 0..constraints_2.len() {
+                let is_call = atom_tags.get(i).is_some_and(|t| t.starts_with("call "))
+                    || constraints_2[i].contains(":meta-data \"call ");
+                if drop[i] || !is_call {
+                    continue;
                 }
+                let bound = spec_variables(&constraints_2[i]);
+                let uncovered: Vec<&String> = bound
+                    .iter()
+                    .filter(|v| !covered.contains(v.as_str()))
+                    .collect();
+                let read_elsewhere = constraints_2.iter().enumerate().any(|(j, other)| {
+                    j != i && !drop[j] && uncovered.iter().any(|v| mentions_identifier(other, v))
+                });
+                if !read_elsewhere {
+                    drop[i] = true;
+                    marked_this_round = true;
+                    // Atom ids are the circuit's, so a silent gap reads like a loss.
+                    if i < own {
+                        dropped_atoms.push(pair.spec.constraints[i]);
+                    }
+                }
+            }
+            if !marked_this_round {
+                break;
             }
         }
         if drop.iter().any(|d| *d) {

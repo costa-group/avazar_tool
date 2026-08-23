@@ -81,7 +81,8 @@ pub fn correctness_problem_to_smt2(problem: &CorrectnessVerification)->LinkedLis
 
     if !problem.implications_equivalence.is_empty() {
         smt2_problem.push_back(comment(&format!(
-            "---- {} abstracted neighbour(s): assumed to agree on their outputs if they agree on their inputs ----",
+            "---- {} abstraction(s): each stands in for a sibling cluster or a child instance, \
+             assumed to agree on its outputs if it agrees on its inputs ----",
             problem.implications_equivalence.len()
         )));
     }
