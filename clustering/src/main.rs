@@ -107,7 +107,8 @@ fn start(args: Args) -> Result<(), Box<dyn Error>> {
     let hybrid_clustering_options = HybridClusteringOptions {
         guide_decompose_options: decompose_options.clone(),
         hybrid_decompose_method: HybridClusteringMethods::default(),
-        hybrid_decompose_options: HybridClusteringMethodOptions {tiebreaking_strategy: TiebreakingStrategy::default(), manually_check_acyclic: args.manually_check_acyclic, recipient_requires_subsets: true} ,
+        hybrid_decompose_options: HybridClusteringMethodOptions {tiebreaking_strategy: TiebreakingStrategy::default(), recipient_requires_subsets: true} ,
+        manually_check_acyclic: args.manually_check_acyclic,
     };
     
     let mut structure_info: Option<StructureReader> = None;

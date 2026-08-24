@@ -394,7 +394,6 @@ pub fn prove_semantic_equivalence(user_input: Input) -> Result<(), ()> {
         guide_decompose_options: decompose_options,
         hybrid_decompose_method: HybridClusteringMethods::default(),
         hybrid_decompose_options: HybridClusteringMethodOptions {
-            tiebreaking_strategy: TiebreakingStrategy::default(),
             // A soundness condition, not a preference: with the specification as
             // the guide it forces signals(circuit k) subset of signals(spec k),
             // which is what lets a cluster's interface be stated in spec
@@ -402,6 +401,7 @@ pub fn prove_semantic_equivalence(user_input: Input) -> Result<(), ()> {
             recipient_requires_subsets: true,
             ..Default::default()
         },
+        manually_check_acyclic: false,
     };
 
     println!("LOG: clustering circuit and specification together");

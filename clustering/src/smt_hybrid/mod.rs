@@ -1,18 +1,18 @@
 use std::collections::{HashMap, HashSet};
 use strum_macros::Display;
 use clap::ValueEnum;
-use std::time::{Instant};
 
 use circuits_constraints_and_algebra::circuit::Circuit;
 use circuits_constraints_and_algebra::constraint::Constraint;
 use circuit_graphing::directed_acyclic_graph::DAGNode;
 use utils::small_utilities::{DecomposeOptions, CopyableDecomposeOptions};
 use crate::decompose_circuit::{decompose_circuit_and_return_dagnodes, convert_dagnodes_to_structure_reader};
-use crate::smt_hybrid::{guided_clustering::guided_clustering, shared_merge::merge_passthrough_shared};
-use utils::structure::{StructureReader, TimingInfo, TimingCategories, add_timing_info};
+use crate::smt_hybrid::{guided_clustering::guided_clustering};
+use utils::structure::{StructureReader, TimingInfo, add_timing_info};
 
 pub mod guided_clustering;
 pub mod shared_merge;
+pub mod shared_merge_applications;
 
 #[derive(Debug, Default, Display, Copy, Clone, ValueEnum, PartialEq)]
 pub enum HybridClusteringMethods {
@@ -23,7 +23,6 @@ pub enum HybridClusteringMethods {
 #[derive(Debug, Default, Copy, Clone)]
 pub struct HybridClusteringMethodOptions {
     pub tiebreaking_strategy: TiebreakingStrategy,
-    pub manually_check_acyclic: bool,
     pub recipient_requires_subsets: bool,
 }
 
@@ -37,6 +36,7 @@ pub struct HybridClusteringOptions<'a> {
     pub guide_decompose_options: DecomposeOptions<'a>,
     pub hybrid_decompose_method: HybridClusteringMethods,
     pub hybrid_decompose_options: HybridClusteringMethodOptions,
+    pub manually_check_acyclic: bool,
 }
 
 // NOTE: the semantic link between nodes is given by the nodes having the same usize identifier -- this is vital and assumed in later functions
@@ -51,7 +51,7 @@ fn circuit_and_smt_hybrid_clustering<'a, Cons: Constraint, Circ: Circuit<Cons> ,
 
     let (mut timing_info, mut guide_clustering) = decompose_circuit_and_return_dagnodes(circ, &mut (0..), guide_decompose_options);
 
-    let (mut recipient_clustering, secondary_timing) = match hybrid_decompose_method {
+    let (recipient_clustering, secondary_timing) = match hybrid_decompose_method {
         HybridClusteringMethods::GuidedClustering => {
             guided_clustering(circ, smt, &mut guide_clustering, hybrid_decompose_options, debug)
         }
@@ -59,14 +59,7 @@ fn circuit_and_smt_hybrid_clustering<'a, Cons: Constraint, Circ: Circuit<Cons> ,
     };
 
     add_timing_info(&mut timing_info, secondary_timing);
-
-    let shared_passthrough_removal = Instant::now();
-    merge_passthrough_shared(circ, smt, &mut guide_clustering, &mut recipient_clustering);
-    let shared_passthrough_removal = shared_passthrough_removal.elapsed().as_secs_f32();
-
-    *timing_info.entry(TimingCategories::SecondaryDagConstruction).or_default() += shared_passthrough_removal;
-    *timing_info.entry(TimingCategories::Total).or_default() += shared_passthrough_removal;
-    if debug > 0 {println!("LOG: Finished shared passthrough merge in {:?}s", shared_passthrough_removal);}
+    if options.manually_check_acyclic {let _ = DAGNode::get_topological_ordering(&guide_clustering);let _ = DAGNode::get_topological_ordering(&recipient_clustering);}
 
     (timing_info, guide_clustering, recipient_clustering)
 }
@@ -134,21 +127,13 @@ fn structure_driven_circuit_and_smt_hybrid_clustering<'a, Cons: Constraint + 'a,
 
         let (mut timing_info, mut smt_clustering) = decompose_circuit_and_return_dagnodes(&smt_subcircuit, id_generator, guide_decompose_options.into_decompose_options());
 
-        let (mut circuit_clustering, other_timing) = match hybrid_decompose_method {
+        let (circuit_clustering, other_timing) = match hybrid_decompose_method {
             HybridClusteringMethods::GuidedClustering => {
                 guided_clustering(&smt_subcircuit, &circuit_subcircuit, &mut smt_clustering, hybrid_decompose_options, debug)
             }
         };
 
         add_timing_info(&mut timing_info, other_timing);
-
-        let shared_passthrough_removal = Instant::now();
-        merge_passthrough_shared(&circuit_subcircuit, &smt_subcircuit, &mut circuit_clustering, &mut smt_clustering);
-        let shared_passthrough_removal = shared_passthrough_removal.elapsed().as_secs_f32();
-
-        *timing_info.entry(TimingCategories::SecondaryDagConstruction).or_default() += shared_passthrough_removal;
-        *timing_info.entry(TimingCategories::Total).or_default() += shared_passthrough_removal;
-        if debug > 0 {println!("LOG: Finished shared passthrough merge in {:?}s", shared_passthrough_removal);}
 
         // map indices back to previous and move cluster to toplevel -- signals are original signals due to LightweightCircuit
         let circ_inverse_constraint_mapping: Option<&[usize]> = Some(&node.constraints);
