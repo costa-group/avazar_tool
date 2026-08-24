@@ -23,8 +23,10 @@ pub(crate) fn guided_clustering<'a, Cons: Constraint, Circ: Circuit<Cons> , Atom
 
     let mut circ_cluster_signals: HashMap<usize, HashSet<usize>> = guide_clustering.into_iter().map(|(k, v)| (*k, v.signals())).collect();
 
-    let printable = circ_cluster_signals.clone().into_iter().map(|(key, val)| (key, val.into_iter().sorted().collect::<Vec<_>>())).sorted().collect::<Vec<_>>();
-    if debug > 2 { println!("cluster_to_signal initial: {:?}", printable); }
+    if debug > 2 {
+        let printable = circ_cluster_signals.clone().into_iter().map(|(key, val)| (key, val.into_iter().sorted().collect::<Vec<_>>())).sorted().collect::<Vec<_>>();
+        println!("cluster_to_signal initial: {:?}", printable); 
+    }
 
     let mut signals_to_clusters: HashMap<usize, Vec<usize>> = HashMap::new();
     for (cluster_id, signals) in circ_cluster_signals.iter() {for sig in signals.into_iter().copied() {

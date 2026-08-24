@@ -400,6 +400,7 @@ pub fn prove_semantic_equivalence(user_input: Input) -> Result<(), ()> {
             // which is what lets a cluster's interface be stated in spec
             // variables at all.
             recipient_requires_subsets: true,
+            ..Default::default()
         },
     };
 

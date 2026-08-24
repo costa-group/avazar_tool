@@ -23,6 +23,7 @@ pub enum HybridClusteringMethods {
 #[derive(Debug, Default, Copy, Clone)]
 pub struct HybridClusteringMethodOptions {
     pub tiebreaking_strategy: TiebreakingStrategy,
+    pub manually_check_acyclic: bool,
     pub recipient_requires_subsets: bool,
 }
 
