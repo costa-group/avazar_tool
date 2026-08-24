@@ -134,7 +134,7 @@ pub(crate) fn merge_until_all_inputs_outputs_same<'a, LCon: Constraint, Left: Ci
         
         let (left, right) = (&left_nodes[&root], &right_nodes[&root]);
         
-        let mut to_merge: HashSet<usize> = HashSet::new();
+        let mut to_merge: HashSet<usize> = [root].into_iter().collect();
         fn select_nodes_from_list_that_contain_any_of_signals<'a, C: Constraint, S: Circuit<C>>(nodes: &HashMap<usize, DAGNode<'a, C, S>>, nodi_list: &Vec<usize>, target_signals: &HashSet<usize>, check_output: bool) -> impl Iterator<Item = usize> {
             nodi_list.into_iter().copied().filter(move |nodi| {
                 let target_set = if check_output {nodes[nodi].get_output_signals()} else {nodes[nodi].get_input_signals()};
