@@ -507,34 +507,6 @@ fn resolved_var_json(v: &ResolvedVar) -> String {
     }
 }
 
-fn resolved_node_json(node: &ResolvedTagNode, ind: usize, show_unresolved: bool) -> String {
-    let pad = "  ".repeat(ind);
-    let pad2 = "  ".repeat(ind + 1);
-    let mut s = String::new();
-    s.push_str(&format!("{}{{\n", pad));
-    s.push_str(&format!("{}\"tag\": {},\n", pad2, crate::json_string(&node.tag)));
-    s.push_str(&format!(
-        "{}\"vars\": {},\n",
-        pad2,
-        resolved_first_var_array_json(&node.own, show_unresolved)
-    ));
-    if node.children.is_empty() {
-        s.push_str(&format!("{}\"children\": []\n", pad2));
-    } else {
-        s.push_str(&format!("{}\"children\": [\n", pad2));
-        for (i, c) in node.children.iter().enumerate() {
-            s.push_str(&resolved_node_json(c, ind + 2, show_unresolved));
-            if i + 1 < node.children.len() {
-                s.push(',');
-            }
-            s.push('\n');
-        }
-        s.push_str(&format!("{}]\n", pad2));
-    }
-    s.push_str(&format!("{}}}", pad));
-    s
-}
-
 /// All of a node's already-resolved variables, recursively aggregating its
 /// children (flat view). Analogous to [`crate::aggregate`] for
 /// [`ResolvedTagNode`].
@@ -565,6 +537,22 @@ fn merge_pair_resolved(into: &mut Vec<(String, Vec<ResolvedVar>)>, tag: String, 
             }
         }
         None => into.push((tag, vars)),
+    }
+}
+
+/// [`merge_pair_resolved`] over ids instead of variables: what the `single` mode
+/// needs once its values are resolved. Same rule -- a tag seen twice adds only
+/// the ids it brings that are not there yet.
+fn merge_pair_ids(into: &mut Vec<(String, Vec<usize>)>, tag: String, ids: Vec<usize>) {
+    match into.iter_mut().find(|(t, _)| *t == tag) {
+        Some((_, existing)) => {
+            for id in ids {
+                if !existing.contains(&id) {
+                    existing.push(id);
+                }
+            }
+        }
+        None => into.push((tag, ids)),
     }
 }
 
@@ -735,60 +723,123 @@ pub fn to_json_flat_resolved(macros: &[ResolvedMacroEntry], show_unresolved: boo
     out
 }
 
-/// Nested view of already-resolved macros (signal ids instead of SMT names).
+/// Single-dictionary view: EVERY instance's tags in one map, each tag prefixed
+/// with the instance it belongs to.
 ///
-/// Same per-instance grouping as [`to_json_flat_resolved`] (see
-/// [`group_by_name`]); `show_unresolved = false` (the CLI default) omits
-/// the `v_i`s with no r1cs signal associated, see [`resolved_first_var_array_json`].
-pub fn to_json_nested_resolved(macros: &[ResolvedMacroEntry], show_unresolved: bool) -> String {
-    let groups = group_by_name(macros);
-    let mut out = String::from("{\n");
-    for (gi, (name, instances)) in groups.iter().enumerate() {
-        out.push_str(&format!("  {}: [\n", crate::json_string(name)));
-        for (ii, m) in instances.iter().enumerate() {
-            out.push_str("    {\n");
-            out.push_str(&format!(
-                "      \"instance\": {},\n",
-                crate::json_string(&m.instance_prefix)
-            ));
-            let mut v_acum = m.level0.clone();
-            for node in &m.tree {
-                v_acum.extend(aggregate_resolved(node));
-            }
-            for line in equality_groups_json(&equality_groups(&v_acum), "      ") {
-                out.push_str(&line);
-                out.push_str(",\n");
-            }
-            out.push_str(&format!(
-                "      \"level0\": {},\n",
-                resolved_first_var_array_json(&m.level0, show_unresolved)
-            ));
-            if m.tree.is_empty() {
-                out.push_str("      \"tags\": []\n");
-            } else {
-                out.push_str("      \"tags\": [\n");
-                for (i, node) in m.tree.iter().enumerate() {
-                    out.push_str(&resolved_node_json(node, 4, show_unresolved));
-                    if i + 1 < m.tree.len() {
-                        out.push(',');
-                    }
-                    out.push('\n');
-                }
-                out.push_str("      ]\n");
-            }
-            out.push_str("    }");
-            if ii + 1 < instances.len() {
-                out.push(',');
-            }
-            out.push('\n');
+/// The per-macro view ([`to_json_flat_resolved`])
+/// keep one entry per macro and, inside it, one object per instance. That shape
+/// is what the structure-driven clustering wants, because it looks the atoms of
+/// each component up by name. The PLAIN hybrid clustering wants the opposite: one
+/// global formula to pair against the whole r1cs, with no component decomposition
+/// at all -- and for that the instances have to be merged into a single map.
+///
+/// Merging them needs the prefix, or two instances of the same template would
+/// collide on every tag they share (`"if (%6 == 1)"` appears once per instance).
+/// So the key becomes `main.lt.if (%6 == 1)`, and the value is exactly what the
+/// per-macro views already produce for that tag.
+///
+/// The envelope is the one `parse_formula` reads (`{ name: [ { "instance": ...,
+/// tag: [...] } ] }`), with a single outer key and a single instance, so the
+/// clustering takes the file as it stands. That also means this file must NOT be
+/// passed with `--circuit-structure`: the structure-driven mode looks every
+/// component up by name and only `main` is there.
+pub fn to_json_single_resolved(macros: &[ResolvedMacroEntry], synthetic_base: usize) -> String {
+    // Every variable with no r1cs wire behind it gets an id of its own, above
+    // every real signal. Unlike the other modes, which just omit them: the point
+    // of this file is to be clustered, the clustering works by shared ids, and
+    // the chain computing an output runs THROUGH those temporaries -- omitted,
+    // the atoms doing the work look signal-less, land nowhere, and their part of
+    // the specification is never asserted. `main.%3 := felt.mul %2 %1` is the
+    // whole of an llzk body and would vanish. Per instance, since `%1` of
+    // `main.a` and `%1` of `main.b` are different variables.
+    let mut synthetic: BTreeMap<(String, String), usize> = BTreeMap::new();
+    let mut next_synthetic = synthetic_base;
+    // Every instance in the order `resolve_full` produced them, which is the
+    // walk down from the root, so the file reads top-down like the circuit.
+    let mut pairs: Vec<(String, Vec<usize>)> = Vec::new();
+    let mut equalities: Vec<(String, Vec<usize>)> = Vec::new();
+    for m in macros {
+        let prefixed = |tag: &str| format!("{}.{}", m.instance_prefix, tag);
+
+        let mut own: Vec<(String, Vec<ResolvedVar>)> = Vec::new();
+        own.push((prefixed("level0"), m.level0.clone()));
+        for node in &m.tree {
+            merge_pair_resolved(&mut own, prefixed(&node.tag), aggregate_resolved(node));
         }
-        out.push_str("  ]");
-        if gi + 1 < groups.len() {
+
+        // The tie groups are per instance too, and their names (`equality1`,
+        // `equality2`) repeat across instances, so they get the same treatment.
+        let mut v_acum: Vec<ResolvedVar> = Vec::new();
+        for (_, v) in &own {
+            v_acum.extend_from_slice(v);
+        }
+        for (idx, ids) in equality_groups(&v_acum).into_iter().enumerate() {
+            equalities.push((prefixed(&format!("equality{}", idx + 1)), ids));
+        }
+
+        // Resolved to plain ids here, where the instance prefix is still in
+        // scope: it is what tells two instances' temporaries apart.
+        for (tag, vars) in own {
+            let mut ids: Vec<usize> = Vec::new();
+            for var in vars.iter() {
+                match var {
+                    ResolvedVar::Signal(signals) => {
+                        // The smallest of a tie, same as every other view; the
+                        // rest of the group is in the `equalityN` entries.
+                        if let Some(first) = signals.first() {
+                            ids.push(*first);
+                        }
+                    }
+                    ResolvedVar::Unresolved(name) => {
+                        let key = (m.instance_prefix.clone(), name.clone());
+                        let id = *synthetic.entry(key).or_insert_with(|| {
+                            let id = next_synthetic;
+                            next_synthetic += 1;
+                            id
+                        });
+                        ids.push(id);
+                    }
+                }
+            }
+            // An instance prefix is unique, so this only ever appends; going
+            // through the same guard as the other views keeps the "same tag
+            // twice" rule identical.
+            merge_pair_ids(&mut pairs, tag, ids);
+        }
+    }
+
+    let root = macros
+        .first()
+        .map(|m| m.instance_prefix.clone())
+        .unwrap_or_else(|| "main".to_string());
+
+    let mut out = String::from("{\n");
+    out.push_str(&format!("  {}: [\n", crate::json_string("all")));
+    out.push_str(&format!(
+        "    {{\n      \"instance\": {},\n",
+        crate::json_string(&root)
+    ));
+    for (tag, ids) in equalities.iter() {
+        let ids_str: Vec<String> = ids.iter().map(|id| id.to_string()).collect();
+        out.push_str(&format!(
+            "      {}: [{}],\n",
+            crate::json_string(tag),
+            ids_str.join(", ")
+        ));
+    }
+    for (pi, (tag, ids)) in pairs.iter().enumerate() {
+        let ids_str: Vec<String> = ids.iter().map(|id| id.to_string()).collect();
+        out.push_str(&format!(
+            "      {}: [{}]",
+            crate::json_string(tag),
+            ids_str.join(", ")
+        ));
+        if pi + 1 < pairs.len() {
             out.push(',');
         }
         out.push('\n');
     }
-    out.push('}');
+    out.push_str("    }\n  ]\n}");
     out
 }
 
@@ -804,6 +855,112 @@ mod tests {
             components_info: HashMap::new(),
             formula: String::new(),
         }
+    }
+
+    // ---- the single-dictionary mode --------------------------------------
+
+    fn resolved_entry(name: &str, prefix: &str, tags: &[(&str, &[usize])]) -> ResolvedMacroEntry {
+        ResolvedMacroEntry {
+            name: name.to_string(),
+            instance_prefix: prefix.to_string(),
+            level0: Vec::new(),
+            tree: tags
+                .iter()
+                .map(|(tag, ids)| ResolvedTagNode {
+                    tag: tag.to_string(),
+                    own: ids.iter().map(|id| ResolvedVar::Signal(vec![*id])).collect(),
+                    children: Vec::new(),
+                    formula: String::new(),
+                })
+                .collect(),
+            bindings: BTreeMap::new(),
+        }
+    }
+
+    /// The written JSON, parsed back: what the clustering will actually see.
+    /// 100 as the synthetic base, well above the ids these fixtures use, so a
+    /// temporary's id is recognisable on sight.
+    fn single_json(entries: &[ResolvedMacroEntry]) -> serde_json::Value {
+        serde_json::from_str(&to_json_single_resolved(entries, 100))
+            .expect("the single mode has to emit valid JSON")
+    }
+
+    #[test]
+    fn every_instance_lands_in_one_dictionary_under_the_envelope_parse_formula_reads() {
+        let entries = vec![
+            resolved_entry("@Main_0", "main", &[("step0", &[1, 2])]),
+            resolved_entry("@Lt_0", "main.lt", &[("step0", &[3])]),
+        ];
+        let v = single_json(&entries);
+
+        // One outer key, one instance object: a single global formula, which is
+        // what the plain hybrid clustering pairs against the whole r1cs.
+        let obj = v.as_object().unwrap();
+        assert_eq!(obj.len(), 1);
+        let instances = obj["all"].as_array().unwrap();
+        assert_eq!(instances.len(), 1);
+        assert_eq!(instances[0]["instance"], "main", "the root prefix names the lot");
+    }
+
+    #[test]
+    fn the_same_tag_in_two_instances_does_not_collide() {
+        // Both instances of the same template carry a tag called "step0". Without
+        // the prefix one would overwrite the other and half the specification
+        // would vanish from the file.
+        let entries = vec![
+            resolved_entry("@Lt_0", "main.a", &[("step0", &[1])]),
+            resolved_entry("@Lt_0", "main.b", &[("step0", &[2])]),
+        ];
+        let v = single_json(&entries);
+        let inst = v["all"][0].as_object().unwrap();
+
+        assert_eq!(inst["main.a.step0"], json!([1]));
+        assert_eq!(inst["main.b.step0"], json!([2]));
+        assert!(inst.get("step0").is_none(), "no tag is left unprefixed");
+    }
+
+    #[test]
+    fn the_value_is_the_same_as_the_per_macro_view() {
+        // The only difference between the two views is the key. A tie still
+        // prints its smallest id inline, and its group still comes out as an
+        // `equality` entry -- prefixed too, or the instances would collide there.
+        let mut entry = resolved_entry("@Main_0", "main", &[("step0", &[4])]);
+        entry.tree[0].own.push(ResolvedVar::Signal(vec![7, 9]));
+        let v = single_json(&[entry]);
+        let inst = v["all"][0].as_object().unwrap();
+
+        assert_eq!(inst["main.step0"], json!([4, 7]), "the tie shows its smallest id");
+        assert_eq!(inst["main.equality1"], json!([7, 9]), "and the group is listed apart");
+    }
+
+    #[test]
+    fn an_unresolved_variable_gets_an_id_above_every_real_signal() {
+        // Not omitted, as the other views do: the clustering works by shared
+        // ids, so a tag written only over temporaries would otherwise carry no
+        // signal at all, land nowhere, and never be asserted.
+        let mut entry = resolved_entry("@Main_0", "main", &[("step0", &[4])]);
+        entry.tree[0].own.push(ResolvedVar::Unresolved("v_9".to_string()));
+        let v = single_json(std::slice::from_ref(&entry));
+
+        assert_eq!(v["all"][0]["main.step0"], json!([4, 100]));
+    }
+
+    #[test]
+    fn the_same_temporary_keeps_one_id_and_two_instances_keep_two() {
+        // `v_9` twice in one instance is one variable and has to share an id, or
+        // the two tags stop being connected. `v_9` of another instance is a
+        // different variable and must not be tied to it.
+        let mut a = resolved_entry("@Lt_0", "main.a", &[("step0", &[1]), ("step1", &[2])]);
+        a.tree[0].own.push(ResolvedVar::Unresolved("v_9".to_string()));
+        a.tree[1].own.push(ResolvedVar::Unresolved("v_9".to_string()));
+        let mut b = resolved_entry("@Lt_0", "main.b", &[("step0", &[3])]);
+        b.tree[0].own.push(ResolvedVar::Unresolved("v_9".to_string()));
+        let v = single_json(&[a, b]);
+        let inst = v["all"][0].as_object().unwrap();
+
+        assert_eq!(inst["main.a.step0"], json!([1, 100]));
+        assert_eq!(inst["main.a.step1"], json!([2, 100]), "the same variable, the same id");
+        assert_eq!(inst["main.b.step0"], json!([3, 101]), "another instance, another variable");
     }
 
     #[test]
@@ -1166,13 +1323,6 @@ mod tests {
     #[test]
     fn flat_json_shows_smallest_tied_id_inline_and_lists_the_group_as_an_equality() {
         let text = to_json_flat_resolved(&[mux4_1_collision_resolved()], true);
-        assert!(text.contains("\"level0\": [3]"), "{text}");
-        assert!(text.contains("\"equality1\": [3, 20]"), "{text}");
-    }
-
-    #[test]
-    fn nested_json_also_shows_smallest_tied_id_inline_and_lists_the_group_as_an_equality() {
-        let text = to_json_nested_resolved(&[mux4_1_collision_resolved()], true);
         assert!(text.contains("\"level0\": [3]"), "{text}");
         assert!(text.contains("\"equality1\": [3, 20]"), "{text}");
     }

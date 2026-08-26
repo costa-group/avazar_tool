@@ -27,6 +27,7 @@ pub struct Input {
     pub check_equivalence: Option<PathBuf>,
     pub check_correctness: Option<PathBuf>,
     pub check_semantic_equivalence: Option<PathBuf>,
+    pub resolved_formula: Option<PathBuf>,
     pub report_output: Option<PathBuf>,
     pub dump_dir: Option<PathBuf>,
     pub instance_adjacency: bool,
@@ -56,6 +57,7 @@ impl Input {
         let check_equivalence = input_processing::get_check_equivalence(&matches)?;
         let check_correctness = input_processing::get_check_correctness(&matches)?;
         let check_semantic_equivalence = input_processing::get_check_semantic_equivalence(&matches)?;
+        let resolved_formula = input_processing::get_resolved_formula(&matches)?;
 
         let limit_size = input_processing::get_limit_size(&matches)?;
         let report_output = input_processing::get_report_output(&matches);
@@ -83,6 +85,7 @@ impl Input {
             check_equivalence,
             check_correctness,
             check_semantic_equivalence,
+            resolved_formula,
 
             report_output,
             dump_dir,
@@ -158,6 +161,19 @@ mod input_processing {
             }
         } else{
             Ok(None)
+        }
+    }
+
+    pub fn get_resolved_formula(matches: &ArgMatches) -> Result<Option<PathBuf>, ()> {
+        if matches.is_present("resolved_formula") {
+            let route = Path::new(matches.value_of("resolved_formula").unwrap()).to_path_buf();
+            if route.is_file() {
+                Result::Ok(Some(route))
+            } else {
+                Result::Err(eprintln!("{}", Colour::Red.paint("Resolved formula file does not exist: ".to_owned() + &route.display().to_string())))
+            }
+        } else {
+            Result::Ok(None)
         }
     }
 
@@ -395,6 +411,15 @@ mod input_processing {
                     .display_order(131)
             )
             .arg(
+                Arg::with_name("resolved_formula")
+                    .long("resolved_formula")
+                    .hidden(false)
+                    .takes_value(true)
+                    .requires("check_semantic_equivalence")
+                    .help("--check_semantic_equivalence only: the specification already resolved to signal ids by `llzk_smt_preprocessor --mode single`, one flat dictionary whose tags carry the instance they belong to as a prefix. Given it, the circuit is clustered against that ONE formula instead of once per component instance, so a cluster may cut across instances; the specification passed to --check_semantic_equivalence is still needed, for the atoms' SMT-LIB text. --input_structure is then only used to build the atoms")
+                    .display_order(132)
+            )
+            .arg(
                 Arg::with_name("timeout")
                     .long("timeout")
                     .takes_value(true)
@@ -517,7 +542,7 @@ mod input_processing {
                     .long("dump_dir")
                     .takes_value(true)
                     .display_order(901)
-                    .help("--check_semantic_equivalence only: directory to write the debug artefacts of the run into, created if missing. `resolved.json` is the specification as the clustering sees it (macro -> instance -> tag -> signals, the shape llzk_smt_preprocessor writes, so the two can be diffed); `raw_clustering.json` is the hybrid clustering exactly as the algorithm returned it, every instance including those no query was built for; `clusters.json` is one record per cluster pair actually verified, with its verdict, its interface and its atoms"),
+                    .help("--check_semantic_equivalence only: directory to write the debug artefacts of the run into, created if missing. `structure.json` is the component structure the run used, derived from the specification unless --input_structure gave one, and is what `llzk_smt_preprocessor --structure` needs to write the file --resolved_formula reads; `resolved.json` is the specification as the clustering sees it (macro -> instance -> tag -> signals, the shape llzk_smt_preprocessor writes, so the two can be diffed); `raw_clustering.json` is the hybrid clustering exactly as the algorithm returned it, every instance including those no query was built for; `clusters.json` is one record per cluster pair actually verified, with its verdict, its interface and its atoms"),
             )
             .arg(
                 Arg::with_name("report")

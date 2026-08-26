@@ -5,9 +5,9 @@
 //!
 //! Groups each llzk macro's parameters by its `:meta-data` annotations, over
 //! [`yaspar`](https://crates.io/crates/yaspar). Builds a TREE of tags that
-//! respects the nesting of `!`, in two views: [`to_json_flat`] (per top-level
-//! formula, every variable it touches) and [`to_json_nested`] (structure kept,
-//! each tag with its own variables and children).
+//! respects the nesting of `!`, and flattens it: [`to_json_flat`] gives, per
+//! top-level formula, every variable it touches. The tree itself is not emitted
+//! -- nothing downstream consumed it.
 //!
 //! [`analyze`] takes a whole `.smt2`. In practice the input is the same
 //! specification JSON `zk-genver` consumes, where each macro carries its
@@ -289,59 +289,6 @@ pub fn to_json_flat(macros: &[MacroEntry]) -> String {
                 out.push(',');
             }
             out.push('\n');
-        }
-        out.push_str("  }");
-        if mi + 1 < macros.len() {
-            out.push(',');
-        }
-        out.push('\n');
-    }
-    out.push('}');
-    out
-}
-
-fn node_json(node: &TagNode, ind: usize) -> String {
-    let pad = "  ".repeat(ind);
-    let pad2 = "  ".repeat(ind + 1);
-    let mut s = String::new();
-    s.push_str(&format!("{}{{\n", pad));
-    s.push_str(&format!("{}\"tag\": {},\n", pad2, json_string(&node.tag)));
-    s.push_str(&format!("{}\"vars\": {},\n", pad2, json_array(&node.own)));
-    if node.children.is_empty() {
-        s.push_str(&format!("{}\"children\": []\n", pad2));
-    } else {
-        s.push_str(&format!("{}\"children\": [\n", pad2));
-        for (i, c) in node.children.iter().enumerate() {
-            s.push_str(&node_json(c, ind + 2));
-            if i + 1 < node.children.len() {
-                s.push(',');
-            }
-            s.push('\n');
-        }
-        s.push_str(&format!("{}]\n", pad2));
-    }
-    s.push_str(&format!("{}}}", pad));
-    s
-}
-
-/// Nested view: preserves the tag structure.
-pub fn to_json_nested(macros: &[MacroEntry]) -> String {
-    let mut out = String::from("{\n");
-    for (mi, m) in macros.iter().enumerate() {
-        out.push_str(&format!("  {}: {{\n", json_string(&m.name)));
-        out.push_str(&format!("    \"level0\": {},\n", json_array(&m.level0)));
-        if m.tree.is_empty() {
-            out.push_str("    \"tags\": []\n");
-        } else {
-            out.push_str("    \"tags\": [\n");
-            for (i, node) in m.tree.iter().enumerate() {
-                out.push_str(&node_json(node, 3));
-                if i + 1 < m.tree.len() {
-                    out.push(',');
-                }
-                out.push('\n');
-            }
-            out.push_str("    ]\n");
         }
         out.push_str("  }");
         if mi + 1 < macros.len() {

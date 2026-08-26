@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! CLI for the `llzk_smt_preprocessor` crate: analyzes the grouping of
-//! parameters by `:meta-data` into JSON (flat or nested mode).
+//! parameters by `:meta-data` into JSON (flat or single mode).
 //!
 //! `file` accepts two formats:
 //! - the specification JSON that `zk-genver` already consumes
@@ -24,8 +24,10 @@ use std::fs;
 use clap::Parser as ClapParser;
 use llzk_smt_preprocessor::graph::resolve_full;
 use llzk_smt_preprocessor::pretty::pretty_print_smt;
-use llzk_smt_preprocessor::resolve::{to_json_flat_resolved, to_json_nested_resolved};
-use llzk_smt_preprocessor::{analyze, analyze_specification, to_json_flat, to_json_nested};
+use llzk_smt_preprocessor::resolve::{
+    to_json_flat_resolved, to_json_single_resolved,
+};
+use llzk_smt_preprocessor::{analyze, analyze_specification, to_json_flat};
 use utils::read_correspondence::read_signal_correspondence;
 use utils::read_specification::read_smt_specification;
 use utils::structure::read_structure;
@@ -34,12 +36,17 @@ use utils::structure::read_structure;
 enum Mode {
     /// For each top-level formula, all the variables (aggregated).
     Flat,
-    /// Preserves the nested tag structure.
-    Nested,
+    /// Every instance's tags in ONE dictionary, each key prefixed with the
+    /// instance it belongs to. This is the shape the plain hybrid clustering
+    /// reads: one global formula, no component decomposition. Variables with no
+    /// r1cs wire get a synthetic id above every real signal instead of being
+    /// omitted, so --show-unresolved has no effect here. Only meaningful with
+    /// --correspondence and --structure.
+    Single,
 }
 
 #[derive(ClapParser, Debug)]
-#[command(about = "Groups macro parameters by :meta-data (flat / nested modes)")]
+#[command(about = "Groups macro parameters by :meta-data (flat / single modes)")]
 struct Cli {
     /// Specification JSON (e.g. results/iszero.json), or failing that, a
     /// raw .smt2.
@@ -128,13 +135,19 @@ fn main() {
 
             let resolved = resolve_full(macro_defs, &structure, &name_to_signal)
                 .unwrap_or_else(|e| {
-                    eprintln!("Error al resolver: {}", e);
+                    eprintln!("Could not resolve the specification: {}", e);
                     std::process::exit(1);
                 });
 
             let json = match args.mode {
                 Mode::Flat => to_json_flat_resolved(&resolved, args.show_unresolved),
-                Mode::Nested => to_json_nested_resolved(&resolved, args.show_unresolved),
+                // The `single` mode gives the variables with no r1cs wire an id
+                // of their own instead of omitting them, so they start above
+                // every real signal and can never be mistaken for one.
+                Mode::Single => to_json_single_resolved(
+                    &resolved,
+                    name_to_signal.values().copied().max().unwrap_or(0) + 1,
+                ),
             };
             println!("{}", json);
         }
@@ -143,7 +156,15 @@ fn main() {
         (None, None, _) => {
             let json = match args.mode {
                 Mode::Flat => to_json_flat(&macros),
-                Mode::Nested => to_json_nested(&macros),
+                // Nothing to prefix without the instance walk, which needs
+                // --correspondence and --structure.
+                Mode::Single => {
+                    eprintln!(
+                        "--mode single needs --correspondence and --structure: the prefixes are \
+                         the instance names, and those come from walking the component graph"
+                    );
+                    std::process::exit(1);
+                }
             };
             println!("{}", json);
         }

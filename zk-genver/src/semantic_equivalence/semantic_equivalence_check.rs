@@ -10,6 +10,18 @@
 //! llzk preprocessor; cluster once, guided by the specification; verify every
 //! pair; aggregate.
 //!
+//! ## Two ways to cluster
+//!
+//! By default the component structure drives it: one clustering per instance,
+//! and a subcomponent enters its parent's query as an abstraction.
+//!
+//! With `--resolved_formula` there is no structure to drive anything. The file
+//! is `llzk_smt_preprocessor --mode single` output -- every instance's tags in
+//! one dictionary, each key prefixed with the instance it came from -- and the
+//! whole r1cs is clustered against that one formula, so a cluster may cut across
+//! instances. The specification is still read, for the atoms' SMT-LIB text.
+//! `prove_flat` and [`flat_mode`](super::flat_mode) are that path.
+//!
 //! ## Deliberately not here yet
 //!
 //! - **No re-decomposition.** A cluster that comes back UNKNOWN is not split
@@ -32,6 +44,7 @@ use circuits_constraints_and_algebra::lightweight_circuit::LightweightCircuit;
 use circuits_constraints_and_algebra::num_bigint::BigInt;
 use circuits_constraints_and_algebra::r1cs::R1CSConstraint as Constraint;
 use clustering::smt_hybrid::{
+    circuit_and_smt_hybrid_clustering_into_structurereader,
     structure_driven_circuit_and_smt_hybrid_clustering_into_structurereader,
     HybridClusteringMethodOptions, HybridClusteringMethods, HybridClusteringOptions,
     TiebreakingStrategy,
@@ -47,10 +60,11 @@ use circuits_constraints_and_algebra::constraint::Constraint as _;
 
 use crate::processing_utils::process_constraints;
 use crate::report;
-use crate::semantic_equivalence::atoms::{build_atoms, required_macro_definitions};
+use crate::semantic_equivalence::atoms::{build_atoms, required_macro_definitions, AtomTable};
+use crate::semantic_equivalence::flat_mode::{align_atoms, read_flat_formula, restrict_to_asserted};
 use crate::semantic_equivalence::modular_reasoning::{
-    check_cluster, index_by_id, unbound_boundary_signals, ChildPorts,
-    ClusterPair, InstanceInterface, VerificationContext,
+    check_cluster, child_implication, index_by_id, unbound_boundary_signals, ChildPorts,
+    ClusterPair, InlinedInstances, InstanceInterface, VerificationContext,
 };
 use crate::Input;
 
@@ -298,6 +312,12 @@ pub fn prove_semantic_equivalence(user_input: Input) -> Result<(), ()> {
         eprintln!("{}", msg);
         return Err(());
     }
+    // Written whether it was read or derived: `llzk_smt_preprocessor --structure`
+    // needs one, and without this a run that derived its own has nothing to hand
+    // it -- which is the whole input of `--resolved_formula`.
+    if let Some(dump_dir) = &user_input.dump_dir {
+        dump_json(dump_dir, "structure.json", &structure_reader, "Circuit structure");
+    }
     let structure: StructureInfo = transform_structure_reader(clone_reader(&structure_reader));
 
     // ---- one prime for both sides ----------------------------------------
@@ -332,6 +352,12 @@ pub fn prove_semantic_equivalence(user_input: Input) -> Result<(), ()> {
     // itself with `build_atoms`, so the two can drift; this makes them
     // comparable.
     if let Some(dump_dir) = &user_input.dump_dir {
+        // The ids invented for specification variables with no r1cs wire are
+        // left out. They are real to the clustering -- that is what they are for
+        // -- but they are not signals, and the preprocessor's own view omits the
+        // variables behind them, so printing them here would make every tag look
+        // different from its counterpart in a file written to be diffed.
+        let synthetic: HashSet<usize> = table.unresolved_ids.values().copied().collect();
         let mut by_macro: IndexMap<String, IndexMap<String, IndexMap<String, Vec<usize>>>> =
             IndexMap::new();
         for (idx, info) in table.atoms.iter().enumerate() {
@@ -339,17 +365,30 @@ pub fn prove_semantic_equivalence(user_input: Input) -> Result<(), ()> {
                 .atoms()
                 .get(idx)
                 .map(|a| {
-                    let mut s = a.signals.clone();
+                    let mut s: Vec<usize> =
+                        a.signals.iter().copied().filter(|x| !synthetic.contains(x)).collect();
                     s.sort_unstable();
                     s
                 })
                 .unwrap_or_default();
-            by_macro
+            // UNION, not insert: one instance can hold several atoms under the
+            // same tag, and a JSON object has one key each. Overwriting would
+            // show the last of them and quietly hide the rest -- in a file whose
+            // whole purpose is to be diffed against the preprocessor's, which
+            // unions them too (`merge_pair_resolved`).
+            let entry = by_macro
                 .entry(info.macro_name.clone())
                 .or_default()
                 .entry(info.instance.clone())
                 .or_default()
-                .insert(info.tag.clone(), signals);
+                .entry(info.tag.clone())
+                .or_insert_with(Vec::new);
+            for signal in signals {
+                if !entry.contains(&signal) {
+                    entry.push(signal);
+                }
+            }
+            entry.sort_unstable();
         }
         // The preprocessor writes the instance name as a field of the object,
         // not as a key, so mirror that.
@@ -371,6 +410,26 @@ pub fn prove_semantic_equivalence(user_input: Input) -> Result<(), ()> {
             })
             .collect();
         dump_json(dump_dir, "resolved.json", &shaped, "Resolved formula");
+    }
+
+    // ---- the flat alternative --------------------------------------------
+    // With `--resolved_formula` the component structure stops driving the
+    // clustering: the circuit is clustered against ONE formula, the whole
+    // specification at once, and a cluster is free to cut across instances.
+    // Everything above still runs -- the atoms' SMT-LIB text and the bindings
+    // come from `build_atoms` either way, and that needs the structure.
+    if let Some(flat_path) = user_input.resolved_formula.as_ref() {
+        return prove_flat(
+            &user_input,
+            flat_path,
+            &spec,
+            &table,
+            &constraints,
+            &inputs,
+            &outputs,
+            &field,
+            &pos_to_name,
+        );
     }
 
     // ---- step 3: the hybrid clustering, once -----------------------------
@@ -401,7 +460,6 @@ pub fn prove_semantic_equivalence(user_input: Input) -> Result<(), ()> {
             recipient_requires_subsets: true,
             ..Default::default()
         },
-        manually_check_acyclic: false,
     };
 
     println!("LOG: clustering circuit and specification together");
@@ -413,17 +471,18 @@ pub fn prove_semantic_equivalence(user_input: Input) -> Result<(), ()> {
         if user_input.flag_verbose { 2 } else { 1 },
     );
 
-    // ASSUMED FROM HERE ON: the clusters admit a single order in which every
-    // hypothesis is discharged before it is used -- the union of both sides'
-    // edges and the proves->assumes edges is acyclic. Nothing below establishes
-    // it, and the per-cluster results only compose if it holds.
+    // Each side is acyclic on its own: the clustering checks it before returning,
+    // unconditionally, and panics with "DAG contains a cycle" if it is not. That is
+    // the only acyclicity check there is -- the one this mode used to run over the
+    // union of both sides' edges plus the proves->assumes edges was removed, since
+    // it reported cycles on runs that were fine.
     //
-    // Assumed rather than checked because the check that used to be here reported
-    // cycles on runs that were fine (several clusters listing one signal as an
-    // output put an edge from each, downstream ones included). What justifies it:
-    // `guided_clustering` orients the recipient with the guide's own topological
-    // order, so the two sides cannot disagree on a shared edge's direction, and
-    // `agree_on_merge` keeps every merge acyclic on both sides.
+    // What is therefore still ASSUMED here: that the two orders can be taken
+    // together. `guided_clustering` orients the recipient with the guide's own
+    // topological order, so the two sides cannot disagree on the direction of a
+    // shared edge, and `agree_on_merge` keeps every merge acyclic on both sides --
+    // but nothing verifies the union, and the per-cluster results only compose if
+    // it holds.
 
     if let Some(dump_dir) = &user_input.dump_dir {
         let prefixes_for_dump = instance_prefixes(&structure);
@@ -478,6 +537,20 @@ pub fn prove_semantic_equivalence(user_input: Input) -> Result<(), ()> {
         signal_names: &pos_to_name,
     };
 
+    // Every instance's clusterings, reachable by prefix: the refinement's second
+    // phase asserts a child instance in full, which means reaching outside the
+    // instance being verified.
+    let mut catalogue: Catalogue = HashMap::new();
+    for (idx, (circuit_clusters, spec_clusters)) in clusterings.iter().enumerate() {
+        let node_id = structure.nodes[idx].node_id;
+        if let (Some(prefix), Some(interface)) = (prefixes.get(&node_id), interfaces.get(&node_id)) {
+            catalogue.insert(
+                prefix.clone(),
+                InstanceEntry { circuit: circuit_clusters, spec: spec_clusters, interface },
+            );
+        }
+    }
+
     // ---- step 4: verify every cluster pair --------------------------------
     let mut results = ResultInfoSemanticEquivalence::default();
 
@@ -517,6 +590,7 @@ pub fn prove_semantic_equivalence(user_input: Input) -> Result<(), ()> {
             circuit_clusters,
             spec_clusters,
             interface,
+            &catalogue,
             &ctx,
             &mut results,
         );
@@ -526,6 +600,253 @@ pub fn prove_semantic_equivalence(user_input: Input) -> Result<(), ()> {
 
     if let Some(report_path) = &user_input.report_output {
         let rep = build_semantic_equivalence_report(&user_input, &results);
+        report::write_report(&rep, report_path);
+    }
+
+    if let Some(dump_dir) = &user_input.dump_dir {
+        dump_json(dump_dir, "clusters.json", &results.cluster_dump, "Cluster dump");
+    }
+
+    Ok(())
+}
+
+/// `--resolved_formula`: one clustering over the whole circuit and the whole
+/// specification, instead of one per component instance.
+///
+/// The difference to the normal path is entirely in what is handed to the
+/// clustering. There, one formula per instance and the structure to keep them
+/// apart; here, the resolved file as it stands, and the structure only ever used
+/// to build the atoms. What comes back is a single pair of clusterings, verified
+/// exactly like any other instance's -- with one instance, no children, and
+/// therefore no second refinement phase to inline them: a subcomponent's
+/// constraints are already in the same formula, either in the cluster being
+/// verified or in a neighbour that gets abstracted.
+///
+/// See [`flat_mode`](super::flat_mode) for how the atoms are lined up with the
+/// file and how the per-instance variables are merged into one namespace.
+fn prove_flat(
+    user_input: &Input,
+    flat_path: &std::path::Path,
+    spec: &utils::read_specification::SpecificationInfo,
+    table: &AtomTable,
+    constraints: &Vec<Constraint<usize>>,
+    inputs: &[usize],
+    outputs: &[usize],
+    field: &BigInt,
+    pos_to_name: &std::collections::BTreeMap<usize, String>,
+) -> Result<(), ()> {
+    let flat = match read_flat_formula(
+        flat_path,
+        field,
+        inputs.iter().copied().collect::<HashSet<_>>(),
+        outputs.iter().copied().collect::<HashSet<_>>(),
+    ) {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("Could not read the resolved formula: {}", e);
+            return Err(());
+        }
+    };
+    println!(
+        "LOG: read {} atom(s) of instance '{}' from {}",
+        flat.formula.atoms().len(),
+        flat.instance,
+        flat_path.display()
+    );
+
+    // The keys that assert nothing are not allowed to shape the partition; see
+    // `restrict_to_asserted` for why one of them is otherwise the whole circuit.
+    let (flat, unasserted) = restrict_to_asserted(flat, table);
+    if !unasserted.is_empty() {
+        println!(
+            "LOG: {} key(s) of the resolved file answer to no atom, assert `true`, and were left \
+             out of the clustering: {:?}{}",
+            unasserted.len(),
+            unasserted.iter().take(5).collect::<Vec<_>>(),
+            if unasserted.len() > 5 { format!(" (and {} more)", unasserted.len() - 5) } else { String::new() }
+        );
+    }
+
+    // The same line `build_atoms` was given: one past the largest r1cs signal.
+    let synthetic_base = constraints
+        .iter()
+        .flat_map(|c| c.signals().into_iter())
+        .max()
+        .unwrap_or(0)
+        + 1;
+    let aligned = align_atoms(table, &flat.formula, &flat.instance, synthetic_base);
+    let flat_table = &aligned.table;
+    println!(
+        "LOG: {} of the {} atom(s) built from the specification are behind a key of the file",
+        aligned.matched,
+        table.atoms.len()
+    );
+
+    // The one number that matters for soundness: an atom no cluster holds is a
+    // piece of the specification no query asserts, and every verdict below is
+    // then against a weaker specification than the file says.
+    if !aligned.absent.is_empty() {
+        println!(
+            "WARNING: {} atom(s) of the specification are behind no key of the resolved file, so \
+             no query asserts them and every verdict below is against a weaker specification: \
+             {:?}{}",
+            aligned.absent.len(),
+            aligned.absent.iter().take(5).collect::<Vec<_>>(),
+            if aligned.absent.len() > 5 { format!(" (and {} more)", aligned.absent.len() - 5) } else { String::new() }
+        );
+    }
+    if user_input.flag_verbose {
+        // Expected, both of them, and both harmless: a key with no signal is a
+        // tag whose body is `true` -- llzk writes one per alias and constant,
+        // and `build_atoms` drops them for the same reason -- and a key with no
+        // atom is `level0` or an `equalityN` tie group, which the `single` mode
+        // writes itself.
+        if !flat.empty.is_empty() {
+            println!(
+                "LOG: {} key(s) of the resolved file list no signal at all and were dropped: {:?}{}",
+                flat.empty.len(),
+                flat.empty.iter().take(5).collect::<Vec<_>>(),
+                if flat.empty.len() > 5 { format!(" (and {} more)", flat.empty.len() - 5) } else { String::new() }
+            );
+        }
+        if !aligned.unmatched.is_empty() {
+            println!(
+                "LOG: {} key(s) of the resolved file answer to no atom and are asserted as \
+                 `true`: {:?}{}",
+                aligned.unmatched.len(),
+                aligned.unmatched.iter().take(5).collect::<Vec<_>>(),
+                if aligned.unmatched.len() > 5 { format!(" (and {} more)", aligned.unmatched.len() - 5) } else { String::new() }
+            );
+        }
+    }
+
+    let circuit = LightweightCircuit::<Constraint<usize>>::from(
+        field,
+        constraints.iter(),
+        inputs.iter(),
+        outputs.iter(),
+    );
+
+    let decompose_options = DecomposeOptions {
+        target_size: if user_input.target_size == 0 {
+            None
+        } else {
+            Some(user_input.target_size as f64)
+        },
+        debug: if user_input.flag_verbose { 2 } else { 0 },
+        ..Default::default()
+    };
+    let hybrid_options = HybridClusteringOptions {
+        guide_decompose_options: decompose_options,
+        hybrid_decompose_method: HybridClusteringMethods::default(),
+        hybrid_decompose_options: HybridClusteringMethodOptions {
+            recipient_requires_subsets: true,
+            ..Default::default()
+        },
+    };
+
+    println!("LOG: clustering the circuit against the resolved formula as a whole");
+    // The plain entry point takes the GUIDE first and returns it first, the
+    // opposite of the structure-driven one. Guide is the specification here too.
+    let (spec_clusters, circuit_clusters) = circuit_and_smt_hybrid_clustering_into_structurereader(
+        &flat.formula,
+        &circuit,
+        hybrid_options,
+        if user_input.flag_verbose { 2 } else { 1 },
+    );
+    println!(
+        "LOG: {} cluster(s) over {} r1cs constraint(s) and {} atom(s)",
+        spec_clusters.nodes.len(),
+        constraints.len(),
+        flat.formula.atoms().len()
+    );
+
+    if let Some(dump_dir) = &user_input.dump_dir {
+        let raw = vec![RawClusteringDump {
+            index: 0,
+            structure_node_id: 0,
+            instance: flat.instance.clone(),
+            circuit_clusters: raw_cluster_nodes(&circuit_clusters),
+            spec_clusters: raw_cluster_nodes(&spec_clusters),
+        }];
+        dump_json(dump_dir, "raw_clustering.json", &raw, "Raw clustering");
+    }
+
+    let macros = required_macro_definitions(flat_table, &spec.macros);
+    let original_file = user_input
+        .input_r1cs
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("circuit")
+        .to_string();
+
+    let ctx = VerificationContext {
+        constraints,
+        table: flat_table,
+        macros: &macros,
+        field,
+        instance_adjacency: user_input.instance_adjacency,
+        apply_predecessors: user_input.apply_predecessors,
+        apply_bidirectional: user_input.apply_bidirectional,
+        timeout: user_input.timeout,
+        solver: user_input.solver_option,
+        verbose: user_input.flag_verbose,
+        original_file: &original_file,
+        extra_rounds: user_input.extra_rounds,
+        signal_names: pos_to_name,
+    };
+
+    // No children: the whole circuit is this one instance. The second phase of
+    // the refinement therefore never fires, and `collect_inlined` returns
+    // nothing -- correct, since there is no other instance left to inline.
+    let interface = InstanceInterface::default();
+    let mut catalogue: Catalogue = HashMap::new();
+    catalogue.insert(
+        flat.instance.clone(),
+        InstanceEntry { circuit: &circuit_clusters, spec: &spec_clusters, interface: &interface },
+    );
+
+    // Coverage over the whole circuit: every r1cs constraint and every atom of
+    // the file has to be in some cluster, same rule as per instance.
+    let whole = NodeInfo {
+        node_id: 0,
+        node_name: flat.instance.clone(),
+        component_name: String::new(),
+        constraints: (0..constraints.len()).collect(),
+        input_signals: inputs.to_vec(),
+        output_signals: outputs.to_vec(),
+        signals: Vec::new(),
+        is_custom: false,
+        is_deterministic: false,
+        predecessors: Vec::new(),
+        successors: Vec::new(),
+    };
+    if let Err(msg) = check_partition_coverage(
+        &flat.instance,
+        &whole,
+        &circuit_clusters,
+        &spec_clusters,
+        flat.formula.get_atomrange_for_component(&flat.instance),
+    ) {
+        eprintln!("{}", msg);
+        return Err(());
+    }
+
+    let mut results = ResultInfoSemanticEquivalence::default();
+    verify_instance(
+        &flat.instance,
+        &circuit_clusters,
+        &spec_clusters,
+        &interface,
+        &catalogue,
+        &ctx,
+        &mut results,
+    );
+
+    print_pretty_results(&results);
+
+    if let Some(report_path) = &user_input.report_output {
+        let rep = build_semantic_equivalence_report(user_input, &results);
         report::write_report(&rep, report_path);
     }
 
@@ -560,6 +881,7 @@ fn verify_instance(
     circuit_clusters: &StructureReader,
     spec_clusters: &StructureReader,
     interface: &InstanceInterface,
+    catalogue: &Catalogue,
     ctx: &VerificationContext,
     results: &mut ResultInfoSemanticEquivalence,
 ) {
@@ -575,18 +897,7 @@ fn verify_instance(
     ordered.sort_by_key(|n| n.node_id);
 
     for spec_node in ordered.into_iter() {
-        let circuit_node = *circuit_by_id.get(&spec_node.node_id).unwrap_or_else(|| {
-            // The two clusterings are built with the same id set by construction:
-            // `dual_merge_until_property` merges the same ids on both sides and
-            // asserts the keysets match. A missing counterpart is a broken
-            // clustering, not a specification the tool should try to work around.
-            unreachable!(
-                "Cluster {} of instance {} exists on the specification side but not on the \
-                 circuit side. The hybrid clustering is supposed to keep one id set for both \
-                 sides -- this is a bug in clustering::smt_hybrid, not in the input.",
-                spec_node.node_id, instance
-            )
-        });
+        let circuit_node = circuit_of(&circuit_by_id, &spec_node.node_id);
 
         let pair = ClusterPair {
             instance,
@@ -605,7 +916,15 @@ fn verify_instance(
         // The specification node, because `check_cluster` states the obligation over
         // `bound_boundary(pair.spec, ...)`: warning about the circuit node's ports
         // would be reporting a boundary the query never uses.
-        let unbound = unbound_boundary_signals(spec_node, instance_info);
+        // Not the invented ids: a variable with no r1cs wire is one the
+        // specification DOES name, it just has nothing circuit-side to equate,
+        // and the interface drops it anyway. In the flat mode they are most of
+        // a cluster's signals.
+        let synthetic: HashSet<usize> = ctx.table.unresolved_ids.values().copied().collect();
+        let unbound: Vec<usize> = unbound_boundary_signals(spec_node, instance_info)
+            .into_iter()
+            .filter(|s| !synthetic.contains(s))
+            .collect();
         if !unbound.is_empty() {
             println!(
                 "WARNING: cluster {} has {} boundary signal(s) the specification never names: {:?}",
@@ -618,7 +937,8 @@ fn verify_instance(
                 .insert(spec_node.node_id, unbound);
         }
 
-        let outcome = verify_cluster_with_refinement(&pair, &circuit_by_id, &spec_by_id, interface, ctx);
+        let outcome = verify_cluster_with_refinement(&pair, &circuit_by_id, &spec_by_id, interface,
+                                                     catalogue, ctx);
         let verdict = match outcome {
             Some(verdict) => verdict,
             None => {
@@ -703,6 +1023,122 @@ fn record_cluster(
     });
 }
 
+/// One instance's clusterings and subcomponents, reachable by its dotted prefix.
+///
+/// `verify_instance` works on one instance, but the second phase of the
+/// refinement has to reach INTO its children — their clusters, their bindings,
+/// their own children — so the whole set is indexed once and passed down.
+pub struct InstanceEntry<'a> {
+    pub circuit: &'a StructureReader,
+    pub spec: &'a StructureReader,
+    pub interface: &'a InstanceInterface,
+}
+
+pub type Catalogue<'a> = HashMap<String, InstanceEntry<'a>>;
+
+/// Everything the child instances down to `depth` contribute to a query, with the
+/// instances one level below them left as implications.
+///
+/// `depth` 0 inlines nothing: every child of the instance being verified is an
+/// implication, which is `check_cluster`'s own doing and what the whole of phase 1
+/// runs with. `depth` 1 asserts the direct children in full and abstracts the
+/// grandchildren, and so on.
+fn collect_inlined(
+    catalogue: &Catalogue,
+    table: &AtomTable,
+    root: &str,
+    depth: usize,
+) -> InlinedInstances {
+    let mut out = InlinedInstances::default();
+    if depth == 0 {
+        return out;
+    }
+    // Descend level by level, asserting every instance on the way down.
+    let mut level: Vec<String> = vec![root.to_string()];
+    for _ in 1..=depth {
+        let mut next: Vec<String> = Vec::new();
+        for parent in level.iter() {
+            let Some(entry) = catalogue.get(parent) else { continue };
+            let parent_info = table.instance(parent);
+            for child in entry.interface.children.iter() {
+                let Some(child_entry) = catalogue.get(&child.instance) else { continue };
+                next.push(child.instance.clone());
+                out.names.push(child.instance.clone());
+                for node in child_entry.circuit.nodes.iter() {
+                    out.constraints.extend(node.constraints.iter().copied());
+                    out.signals.extend(node.signals.iter().copied());
+                }
+                for node in child_entry.spec.nodes.iter() {
+                    out.atoms.extend(node.constraints.iter().copied());
+                }
+                let child_info = table.instance(&child.instance);
+                out.spec_vars.extend(child_info.spec_vars.iter().cloned());
+                // The ports are the only wires the two instances share, and each
+                // names them its own way.
+                for signal in child.inputs.iter().chain(child.outputs.iter()) {
+                    if let (Some(inner), Some(outer)) = (
+                        child_info.signal_to_spec_var.get(signal),
+                        parent_info.signal_to_spec_var.get(signal),
+                    ) {
+                        if inner != outer {
+                            out.port_equalities.push(format!("(= {} {})", inner, outer));
+                        }
+                    }
+                }
+            }
+        }
+        level = next;
+        if level.is_empty() {
+            break;
+        }
+    }
+    // `level` now holds the deepest instances asserted: THEIR children are what
+    // takes their place as implications.
+    for parent in level.iter() {
+        let Some(entry) = catalogue.get(parent) else { continue };
+        let parent_info = table.instance(parent);
+        for grandchild in entry.interface.children.iter() {
+            let implication = child_implication(grandchild, parent_info);
+            if !implication.0.is_empty() || !implication.1.is_empty() {
+                out.implications.push(implication);
+            }
+        }
+    }
+    out.constraints.sort_unstable();
+    out.constraints.dedup();
+    out.signals.sort_unstable();
+    out.signals.dedup();
+    out.atoms.sort_unstable();
+    out.atoms.dedup();
+    out.port_equalities.sort();
+    out.port_equalities.dedup();
+    out.spec_vars.sort();
+    out.spec_vars.dedup();
+    out
+}
+
+/// Whether going one level deeper than `depth` would assert anything new.
+fn has_instances_at(catalogue: &Catalogue, root: &str, depth: usize) -> bool {
+    let mut level: Vec<String> = vec![root.to_string()];
+    for _ in 0..=depth {
+        let mut next: Vec<String> = Vec::new();
+        for parent in level.iter() {
+            if let Some(entry) = catalogue.get(parent) {
+                next.extend(
+                    entry.interface.children.iter()
+                        .filter(|c| catalogue.contains_key(&c.instance))
+                        .map(|c| c.instance.clone()),
+                );
+            }
+        }
+        level = next;
+        if level.is_empty() {
+            return false;
+        }
+    }
+    true
+}
+
 /// The counterpart of a cluster id on the circuit side.
 ///
 /// Both clusterings carry the same id set by construction --
@@ -748,10 +1184,23 @@ fn verify_cluster_with_refinement(
     circuit_by_id: &HashMap<usize, &NodeInfo>,
     spec_by_id: &HashMap<usize, &NodeInfo>,
     interface: &InstanceInterface,
+    catalogue: &Catalogue,
     ctx: &VerificationContext,
 ) -> Option<ClusterVerdict> {
 
+    // Two phases, in this order:
+    //
+    //  1. roll outwards over the SIBLING clusters: each round asserts in full the
+    //     ring that was abstracted in the previous one, and abstracts the next
+    //     ring beyond it;
+    //  2. once every sibling is asserted, start asserting the CHILD INSTANCES in
+    //     full, one level per round, with the level below them abstracted.
+    //
+    // The child instances abstracted in either phase are those of everything
+    // asserted so far, not just of the cluster being verified: a sibling that has
+    // been pulled in brings its own calls with it.
     let mut asserted: BTreeSet<usize> = BTreeSet::from([pair.spec.node_id]);
+    let mut depth: usize = 0;
     let mut round: usize = 0;
 
     loop {
@@ -768,45 +1217,9 @@ fn verify_cluster_with_refinement(
         // modes use, with the same defaults: successors, unless told otherwise.
         let take_successors = !ctx.apply_predecessors || ctx.apply_bidirectional;
         let take_predecessors = ctx.apply_predecessors || ctx.apply_bidirectional;
-        let mut abstracted_ids: BTreeSet<usize> = BTreeSet::new();
-        // Everything the region borders in the specification dag, both ways,
-        // whatever the direction flags say. Kept apart from `abstracted_ids` because
-        // the two answer different questions: that one is what this query abstracts,
-        // this one is whether there was anything to abstract at all -- which is what
-        // makes a counterexample conclusive or not.
-        let mut bordering_ids: BTreeSet<usize> = BTreeSet::new();
-        for id in asserted.iter() {
-            let node = spec_of(spec_by_id, id);
-            for adjacent in node.successors.iter().chain(node.predecessors.iter()) {
-                if !asserted.contains(adjacent) {
-                    bordering_ids.insert(*adjacent);
-                }
-            }
-            if take_successors {
-                for adjacent in node.successors.iter() {
-                    if !asserted.contains(adjacent) {
-                        abstracted_ids.insert(*adjacent);
-                    }
-                }
-            }
-            if take_predecessors {
-                for adjacent in node.predecessors.iter() {
-                    if !asserted.contains(adjacent) {
-                        abstracted_ids.insert(*adjacent);
-                    }
-                }
-            }
-            if ctx.instance_adjacency {
-                // Every cluster here belongs to the instance being verified:
-                // `verify_instance` is called once per structure node.
-                for other in spec_by_id.keys() {
-                    if !asserted.contains(other) {
-                        abstracted_ids.insert(*other);
-                        bordering_ids.insert(*other);
-                    }
-                }
-            }
-        }
+        // The ring just beyond what is asserted: abstracted now, asserted next round.
+        let abstracted_ids = ring(spec_by_id, &asserted, take_successors, take_predecessors,
+                                  ctx.instance_adjacency);
         // The SPECIFICATION node of each neighbour: its abstraction has to be the
         // obligation its own query discharges, and that query states it over the
         // specification's split into inputs and outputs, not the circuit's.
@@ -814,15 +1227,27 @@ fn verify_cluster_with_refinement(
             .iter()
             .map(|id| spec_of(spec_by_id, id))
             .collect();
-        // Every cluster asserted on top of this one, paired with its
-        // specification counterpart by the shared id.
+        // Every sibling asserted so far, paired with its specification counterpart
+        // by the shared id.
         let inlined: Vec<(&NodeInfo, &NodeInfo)> = asserted
             .iter()
             .filter(|id| **id != pair.spec.node_id)
             .map(|id| (circuit_of(circuit_by_id, id), spec_of(spec_by_id, id)))
             .collect();
+        // Phase 2's contribution: the child instances down to `depth`, asserted in
+        // full, with the level below them abstracted.
+        let instances = collect_inlined(catalogue, ctx.table, pair.instance, depth);
+        // A child of THIS instance that phase 2 has not reached yet is still an
+        // implication, and so is every instance below an inlined one.
+        let children_abstracted = interface
+            .children
+            .iter()
+            .any(|c| !instances.names.contains(&c.instance));
+        let nothing_approximated = abstracted.is_empty()
+            && !children_abstracted
+            && instances.implications.is_empty();
 
-        let (result, logs) = check_cluster(pair, &abstracted, &inlined, interface, ctx)?;
+        let (result, logs) = check_cluster(pair, &abstracted, &inlined, &instances, interface, ctx)?;
         for log in logs {
             println!("{}", log);
         }
@@ -832,38 +1257,77 @@ fn verify_cluster_with_refinement(
             // Conclusive only when there was nothing left to abstract -- the region
             // borders no other cluster, either because it never did or because the
             // refinement rounds swallowed them all.
-            PossibleResult::FAILED if bordering_ids.is_empty() => ClusterVerdict::Failed,
+            PossibleResult::FAILED if nothing_approximated => ClusterVerdict::Failed,
             PossibleResult::FAILED => ClusterVerdict::LocalCounterexample,
             _ => ClusterVerdict::Unknown,
         };
 
+        // What is left to try: assert the ring that is currently abstracted, and
+        // once there is none, one more level of child instances.
+        let can_roll = !abstracted_ids.is_empty();
+        let can_deepen = has_instances_at(catalogue, pair.instance, depth);
+
         let settled = matches!(verdict, ClusterVerdict::Verified | ClusterVerdict::Failed);
-        if settled || round >= ctx.extra_rounds || abstracted.is_empty() {
+        if settled || round >= ctx.extra_rounds || (!can_roll && !can_deepen) {
             if round > 0 {
                 println!(
-                    "LOG: cluster {} settled as {} after {} refinement round(s), with {} \
-                     neighbouring cluster(s) asserted",
+                    "LOG: cluster {} settled as {} after {} refinement round(s): {} sibling(s) \
+                     asserted in full, {} abstracted, {} child instance(s) asserted in full",
                     pair.spec.node_id,
                     verdict.as_str(),
                     round,
-                    inlined.len()
+                    inlined.len(),
+                    abstracted.len(),
+                    instances.names.len()
                 );
             }
             return Some(verdict);
         }
 
         round += 1;
-        println!(
-            "LOG: cluster {} came back {}; refinement round {} of {}: asserting {} neighbouring \
-             cluster(s) in full instead of abstracting them",
-            pair.spec.node_id,
-            verdict.as_str(),
-            round,
-            ctx.extra_rounds,
-            abstracted_ids.len()
-        );
-        asserted.extend(abstracted_ids.into_iter());
+        if can_roll {
+            println!(
+                "LOG: cluster {} came back {}; refinement round {} of {}: asserting {} \
+                 sibling(s) in full and abstracting the ring beyond them",
+                pair.spec.node_id, verdict.as_str(), round, ctx.extra_rounds, abstracted_ids.len()
+            );
+            asserted.extend(abstracted_ids.into_iter());
+        } else {
+            depth += 1;
+            println!(
+                "LOG: cluster {} came back {}; refinement round {} of {}: every sibling is \
+                 asserted, now asserting the child instances at depth {} in full",
+                pair.spec.node_id, verdict.as_str(), round, ctx.extra_rounds, depth
+            );
+        }
     }
+}
+
+/// The clusters bordering `asserted` in the specification dag, minus `asserted`
+/// itself: what the next query abstracts, and what the round after that asserts.
+fn ring(
+    spec_by_id: &HashMap<usize, &NodeInfo>,
+    asserted: &BTreeSet<usize>,
+    take_successors: bool,
+    take_predecessors: bool,
+    instance_adjacency: bool,
+) -> BTreeSet<usize> {
+    if instance_adjacency {
+        // The complete graph over the instance: adjacency stops meaning anything.
+        return spec_by_id.keys().copied().filter(|id| !asserted.contains(id)).collect();
+    }
+    let mut out: BTreeSet<usize> = BTreeSet::new();
+    for id in asserted.iter() {
+        let node = spec_of(spec_by_id, id);
+        let sucs = if take_successors { node.successors.as_slice() } else { &[] };
+        let preds = if take_predecessors { node.predecessors.as_slice() } else { &[] };
+        for adjacent in sucs.iter().chain(preds.iter()) {
+            if !asserted.contains(adjacent) {
+                out.insert(*adjacent);
+            }
+        }
+    }
+    out
 }
 
 /// Aborts unless the two clusterings really are partitions of what they were
@@ -1241,5 +1705,229 @@ fn print_cluster_list(
             id,
             results.cluster_instance.get(&id).cloned().unwrap_or_default()
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! The refinement decides two things: which SIBLING clusters come in, and
+    //! which CHILD INSTANCES do. Both are pure functions of the two clusterings,
+    //! so both can be pinned down without a solver.
+
+    use super::*;
+    use crate::semantic_equivalence::atoms::InstanceInfo;
+    use utils::structure::TimingInfo;
+
+    fn node(id: usize, inputs: &[usize], outputs: &[usize], preds: &[usize], sucs: &[usize]) -> NodeInfo {
+        let mut signals: Vec<usize> = inputs.iter().chain(outputs.iter()).copied().collect();
+        signals.sort();
+        signals.dedup();
+        NodeInfo {
+            node_id: id,
+            node_name: format!("cluster_{}", id),
+            component_name: String::new(),
+            constraints: vec![id],
+            input_signals: inputs.to_vec(),
+            output_signals: outputs.to_vec(),
+            signals,
+            is_custom: false,
+            is_deterministic: false,
+            predecessors: preds.to_vec(),
+            successors: sucs.to_vec(),
+        }
+    }
+
+    fn reader(nodes: Vec<NodeInfo>) -> StructureReader {
+        StructureReader { timing: TimingInfo::new(), nodes, equivalency_local: None, equivalency_structural: None }
+    }
+
+    fn by_id(nodes: &[NodeInfo]) -> HashMap<usize, &NodeInfo> {
+        index_by_id(nodes)
+    }
+
+    /// `0 -> 1 -> 2`, plus an isolated `3`.
+    fn chain() -> Vec<NodeInfo> {
+        vec![
+            node(0, &[], &[10], &[], &[1]),
+            node(1, &[10], &[11], &[0], &[2]),
+            node(2, &[11], &[12], &[1], &[]),
+            node(3, &[], &[], &[], &[]),
+        ]
+    }
+
+    fn set(ids: &[usize]) -> BTreeSet<usize> {
+        ids.iter().copied().collect()
+    }
+
+    // ---- siblings ---------------------------------------------------------
+
+    #[test]
+    fn the_ring_rolls_outwards_one_step_at_a_time() {
+        let nodes = chain();
+        let map = by_id(&nodes);
+        // Successors only, which is the default.
+        assert_eq!(ring(&map, &set(&[0]), true, false, false), set(&[1]));
+        // Next round: what was abstracted is now asserted, and the ring moves on.
+        assert_eq!(ring(&map, &set(&[0, 1]), true, false, false), set(&[2]));
+        // And stops when the region has swallowed everything reachable.
+        assert_eq!(ring(&map, &set(&[0, 1, 2]), true, false, false), set(&[]));
+    }
+
+    #[test]
+    fn the_direction_flags_pick_which_way_the_ring_grows() {
+        let nodes = chain();
+        let map = by_id(&nodes);
+        // --apply_predecessors: upstream instead of downstream.
+        assert_eq!(ring(&map, &set(&[2]), false, true, false), set(&[1]));
+        assert_eq!(ring(&map, &set(&[2]), true, false, false), set(&[]));
+        // --apply_bidirectional: both at once.
+        assert_eq!(ring(&map, &set(&[1]), true, true, false), set(&[0, 2]));
+    }
+
+    #[test]
+    fn instance_adjacency_ignores_the_edges_entirely() {
+        let nodes = chain();
+        let map = by_id(&nodes);
+        // Cluster 3 has no edge to anything, so no direction ever reaches it...
+        assert!(!ring(&map, &set(&[0]), true, true, false).contains(&3));
+        // ...until every cluster of the instance counts as a neighbour.
+        assert_eq!(ring(&map, &set(&[0]), true, false, true), set(&[1, 2, 3]));
+    }
+
+    #[test]
+    fn a_cluster_with_no_edges_has_nothing_to_roll_into() {
+        let nodes = chain();
+        let map = by_id(&nodes);
+        assert_eq!(ring(&map, &set(&[3]), true, true, false), set(&[]));
+    }
+
+    // ---- child instances --------------------------------------------------
+
+    struct Hierarchy {
+        main_c: StructureReader,
+        main_s: StructureReader,
+        lt_c: StructureReader,
+        lt_s: StructureReader,
+        n2b_c: StructureReader,
+        n2b_s: StructureReader,
+        main_i: InstanceInterface,
+        lt_i: InstanceInterface,
+        n2b_i: InstanceInterface,
+        table: AtomTable,
+    }
+
+    /// `main` calls `main.lt` (ports 5,6 in / 4 out), which calls `main.lt.n2b`
+    /// (ports 7 in / 8 out). One cluster each, one constraint and one atom each.
+    fn hierarchy() -> Hierarchy {
+        let child = |id: usize, ins: &[usize], outs: &[usize], instance: &str| ChildPorts {
+            node_id: id,
+            instance: instance.to_string(),
+            inputs: ins.to_vec(),
+            outputs: outs.to_vec(),
+        };
+        let info = |pairs: &[(usize, &str)]| InstanceInfo {
+            signal_to_spec_var: pairs.iter().map(|(s, v)| (*s, v.to_string())).collect(),
+            spec_vars: pairs.iter().map(|(_, v)| v.to_string()).collect(),
+        };
+        let mut table = AtomTable::default();
+        // The same wires, named differently by each instance: that is what the
+        // port equalities have to bridge.
+        table.instances.insert("main".to_string(),
+            info(&[(1, "spec_main_out"), (4, "spec_main_lt_out"), (5, "spec_main_lt_in0"), (6, "spec_main_lt_in1")]));
+        table.instances.insert("main.lt".to_string(),
+            info(&[(4, "spec_lt_out"), (5, "spec_lt_a"), (6, "spec_lt_b"), (7, "spec_lt_n2b_in"), (8, "spec_lt_n2b_out")]));
+        table.instances.insert("main.lt.n2b".to_string(),
+            info(&[(7, "spec_n2b_in"), (8, "spec_n2b_out")]));
+        Hierarchy {
+            main_c: reader(vec![node(0, &[2], &[1], &[], &[])]),
+            main_s: reader(vec![node(0, &[2], &[1], &[], &[])]),
+            lt_c: reader(vec![node(1, &[5, 6], &[4], &[], &[])]),
+            lt_s: reader(vec![node(1, &[5, 6], &[4], &[], &[])]),
+            n2b_c: reader(vec![node(2, &[7], &[8], &[], &[])]),
+            n2b_s: reader(vec![node(2, &[7], &[8], &[], &[])]),
+            main_i: InstanceInterface { children: vec![child(1, &[5, 6], &[4], "main.lt")] },
+            lt_i: InstanceInterface { children: vec![child(2, &[7], &[8], "main.lt.n2b")] },
+            n2b_i: InstanceInterface { children: vec![] },
+            table,
+        }
+    }
+
+    fn catalogue(h: &Hierarchy) -> Catalogue<'_> {
+        let mut c: Catalogue = HashMap::new();
+        c.insert("main".to_string(), InstanceEntry { circuit: &h.main_c, spec: &h.main_s, interface: &h.main_i });
+        c.insert("main.lt".to_string(), InstanceEntry { circuit: &h.lt_c, spec: &h.lt_s, interface: &h.lt_i });
+        c.insert("main.lt.n2b".to_string(), InstanceEntry { circuit: &h.n2b_c, spec: &h.n2b_s, interface: &h.n2b_i });
+        c
+    }
+
+    #[test]
+    fn depth_zero_asserts_no_call_at_all() {
+        // Phase 1 runs at depth 0 throughout: every child is an implication, which
+        // `check_cluster` adds from the interface, not from here.
+        let h = hierarchy();
+        let out = collect_inlined(&catalogue(&h), &h.table, "main", 0);
+        assert!(out.names.is_empty());
+        assert!(out.constraints.is_empty());
+        assert!(out.atoms.is_empty());
+        assert!(out.implications.is_empty());
+    }
+
+    #[test]
+    fn depth_one_asserts_the_direct_call_and_abstracts_the_next() {
+        let h = hierarchy();
+        let out = collect_inlined(&catalogue(&h), &h.table, "main", 1);
+
+        assert_eq!(out.names, vec!["main.lt".to_string()]);
+        assert_eq!(out.constraints, vec![1], "the child's r1cs constraints come in");
+        assert_eq!(out.atoms, vec![1], "and its atoms");
+        assert!(out.signals.contains(&4) && out.signals.contains(&5));
+        assert!(out.spec_vars.contains(&"spec_lt_out".to_string()));
+        // Its own call is what takes its place as an approximation.
+        assert_eq!(out.implications.len(), 1, "the grandchild is abstracted, not asserted");
+        let (antecedent, consequent) = &out.implications[0];
+        assert_eq!(antecedent.iter().map(|(s, _)| *s).collect::<Vec<_>>(), vec![7]);
+        assert_eq!(consequent.iter().map(|(s, _)| *s).collect::<Vec<_>>(), vec![8]);
+        // And the grandchild's ports are named through the instance that CALLS it.
+        assert_eq!(consequent[0].1, "spec_lt_n2b_out");
+    }
+
+    #[test]
+    fn the_ports_of_an_asserted_call_are_tied_to_the_callers_names() {
+        // Without this the child's formula constrains symbols nothing else mentions.
+        let h = hierarchy();
+        let out = collect_inlined(&catalogue(&h), &h.table, "main", 1);
+        let mut eqs = out.port_equalities.clone();
+        eqs.sort();
+        assert_eq!(eqs, vec![
+            "(= spec_lt_a spec_main_lt_in0)".to_string(),
+            "(= spec_lt_b spec_main_lt_in1)".to_string(),
+            "(= spec_lt_out spec_main_lt_out)".to_string(),
+        ]);
+    }
+
+    #[test]
+    fn depth_two_keeps_the_first_level_and_asserts_the_second() {
+        let h = hierarchy();
+        let out = collect_inlined(&catalogue(&h), &h.table, "main", 2);
+
+        let mut names = out.names.clone();
+        names.sort();
+        assert_eq!(names, vec!["main.lt".to_string(), "main.lt.n2b".to_string()],
+                   "deepening keeps what was already asserted");
+        assert_eq!(out.constraints, vec![1, 2]);
+        assert_eq!(out.atoms, vec![1, 2]);
+        // Nothing below n2b, so nothing is left approximated.
+        assert!(out.implications.is_empty());
+        assert!(out.port_equalities.iter().any(|e| e == "(= spec_n2b_in spec_lt_n2b_in)"));
+    }
+
+    #[test]
+    fn deepening_stops_when_there_are_no_more_calls() {
+        let h = hierarchy();
+        let cat = catalogue(&h);
+        assert!(has_instances_at(&cat, "main", 0), "main calls main.lt");
+        assert!(has_instances_at(&cat, "main", 1), "and main.lt calls n2b");
+        assert!(!has_instances_at(&cat, "main", 2), "n2b calls nothing");
+        assert!(!has_instances_at(&cat, "main.lt.n2b", 0), "a leaf has nothing to deepen into");
     }
 }

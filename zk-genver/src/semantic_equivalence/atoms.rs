@@ -113,6 +113,24 @@ impl AtomTable {
         &self.atoms[index]
     }
 
+    /// The same table with a different atom list and a different instance map,
+    /// keeping the synthetic-id bookkeeping. What the flat mode needs: its atoms
+    /// are the resolved file's, in the clustering's order, and its instances are
+    /// the one merged instance. See `flat_mode::align_atoms`.
+    pub fn recast(
+        &self,
+        atoms: Vec<AtomInfo>,
+        instances: BTreeMap<String, InstanceInfo>,
+    ) -> AtomTable {
+        AtomTable {
+            atoms,
+            instances,
+            instances_with_uncovered_body: self.instances_with_uncovered_body.clone(),
+            unresolved_ids: self.unresolved_ids.clone(),
+            next_synthetic_id: self.next_synthetic_id,
+        }
+    }
+
     pub fn instance(&self, name: &str) -> &InstanceInfo {
         self.instances
             .get(name)

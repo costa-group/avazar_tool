@@ -69,6 +69,36 @@ pub struct InstanceInterface {
     pub children: Vec<ChildPorts>,
 }
 
+/// Everything an INLINED CHILD INSTANCE contributes to a query.
+///
+/// Phase 2 of the refinement (see `verify_cluster_with_refinement`): once the
+/// siblings within the instance have all been abstracted, a child instance stops
+/// being one implication and becomes its real content — its clusters' r1cs
+/// constraints on one side and their atoms on the other — while ITS own children
+/// take its place as implications, one level deeper each round.
+///
+/// Built by the caller, which is the only place that can reach another
+/// instance's clusterings.
+#[derive(Default)]
+pub struct InlinedInstances {
+    /// r1cs constraint indices of the inlined instances' clusters.
+    pub constraints: Vec<usize>,
+    /// Circuit signals to declare for them.
+    pub signals: Vec<usize>,
+    /// Atom indices of the same clusters.
+    pub atoms: Vec<usize>,
+    /// `(= spec_child_var spec_parent_var)` for every port the two instances
+    /// name differently. Without these the child's formula floats free of the
+    /// parent's: both talk about the same wire under two different symbols.
+    pub port_equalities: Vec<String>,
+    /// The inlined instances' own specification variables, to declare.
+    pub spec_vars: Vec<String>,
+    /// `inputs ⇒ outputs` for the instances one level below the inlined ones.
+    pub implications: Vec<(Vec<(usize, String)>, Vec<(usize, String)>)>,
+    /// Instance prefixes, for the annotations.
+    pub names: Vec<String>,
+}
+
 /// A cluster pair to verify: the same node id on the circuit side and on the
 /// specification side.
 pub struct ClusterPair<'a> {
@@ -140,7 +170,7 @@ fn neighbour_implication(
 /// (`lt.in`, `lt.out`), and those are the variables the parent's atoms talk
 /// about. Mirrors `generate_implications_safety`, which goes through the father
 /// macro for the same reason.
-fn child_implication(
+pub fn child_implication(
     child: &ChildPorts,
     instance: &InstanceInfo,
 ) -> (Vec<(usize, String)>, Vec<(usize, String)>) {
@@ -165,6 +195,7 @@ pub fn check_cluster(
     pair: &ClusterPair,
     adjacent: &[&NodeInfo],
     inlined: &[(&NodeInfo, &NodeInfo)],
+    instances: &InlinedInstances,
     interface: &InstanceInterface,
     ctx: &VerificationContext,
 ) -> Option<(PossibleResult, Vec<String>)> {
@@ -217,6 +248,15 @@ pub fn check_cluster(
             )
         }));
     }
+    for signal in instances.signals.iter().copied() {
+        if declared.insert(signal) {
+            signals_1.push_back(signal);
+        }
+    }
+    constraints_1.extend(instances.constraints.iter().map(|c| ctx.constraints[*c].clone()));
+    constraint_notes.extend(instances.constraints.iter().map(|c| {
+        format!("r1cs constraint {} of a child instance asserted in full by --extra_rounds", c)
+    }));
 
     // ---- specification side ---------------------------------------------
     let mut constraints_2: Vec<String> = pair
@@ -270,11 +310,31 @@ pub fn check_cluster(
                 .map(|atom| atom_note(atom, spec_node.node_id)),
         );
     }
+    for atom in instances.atoms.iter() {
+        let info = ctx.table.atom(*atom);
+        constraints_2.push(info.formula.clone());
+        atom_notes.push(format!(
+            "atom {} of child instance {}: tag \"{}\" of {}, asserted in full by --extra_rounds",
+            atom, info.instance, info.tag, info.macro_name
+        ));
+    }
+    // The same wire under two names: the child instance calls it
+    // `spec_main_lt_v_3`, the parent `spec_main_v_9`. Without this the child's
+    // formula constrains symbols the rest of the query never mentions.
+    for equality in instances.port_equalities.iter() {
+        constraints_2.push(equality.clone());
+        atom_notes.push("port of a child instance, tying its variable to the parent's".to_string());
+    }
 
     // Every spec variable of the instance, narrowed below to the ones the query
     // mentions: a `declare-fun` with no assertion over it reads like a free
     // variable, which is the shape of the bug this mode keeps hitting.
     let mut signals_2: Vec<String> = instance.spec_vars.clone();
+    for var in instances.spec_vars.iter() {
+        if !signals_2.contains(var) {
+            signals_2.push(var.clone());
+        }
+    }
 
     // ---- interface -------------------------------------------------------
     let split = |bound: Vec<(usize, String)>| -> (Vec<usize>, Vec<String>) {
@@ -331,7 +391,25 @@ pub fn check_cluster(
     // Only the children this region touches: one whose ports appear nowhere here
     // would add an implication over signals no constraint mentions.
     let mut abstracted_children: Vec<String> = Vec::new();
+    // One level below whatever was inlined: the instances the inlined ones call.
+    for implication in instances.implications.iter() {
+        for (signal, _) in implication.0.iter().chain(implication.1.iter()) {
+            if declared.insert(*signal) {
+                signals_1.push_back(*signal);
+            }
+        }
+        implications.push(implication.clone());
+        implication_notes.push(
+            "instance one level below an inlined one, abstracted by an implication".to_string(),
+        );
+    }
     for child in interface.children.iter() {
+        // Inlined and abstracted are exclusive: the implication is the hypothesis
+        // "this child agrees with the specification", which is exactly what
+        // asserting its clusters puts in question.
+        if instances.names.iter().any(|n| n == &child.instance) {
+            continue;
+        }
         let touches = child
             .inputs
             .iter()
@@ -483,6 +561,12 @@ pub fn check_cluster(
         annotations.header.push(format!(
             "asserted in full alongside it (--extra_rounds): cluster(s) {:?}",
             inlined.iter().map(|(c, _)| c.node_id).collect::<Vec<_>>()
+        ));
+    }
+    if !instances.names.is_empty() {
+        annotations.header.push(format!(
+            "child instance(s) asserted in full (--extra_rounds): {}",
+            instances.names.join(", ")
         ));
     }
     if !abstracted_children.is_empty() {
