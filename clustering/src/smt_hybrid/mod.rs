@@ -36,7 +36,6 @@ pub struct HybridClusteringOptions<'a> {
     pub guide_decompose_options: DecomposeOptions<'a>,
     pub hybrid_decompose_method: HybridClusteringMethods,
     pub hybrid_decompose_options: HybridClusteringMethodOptions,
-    pub manually_check_acyclic: bool,
 }
 
 // NOTE: the semantic link between nodes is given by the nodes having the same usize identifier -- this is vital and assumed in later functions
@@ -59,7 +58,10 @@ fn circuit_and_smt_hybrid_clustering<'a, Cons: Constraint, Circ: Circuit<Cons> ,
     };
 
     add_timing_info(&mut timing_info, secondary_timing);
-    if options.manually_check_acyclic {let _ = DAGNode::get_topological_ordering(&guide_clustering);let _ = DAGNode::get_topological_ordering(&recipient_clustering);}
+    // Both sides, unconditionally: the pairing is only meaningful if each side admits an
+    // order, and a cycle would surface much later as a nonsensical verdict.
+    let _ = DAGNode::get_topological_ordering(&guide_clustering);
+    let _ = DAGNode::get_topological_ordering(&recipient_clustering);
 
     (timing_info, guide_clustering, recipient_clustering)
 }

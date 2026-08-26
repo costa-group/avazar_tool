@@ -86,7 +86,9 @@ pub(crate) fn decompose_circuit_and_return_dagnodes<'a, C: Constraint, S: Circui
     let mut dagnodes = dag_from_partition(circuit, partition, node_id_generator, decompose_options.dead_ends_as_outputs, decompose_options.hierarchy_mode, decompose_options.debug);
     merge_passthrough(circuit, &mut dagnodes);
 
-    if decompose_options.manually_check_acyclic {let _ = DAGNode::get_topological_ordering(&dagnodes);}
+    // Unconditional: a cycle here means every consumer downstream is reasoning over an
+    // order that does not exist, and `get_topological_ordering` panics on one.
+    let _ = DAGNode::get_topological_ordering(&dagnodes);
     
     //insert_and_print_timing(debug, &mut timing, "dag_construction_merging", dagnode_timer.elapsed());
     timing_info.insert(TimingCategories::DagConstruction, dagnode_timer.elapsed().as_secs_f32());
@@ -167,7 +169,7 @@ fn decompose_circuit_over_dagnodes<'a, C: Constraint, S: Circuit<C>>(
         }
     }
 
-    if decompose_options.manually_check_acyclic {let _ = DAGNode::get_topological_ordering(&new_dagnodes);}
+    let _ = DAGNode::get_topological_ordering(&new_dagnodes);
 
     new_dagnodes
 }
