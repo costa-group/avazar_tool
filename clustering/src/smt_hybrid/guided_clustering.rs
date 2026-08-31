@@ -7,7 +7,7 @@ use circuits_constraints_and_algebra::constraint::Constraint;
 use circuit_graphing::directed_acyclic_graph::{DAGNode};
 use utils::structure::{TimingInfo, TimingCategories};
 
-use crate::smt_hybrid::{HybridClusteringMethodOptions, TiebreakingStrategy, shared_merge::merge_passthrough_shared, shared_merge_applications::{merge_until_all_clusters_nonempty, merge_until_all_inputs_outputs_same, merge_until_all_left_is_subset_to_right}};
+use crate::smt_hybrid::{HybridClusteringMethodOptions, TiebreakingStrategy, shared_merge::merge_passthrough_shared, shared_merge_applications::{merge_until_all_inputs_outputs_same, merge_until_all_left_is_subset_to_right}};
 
 pub(crate) fn guided_clustering<'a, Cons: Constraint, Circ: Circuit<Cons> , Atom: Constraint, Smt: Circuit<Atom>>(
     guide: &'a Circ, recipient: &'a Smt,
@@ -103,6 +103,13 @@ pub(crate) fn guided_clustering<'a, Cons: Constraint, Circ: Circuit<Cons> , Atom
         );
     }
 
+    // Check if any clusters on the recipient side are empty, this is considered a break of an assumed property
+    // Otherwise this requires uncommenting out the preprocessing step `merge_until_all_clusters_nonempty'
+    for (cluster_id, cluster) in recipient_clusters.iter() {if cluster.len() == 0 {
+            let guide_cluster = guide_clustering[cluster_id].get_constraint_indices().collect::<Vec<usize>>();
+            panic!("Recipient cluster {cluster_id} is empty; Corresponding guide cluster has atoms {guide_cluster:?}");
+    }}
+
     timing_info.insert(TimingCategories::SecondaryClustering, secondary_clustering_timer.elapsed().as_secs_f32());
     *timing_info.entry(TimingCategories::Total).or_default() += timing_info[&TimingCategories::SecondaryClustering];
     if debug > 0 {println!("LOG: Finished secondary clustering in {:?}s", timing_info[&TimingCategories::SecondaryClustering]);}
@@ -157,7 +164,10 @@ pub(crate) fn guided_clustering<'a, Cons: Constraint, Circ: Circuit<Cons> , Atom
     
     let secondary_dag_construction_timer = Instant::now();
 
-    merge_until_all_clusters_nonempty(guide, recipient, guide_clustering, &mut recipient_clustering);
+    // NOTE: uncomment the following two lines if we want to manually remove empty clusters
+    // use shared_merge_applications::merge_until_all_clusters_nonempty;
+    // merge_until_all_clusters_nonempty(guide, recipient, guide_clustering, &mut recipient_clustering);
+    
     merge_passthrough_shared(guide, recipient, guide_clustering, &mut recipient_clustering);
     if options.recipient_requires_subsets {
         merge_until_all_left_is_subset_to_right(recipient, guide, &mut recipient_clustering, guide_clustering);
