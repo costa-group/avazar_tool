@@ -7,6 +7,7 @@ use circuit_graphing::directed_acyclic_graph::{DAGNode};
 
 use crate::smt_hybrid::shared_merge::dual_merge_until_property;
 
+// This application is 'stable' in that additional merging cannot break this property
 pub(crate) fn merge_until_all_left_is_subset_to_right<'a, LCon: Constraint, Left: Circuit<LCon> , RCon: Constraint, Right: Circuit<RCon>>(left: &'a Left, right: &'a Right, core_nodes: &mut HashMap<usize, DAGNode<'a, LCon, Left>>, superset_nodes: &mut HashMap<usize, DAGNode<'a, RCon, Right>>) -> () {
 
     //
@@ -116,6 +117,7 @@ pub(crate) fn merge_until_all_left_is_subset_to_right<'a, LCon: Constraint, Left
 
 }
 
+// This application is NOT 'stable' in that additional merging can break this property - this is because while the input/output is the same afterwards the actual structure may not be. So additional merges of nodes may result in different changes to input/output
 pub(crate) fn merge_until_all_inputs_outputs_same<'a, LCon: Constraint, Left: Circuit<LCon> , RCon: Constraint, Right: Circuit<RCon>>(left: &'a Left, right: &'a Right, left_nodes: &mut HashMap<usize, DAGNode<'a, LCon, Left>>, right_nodes: &mut HashMap<usize, DAGNode<'a, RCon, Right>>) -> () {
 
     /// If two input (symmetrically output) sets are different then we can either try add missing inputs or remove extranous inputs from either side only by Merging.
@@ -153,5 +155,85 @@ pub(crate) fn merge_until_all_inputs_outputs_same<'a, LCon: Constraint, Left: Ci
     }
 
     dual_merge_until_property(left, right, left_nodes, right_nodes, is_left_io_same_as_right_io, select_nodes_to_merge_to_delete_excess_io)
+
+}
+
+// This application is 'stable' in that additional merging cannot break this property
+pub(crate) fn merge_until_all_clusters_nonempty<'a, LCon: Constraint, Left: Circuit<LCon> , RCon: Constraint, Right: Circuit<RCon>>(left: &'a Left, right: &'a Right, left_nodes: &mut HashMap<usize, DAGNode<'a, LCon, Left>>, right_nodes: &mut HashMap<usize, DAGNode<'a, RCon, Right>>) -> () {
+
+    // The presence of an empty cluster means that downstream merge (io equality) will result in the naive fixed-point and so is disallowed. 
+    //   - If both are empty, then simply delete them from nodes, as this calls a merge tool we simply pick an arbitrary key to merge with
+    //   - If only one is nonempty we must merge with some neighbour - panic otherwise
+
+
+    fn is_nonempty<'a, LCon: Constraint, Left: Circuit<LCon> , RCon: Constraint, Right: Circuit<RCon>>(left: &DAGNode<'a, LCon, Left>, right: &DAGNode<'a, RCon, Right>) -> bool {
+        left.len() > 0 && right.len() > 0
+    }
+
+    fn either_delete_or_merge_with_adjacent_nonempty<'a, LCon: Constraint, Left: Circuit<LCon> , RCon: Constraint, Right: Circuit<RCon>>(
+        root: usize, left_nodes: &HashMap<usize, DAGNode<'a, LCon, Left>>, right_nodes: &HashMap<usize, DAGNode<'a, RCon, Right>>,
+        left_signal_to_coni: &HashMap<usize, Vec<usize>>, _left_coni_to_node: &Vec<usize>, right_signal_to_coni: &HashMap<usize, Vec<usize>>, _right_coni_to_node: &Vec<usize>
+    ) -> (HashSet<usize>, bool) {
+        
+        let (left, right) = (&left_nodes[&root], &right_nodes[&root]);
+        
+        if left.len() == 0 && right.len() == 0 {
+            // Any arbitrary other node in the DAG when passed as the merge point will effectively delete the empty pair from the DAG
+            // Since effect is simply deleting root the non-determinism in the order of keys doesn't matter here
+            let arbitrary_index = left_nodes.keys().copied().find(|&key| key != root).expect("DAG passed contains only empty root");
+
+            return (HashSet::from([arbitrary_index, root]), true);
+        }
+
+        // Need to pick some adjacent node to nonempty root - choosing as heuristic neighbour with highest modularity, i.e. best cluster
+        // This is computationally expensive but we don't expect this to be called often and so we take the time to choose a good adjacent cluster
+
+        // Recall that Q_c, the modularity of a community is $\frac{\sum_{in}}{2m} - resolution * (\frac{\sum_{tot}}{2m})^2$, we don't have a resolution here so we'll default to 1 and we can scale this by 2m as that will be constant accross all Q_c so we have \sum_{in} - \fra{\sum_{tot}^2}{2m}
+        // But we only care about the change in modularity which if we take Q_{AB} - Q_A - Q_B we end with $\sum_{A <-> B} - \frac{\sum_{tot A} \cdot \sum_{tot B}}{m}$
+        fn choose_best_successor<'a, C: Constraint, S: Circuit<C>>(root: usize, node: &DAGNode<'a, C, S>, nodes: &HashMap<usize, DAGNode<'a, C, S>>, signal_to_coni: &HashMap<usize, Vec<usize>>) -> usize {
+
+            // total weight m is sum of all shared signals so we need - for each signal - the number of nodes it is in and to sum k choose 2 of that
+            let signal_to_weight: HashMap<usize, usize> = signal_to_coni.iter()
+                                .map(|(key, conis)| {(*key, ( conis.len() * (conis.len() - 1) ) << 1)}).collect();
+            let m: f64 = signal_to_weight.values().copied().sum::<usize>() as f64;
+            
+            // need to know how many constraints contain each signal in each
+            let circ = node.get_circ();
+
+            let mut root_signal_to_num_cons: HashMap<usize, usize> = HashMap::new();
+            for coni in node.get_constraint_indices() {for signal in circ.get_constraint(coni).signals() {
+                *root_signal_to_num_cons.entry(signal).or_default() += 1;
+            }}
+            let root_total_sum: f64 = node.signals().into_iter().map(|sig| signal_to_weight[&sig]).sum::<usize>() as f64;
+            
+            let adjacent: Vec<usize> = node.get_successors().into_iter().chain(node.get_predecessors().into_iter()).copied().sorted().collect();
+            if adjacent.len() == 0 {panic!("Empty cluster with id {root} has nonempty semantic link to cluster with no adjacent");}
+
+            let modularity: Vec<(f64, usize)> = adjacent.into_iter().map(
+                |node_id| {
+                    let mut adjacent_signal_to_num_cons: HashMap<usize, usize> = HashMap::new();
+                    for coni in node.get_constraint_indices() {for signal in circ.get_constraint(coni).signals() {
+                        *adjacent_signal_to_num_cons.entry(signal).or_default() += 1;
+                    }}
+                    let zero: usize = 0;
+                    let combined_weight: f64 = root_signal_to_num_cons.iter().map(|(key, weight)| weight * adjacent_signal_to_num_cons.get(key).unwrap_or(&zero)).sum::<usize>() as f64;
+                    let other_total_sum: f64 = nodes[&node_id].signals().into_iter().map(|sig| signal_to_weight[&sig]).sum::<usize>() as f64;
+
+                    (combined_weight - root_total_sum * other_total_sum / m, node_id)
+                }
+            ).collect();
+
+            // annoying comparison code because f64 doesn't have Ord
+            modularity.into_iter().max_by(|a, b| a.0.partial_cmp(&b.0).unwrap().then_with(|| a.1.cmp(&b.1))).unwrap().1
+        }
+
+        if left.len() == 0 {
+            ([root, choose_best_successor(root, right, right_nodes, right_signal_to_coni)].into_iter().collect(), false)
+        } else {
+            ([root, choose_best_successor(root, left, left_nodes, left_signal_to_coni)].into_iter().collect(), true)
+        }
+    }
+
+    dual_merge_until_property(left, right, left_nodes, right_nodes, is_nonempty, either_delete_or_merge_with_adjacent_nonempty)
 
 }
