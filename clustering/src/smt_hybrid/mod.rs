@@ -36,6 +36,7 @@ pub struct HybridClusteringOptions<'a> {
     pub guide_decompose_options: DecomposeOptions<'a>,
     pub hybrid_decompose_method: HybridClusteringMethods,
     pub hybrid_decompose_options: HybridClusteringMethodOptions,
+    pub manually_check_acyclic: bool,
 }
 
 // NOTE: the semantic link between nodes is given by the nodes having the same usize identifier -- this is vital and assumed in later functions
@@ -60,8 +61,10 @@ fn circuit_and_smt_hybrid_clustering<'a, Cons: Constraint, Circ: Circuit<Cons> ,
     add_timing_info(&mut timing_info, secondary_timing);
     // Both sides, unconditionally: the pairing is only meaningful if each side admits an
     // order, and a cycle would surface much later as a nonsensical verdict.
-    let _ = DAGNode::get_topological_ordering(&guide_clustering);
-    let _ = DAGNode::get_topological_ordering(&recipient_clustering);
+    if options.manually_check_acyclic {
+        let _ = DAGNode::get_topological_ordering(&guide_clustering);
+        let _ = DAGNode::get_topological_ordering(&recipient_clustering);
+    }
 
     (timing_info, guide_clustering, recipient_clustering)
 }
@@ -89,7 +92,7 @@ fn structure_driven_circuit_and_smt_hybrid_clustering<'a, Cons: Constraint + 'a,
     debug: usize
 ) -> Vec<(TimingInfo, HashMap<usize, DAGNode<'a, Cons, Circ>>, HashMap<usize, DAGNode<'a, FormulaAtom, Formula>>)> {
 
-    let HybridClusteringOptions { guide_decompose_options, hybrid_decompose_method, mut hybrid_decompose_options, .. } = options;
+    let HybridClusteringOptions { guide_decompose_options, hybrid_decompose_method, mut hybrid_decompose_options, manually_check_acyclic, .. } = options;
     hybrid_decompose_options.recipient_requires_subsets = true;
 
     let id_to_index: HashMap<usize, usize> = circuit_structure.nodes.iter().enumerate().map(|(idx, node)| (node.node_id, idx)).collect();
@@ -108,7 +111,7 @@ fn structure_driven_circuit_and_smt_hybrid_clustering<'a, Cons: Constraint + 'a,
     fn dfs_tree_visit<'a, 'b, Cons: Constraint + 'a, Circ: Circuit<Cons> + 'a>(
         id: usize, id_generator: &mut dyn Iterator<Item = usize>, 
         circ: &'a Circ, smt: &'a Formula, circuit_structure: &'b StructureReader,
-        guide_decompose_options: CopyableDecomposeOptions, hybrid_decompose_method: HybridClusteringMethods, hybrid_decompose_options: HybridClusteringMethodOptions, debug: usize,
+        guide_decompose_options: CopyableDecomposeOptions, hybrid_decompose_method: HybridClusteringMethods, hybrid_decompose_options: HybridClusteringMethodOptions, manually_check_acyclic: bool, debug: usize,
         id_to_index: &HashMap<usize, usize>, visited: &mut HashSet<usize>,
         // TODO: add remaining things to finish this
         clusterings: &mut Vec<Option<(TimingInfo, HashMap<usize, DAGNode<'a, Cons, Circ>>, HashMap<usize, DAGNode<'a, FormulaAtom, Formula>>)>>, name_components: &mut Vec<&'b str>) -> () {
@@ -135,6 +138,11 @@ fn structure_driven_circuit_and_smt_hybrid_clustering<'a, Cons: Constraint + 'a,
             }
         };
 
+        if manually_check_acyclic {
+            let _ = DAGNode::get_topological_ordering(&smt_clustering);
+            let _ = DAGNode::get_topological_ordering(&circuit_clustering);
+        }
+
         add_timing_info(&mut timing_info, other_timing);
 
         // map indices back to previous and move cluster to toplevel -- signals are original signals due to LightweightCircuit
@@ -157,13 +165,13 @@ fn structure_driven_circuit_and_smt_hybrid_clustering<'a, Cons: Constraint + 'a,
 
             // descend to child and make recursive call
             name_components.push(&circuit_structure.nodes[id_to_index[&child_id]].component_name.as_str());
-            dfs_tree_visit(child_id, id_generator, circ, smt, circuit_structure, guide_decompose_options, hybrid_decompose_method, hybrid_decompose_options, debug, id_to_index, visited, clusterings, name_components);
+            dfs_tree_visit(child_id, id_generator, circ, smt, circuit_structure, guide_decompose_options, hybrid_decompose_method, hybrid_decompose_options, manually_check_acyclic, debug, id_to_index, visited, clusterings, name_components);
             name_components.pop();
 
         }
     }
 
-    dfs_tree_visit(0, &mut id_generator, circ, smt, circuit_structure, guide_decompose_options.into_copy_decompose_options(), hybrid_decompose_method, hybrid_decompose_options, debug, &id_to_index, &mut visited, &mut clusterings, &mut name_components);
+    dfs_tree_visit(0, &mut id_generator, circ, smt, circuit_structure, guide_decompose_options.into_copy_decompose_options(), hybrid_decompose_method, hybrid_decompose_options, manually_check_acyclic, debug, &id_to_index, &mut visited, &mut clusterings, &mut name_components);
 
     clusterings.into_iter().enumerate().map(|(idx, option)| option.expect(&format!("Didn't produce clustering for index instance with idx {idx}"))).collect()
 }

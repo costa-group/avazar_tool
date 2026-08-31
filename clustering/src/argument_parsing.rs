@@ -64,4 +64,6 @@ pub struct Args {
     #[arg(long)]
     pub circuit_structure: Option<PathBuf>,
 
+    #[arg(long)]
+    pub manually_check_acyclic: bool,
 }
