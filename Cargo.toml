@@ -7,5 +7,6 @@ members = [
     "circuit_graphing",
     "clustering",
     "equivalence",
-    "integrated_clustering"
+    "integrated_clustering",
+    "llzk_smt_preprocessor"
 ]

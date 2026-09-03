@@ -43,6 +43,7 @@ use std::io::BufReader;
 use circuits_constraints_and_algebra::lightweight_circuit::LightweightCircuit;
 use circuits_constraints_and_algebra::num_bigint::BigInt;
 use circuits_constraints_and_algebra::r1cs::R1CSConstraint as Constraint;
+use circuits_constraints_and_algebra::smt_formula::Formula;
 use clustering::smt_hybrid::{
     circuit_and_smt_hybrid_clustering_into_structurereader,
     structure_driven_circuit_and_smt_hybrid_clustering_into_structurereader,
@@ -54,7 +55,7 @@ use solvers_interface::{PossibleResult, PossibleSolver};
 use utils::read_correspondence::read_signal_correspondence;
 use utils::read_specification::read_smt_specification;
 use utils::small_utilities::DecomposeOptions;
-use utils::structure::{transform_structure_reader, NodeInfo, StructureInfo, StructureReader};
+use utils::structure::{transform_structure_reader, NodeInfo, StructureInfo, StructureReader, TimingInfo};
 use crate::semantic_equivalence::structure_from_spec::derive_structure;
 use circuits_constraints_and_algebra::constraint::Constraint as _;
 
@@ -127,6 +128,127 @@ pub struct RawClusterNode {
     pub output_signals: Vec<usize>,
     pub predecessors: Vec<usize>,
     pub successors: Vec<usize>,
+}
+
+/// `--no_clustering`: one cluster pair per instance, each holding everything that
+/// instance has, instead of a partition of it.
+///
+/// The clustering algorithm does not run at all -- no Leiden over the atoms, no
+/// guided assignment of the constraints, no merge passes -- so `--target_size`
+/// and `--skip_io_equivalence_merge` have nothing to act on. What comes out has
+/// the same shape the real clustering returns (one pair per structure node, in
+/// the structure's own order, the two sides sharing a cluster id), which is what
+/// everything downstream reads.
+///
+/// One cluster per instance means no siblings, so nothing of an instance is ever
+/// abstracted away from its own query: the verdict is about the whole template,
+/// and a counterexample cannot be local to a boundary the algorithm chose. It
+/// also means the query is as big as the template, which is the trade.
+///
+/// The ports are the structure's, intersected with what each side actually
+/// mentions -- the same rule `guided_clustering` applies, where a cluster's
+/// inputs are the subcircuit inputs AMONG ITS OWN SIGNALS. The circuit side then
+/// declares the specification's boundary too, even where no constraint of the
+/// instance mentions it: that interface is what the query equates, so it has to
+/// exist as a symbol.
+fn one_cluster_per_instance(
+    structure_reader: &StructureReader,
+    structure: &StructureInfo,
+    formula: &Formula,
+    constraints: &[Constraint<usize>],
+) -> Vec<(StructureReader, StructureReader)> {
+    let prefixes = instance_prefixes(structure);
+    let sorted = |set: HashSet<usize>| {
+        let mut v: Vec<usize> = set.into_iter().collect();
+        v.sort_unstable();
+        v
+    };
+
+    structure_reader
+        .nodes
+        .iter()
+        .enumerate()
+        .map(|(index, node)| {
+            let instance = prefixes
+                .get(&node.node_id)
+                .cloned()
+                .unwrap_or_else(|| "main".to_string());
+            let atoms: Vec<usize> = formula
+                .get_atomrange_for_component(&instance)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "The specification has no atoms for instance '{}', which the structure \
+                         lists as node {}. The two were built from the same walk, so this is a \
+                         mismatch between the structure and the specification.",
+                        instance, node.node_id
+                    )
+                })
+                .collect();
+
+            let circuit_signals: HashSet<usize> = node
+                .constraints
+                .iter()
+                .flat_map(|c| constraints[*c].signals())
+                .collect();
+            let spec_signals: HashSet<usize> = atoms
+                .iter()
+                .flat_map(|a| formula.atoms()[*a].signals.iter().copied())
+                .collect();
+
+            let ports = |declared: &Vec<usize>, own: &HashSet<usize>| -> Vec<usize> {
+                let mut v: Vec<usize> =
+                    declared.iter().copied().filter(|s| own.contains(s)).collect();
+                v.sort_unstable();
+                v.dedup();
+                v
+            };
+            let spec_inputs = ports(&node.input_signals, &spec_signals);
+            let spec_outputs = ports(&node.output_signals, &spec_signals);
+
+            // Everything the constraints touch, plus the specification's boundary:
+            // `check_cluster` states the obligation over the SPEC node's ports and
+            // declares the circuit's symbols from this list, so a port missing here
+            // would be equated to a symbol nothing declared.
+            let mut circuit_all = circuit_signals.clone();
+            circuit_all.extend(spec_inputs.iter().copied());
+            circuit_all.extend(spec_outputs.iter().copied());
+
+            // The cluster id is the instance's position: unique across instances,
+            // and the same on both sides, which is the whole semantic link.
+            let id = index;
+            let one = |constraints: Vec<usize>,
+                       signals: Vec<usize>,
+                       input_signals: Vec<usize>,
+                       output_signals: Vec<usize>| StructureReader {
+                timing: TimingInfo::default(),
+                nodes: vec![NodeInfo {
+                    node_id: id,
+                    node_name: format!("node_{}", id),
+                    component_name: node.component_name.clone(),
+                    constraints,
+                    input_signals,
+                    output_signals,
+                    signals,
+                    is_custom: false,
+                    is_deterministic: false,
+                    predecessors: Vec::new(),
+                    successors: Vec::new(),
+                }],
+                equivalency_local: None,
+                equivalency_structural: None,
+            };
+
+            (
+                one(
+                    node.constraints.clone(),
+                    sorted(circuit_all),
+                    ports(&node.input_signals, &circuit_signals),
+                    ports(&node.output_signals, &circuit_signals),
+                ),
+                one(atoms, sorted(spec_signals), spec_inputs, spec_outputs),
+            )
+        })
+        .collect()
 }
 
 fn raw_cluster_nodes(reader: &StructureReader) -> Vec<RawClusterNode> {
@@ -461,14 +583,25 @@ pub fn prove_semantic_equivalence(user_input: Input) -> Result<(), ()> {
         },
     };
 
-    println!("LOG: clustering circuit and specification together");
-    let clusterings = structure_driven_circuit_and_smt_hybrid_clustering_into_structurereader(
-        &circuit,
-        &structure_reader,
-        &formula,
-        hybrid_options,
-        if user_input.flag_verbose { 2 } else { 1 },
-    );
+    let clusterings = if user_input.no_clustering {
+        // `--no_clustering`: the templates are the units, whole. See
+        // `one_cluster_per_instance` -- nothing of the algorithm above runs.
+        let pairs = one_cluster_per_instance(&structure_reader, &structure, &formula, &constraints);
+        println!(
+            "LOG: --no_clustering: one cluster pair per template, {} of them",
+            pairs.len()
+        );
+        pairs
+    } else {
+        println!("LOG: clustering circuit and specification together");
+        structure_driven_circuit_and_smt_hybrid_clustering_into_structurereader(
+            &circuit,
+            &structure_reader,
+            &formula,
+            hybrid_options,
+            if user_input.flag_verbose { 2 } else { 1 },
+        )
+    };
 
     // Each side is acyclic on its own: the clustering checks it before returning,
     // unconditionally, and panics with "DAG contains a cycle" if it is not. That is

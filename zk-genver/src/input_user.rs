@@ -19,6 +19,7 @@ pub struct Input {
     pub apply_bidirectional: bool,
     pub allow_empty_clusters: bool,
     pub smt_signal_names: bool,
+    pub no_clustering: bool,
     pub prime: BigInt,
     pub clustering_size: usize,
     pub equivalence_mode: usize,
@@ -54,6 +55,7 @@ impl Input {
         let apply_bidirectional = input_processing::get_apply_bidirectional(&matches);
         let allow_empty_clusters = matches.is_present("allow_empty_clusters");
         let smt_signal_names = matches.is_present("smt_signal_names");
+        let no_clustering = matches.is_present("no_clustering");
 
         let equivalence_mode = input_processing::get_equivalence_mode(&matches)?;
         let target_size = input_processing::get_target_size(&matches)?;
@@ -84,6 +86,7 @@ impl Input {
             apply_bidirectional,
             allow_empty_clusters,
             smt_signal_names,
+            no_clustering,
             equivalence_mode,
             target_size,
             extra_rounds,
@@ -473,6 +476,16 @@ mod input_processing {
                     .takes_value(false)
                     .hidden(false)
                     .help("Abstract/expand towards both the predecessors and the successors. Read by --check_correctness, --check_equivalence, the determinism mode and --check_semantic_equivalence alike")
+                    .display_order(600)
+            )
+            .arg(
+                Arg::with_name("no_clustering")
+                    .long("no_clustering")
+                    .takes_value(false)
+                    .hidden(false)
+                    .requires("check_semantic_equivalence")
+                    .conflicts_with("resolved_formula")
+                    .help("--check_semantic_equivalence only: do not cluster anything. Each template of the circuit structure -- the one --input_structure gives, or the one derived from the specification when it does not -- becomes ONE cluster pair holding all of its constraints and all of its atoms, so a verdict covers the whole template and nothing of it is ever abstracted away from its own query. The clustering algorithm does not run, which leaves --target_size and --skip_io_equivalence_merge with nothing to act on. Not available with --resolved_formula, which has no templates to keep whole")
                     .display_order(600)
             )
             .arg(
