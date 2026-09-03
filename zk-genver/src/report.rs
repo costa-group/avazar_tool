@@ -49,6 +49,10 @@ pub struct NodeResult {
     pub result: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub num_constraints: Option<usize>,
+    /// Wall-clock seconds this node took, solver call included. Absent when the
+    /// node was settled without one -- nothing to verify, or a syntactic proof.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub seconds: Option<f64>,
     /// True when the node was proven safe by syntactic analysis (determinism only)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub previously_verified: Option<bool>,

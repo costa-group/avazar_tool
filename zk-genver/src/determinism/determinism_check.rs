@@ -23,6 +23,11 @@ pub struct ResultInfoDeterminism{
     unknown_nodes: HashSet<usize>,
     unknown_undivisible_nodes: HashSet<usize>,
     pub studied_nodes: HashMap<usize, PossibleResult>,
+    /// Node id -> wall-clock seconds spent on it. A node settled without a
+    /// solver call -- a custom template, one already deterministic by syntactic
+    /// analysis, one over --limit_size, or one inheriting its class's verdict --
+    /// gets no entry.
+    pub node_seconds: HashMap<usize, f64>,
     total_constraints: usize,
     verified_constraints: usize,
     fails_original_templates: Option<HashSet<String>>,// include which constraints fail in each component or not?
@@ -139,6 +144,7 @@ pub fn prove_safety_internal<'a, C: EncodableConstraint + ClusterableConstraint 
         unknown_nodes: HashSet::new(),
         unknown_undivisible_nodes: HashSet::new(),
         studied_nodes: HashMap::new(),
+        node_seconds: HashMap::new(),
         total_constraints: 0,
         verified_constraints: 0,
         fails_original_templates: None,
@@ -271,6 +277,11 @@ fn process_node<C: EncodableConstraint + ClusterableConstraint + Clone + Send + 
 
     println!("LOG: Considering node {} with {} constraints", node.node_id, node.constraints.len());
     let no_abstract_fails = false;
+
+    // Times THIS node's own work. A node that inherits its equivalence class's
+    // verdict never gets here, so it stays without a time rather than borrowing
+    // one it did not spend.
+    let node_started = std::time::Instant::now();
             
     // If the equivalence class of the node has not been studied, we process it.
     let (result, _, n_rounds, _extra_rounds_helped, logs, included_nodes) = check_tags(
@@ -335,6 +346,10 @@ fn process_node<C: EncodableConstraint + ClusterableConstraint + Clone + Send + 
     }
 
         
+    results
+        .node_seconds
+        .insert(node.node_id, node_started.elapsed().as_secs_f64());
+
     if n_rounds == 0{
     	// No need to study children, can generalize to all the local equivalence class
     	 let id_class = local_equivalence_classes.get(&node.node_id).unwrap();
@@ -419,6 +434,7 @@ fn decompose_and_study<C: EncodableConstraint + ClusterableConstraint + Clone + 
         unknown_nodes: HashSet::new(),
         unknown_undivisible_nodes: HashSet::new(),
         studied_nodes: HashMap::new(),
+        node_seconds: HashMap::new(),
         total_constraints: 0,
         verified_constraints: 0,
         fails_original_templates: None,
@@ -466,6 +482,11 @@ fn decompose_and_study<C: EncodableConstraint + ClusterableConstraint + Clone + 
 
     println!("LOG: studied the new nodes -> verified {}", new_results.verified_nodes.len());
 
+    // Taken before the loop below moves `studied_nodes` out of `new_results`.
+    // The decomposed nodes are renumbered on their way into `results`, so their
+    // times have to follow the same remapping or they would be filed under ids
+    // that no longer exist.
+    let new_node_seconds = std::mem::take(&mut new_results.node_seconds);
     let mut index = 0;
     for (node_id, result) in new_results.studied_nodes{
         // add the new nodes to the initial structure
@@ -479,6 +500,9 @@ fn decompose_and_study<C: EncodableConstraint + ClusterableConstraint + Clone + 
 
         // add the new results to the previous ones
         results.studied_nodes.insert(new_node_id, result.clone());
+        if let Some(seconds) = new_node_seconds.get(&node_id) {
+            results.node_seconds.insert(new_node_id, *seconds);
+        }
 		match result{
 			PossibleResult::VERIFIED =>{
 				results.verified_nodes.insert(new_node_id);
@@ -708,6 +732,10 @@ fn build_determinism_report(
             node_id: *node_id,
             node_name,
             result: report::possible_result_str(result).to_string(),
+            seconds: results
+                .node_seconds
+                .get(node_id)
+                .map(|s| (s * 1000.0).round() / 1000.0),
             num_constraints: Some(num_constraints),
             previously_verified: Some(results.previously_verified_nodes.contains(node_id)),
         }

@@ -197,6 +197,9 @@ pub struct ResultInfoSemanticEquivalence {
     pub cluster_instance: HashMap<usize, String>,
     /// Cluster id -> how many r1cs constraints it holds.
     pub cluster_size: HashMap<usize, usize>,
+    /// Cluster id -> wall-clock seconds spent on it, every refinement round
+    /// included, since what a reader wants is what the cluster cost in total.
+    pub cluster_seconds: HashMap<usize, f64>,
     /// Boundary signals of a cluster that the specification never names.
     pub unbound_signals: HashMap<usize, Vec<usize>>,
     /// One record per cluster pair, in the order they were verified. Only
@@ -937,6 +940,7 @@ fn verify_instance(
                 .insert(spec_node.node_id, unbound);
         }
 
+        let cluster_started = std::time::Instant::now();
         let outcome = verify_cluster_with_refinement(&pair, &circuit_by_id, &spec_by_id, interface,
                                                      catalogue, ctx);
         let verdict = match outcome {
@@ -981,6 +985,10 @@ fn verify_instance(
         }
 
         results.clusters.insert(spec_node.node_id, verdict);
+        results.cluster_seconds.insert(
+            spec_node.node_id,
+            cluster_started.elapsed().as_secs_f64(),
+        );
         results
             .cluster_instance
             .insert(spec_node.node_id, instance.to_string());
@@ -1583,6 +1591,7 @@ fn build_semantic_equivalence_report(
         .clusters
         .iter()
         .map(|(id, verdict)| report::NodeResult {
+            seconds: results.cluster_seconds.get(id).map(|s| (s * 1000.0).round() / 1000.0),
             node_id: *id,
             node_name: format!(
                 "{}#c{}",

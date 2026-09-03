@@ -24,6 +24,10 @@ pub struct ResultInfoEquivalence{
     unknown_nodes: HashSet<usize>,
     // unknown_undivisible_nodes: HashSet<usize>,
     pub studied_nodes: HashMap<usize, PossibleResult>,
+    /// Node id -> wall-clock seconds spent on it. A node settled without a
+    /// solver call -- a custom template, one over --limit_size, or one
+    /// inheriting its class's verdict -- gets no entry.
+    pub node_seconds: HashMap<usize, f64>,
     // total_constraints: usize,
     // verified_constraints: usize,
     // fails_original_templates: Option<HashSet<String>>,// include which constraints fail in each component or not?
@@ -83,7 +87,8 @@ pub fn prove_equivalence(user_input: Input) -> Result<(), ()> {
         verified_nodes: HashSet::new(),
         failed_nodes: HashSet::new(),
         unknown_nodes: HashSet::new(),
-        studied_nodes: HashMap::new()
+        studied_nodes: HashMap::new(),
+        node_seconds: HashMap::new()
     };
 
     for node in structure.nodes.iter().rev(){
@@ -162,6 +167,11 @@ fn process_node(
 
     println!("LOG: Considering node {} with {} and {} constraints", node.node_id, node.constraints_1.len(), node.constraints_2.len());
     let no_abstract_fails = false;
+
+    // Times THIS node's own work. A node that inherits its equivalence class's
+    // verdict never gets here, so it stays without a time rather than borrowing
+    // one it did not spend.
+    let node_started = std::time::Instant::now();
             
     // If the equivalence class of the node has not been studied, we process it.
     let (result, _, n_rounds, _extra_rounds_helped, logs, included_nodes) = check_node(
@@ -225,6 +235,10 @@ fn process_node(
     }
 
         
+    results
+        .node_seconds
+        .insert(node.node_id, node_started.elapsed().as_secs_f64());
+
     if n_rounds == 0{
     	// No need to study children, can generalize to all the local equivalence class
     	 let id_class = local_equivalence_classes.get(&node.node_id).unwrap();
@@ -293,6 +307,10 @@ fn build_equivalence_report(
             node_id: *node_id,
             node_name,
             result: report::possible_result_str(result).to_string(),
+            seconds: results
+                .node_seconds
+                .get(node_id)
+                .map(|s| (s * 1000.0).round() / 1000.0),
             num_constraints: None,
             previously_verified: None,
         }
