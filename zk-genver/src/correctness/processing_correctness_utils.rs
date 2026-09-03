@@ -40,7 +40,7 @@ pub fn process_correspondence_node_macro(
         });
 
         let new_suc_name_str = new_suc_name.to_string();
-        println!("Suc {}", new_suc_name_str);
+        //println!("Suc {}", new_suc_name_str);
         let macro_suc = macro_studied.components_info.get(&new_suc_name_str).unwrap();
         correspondence_node_macro.insert(*suc, macro_suc.clone());
 

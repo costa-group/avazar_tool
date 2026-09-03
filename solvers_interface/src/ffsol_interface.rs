@@ -36,6 +36,7 @@ pub struct FfsolConfig {
     pub complete_deductions: bool,
     pub complete_non_overflowing_deductions: bool,
     pub verbose: bool,
+    pub apply_nia: bool,
 }
 
 impl FfsolConfig {
@@ -48,6 +49,7 @@ impl FfsolConfig {
             prime: None,
             apply_la_incremental: false,
             apply_nra: false,
+            apply_nia: false,
             light_check_determinism: true,
             apply_la: true,
             la_with_overflowing_constraints: false,
@@ -107,6 +109,7 @@ impl FfsolConfig {
         push_binary_arg(&mut args, "-simple_deductions", self.simple_deductions);
         push_binary_arg(&mut args, "-complete_deductions", self.complete_deductions);
         push_binary_arg(&mut args, "-complete_non_overflowing_deductions", self.complete_non_overflowing_deductions);
+        push_binary_arg(&mut args, "-apply_nia", self.apply_nia);
 
         args.push("-file".to_string());
         args.push(file_path.to_string());

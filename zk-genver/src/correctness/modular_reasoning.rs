@@ -133,10 +133,10 @@ pub type CorrectnessImplication = (Vec<(usize, String)>, Vec<(usize, String)>);
         }
 
         
-        logs.push(format!("Checking template {}\n", node_info.node_id));
-        logs.push(format!("Number of signals in the first version (i,int,o): {}\n", node_info.signals.len()));      
+        //logs.push(format!("Checking template {}\n", node_info.node_id));
+        logs.push(format!("Number of signals (i,int,o): {}\n", node_info.signals.len()));      
 
-        logs.push(format!("Number of constraints in the first template: {}\n", node_info.constraints.len()));
+        logs.push(format!("Number of constraints in the template: {}\n", node_info.constraints.len()));
 
         let inicio = Instant::now();
 

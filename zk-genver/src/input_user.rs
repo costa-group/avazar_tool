@@ -480,7 +480,7 @@ mod input_processing {
                     .short("extra_rounds")
                     .long("extra_rounds")
                     .takes_value(true)
-                    .default_value("0")
+                    .default_value("1")
                     .display_order(600)
                     .help("To choose the number of extra rounds of adding successors/predecessors when a node makes timeout. The default value is 0."),
             )
