@@ -19,6 +19,7 @@ pub struct Input {
     pub apply_bidirectional: bool,
     pub skip_io_equivalence_merge: bool,
     pub allow_empty_clusters: bool,
+    pub manually_check_acyclic: bool,
     pub smt_signal_names: bool,
     pub no_clustering: bool,
     pub prime: BigInt,
@@ -56,6 +57,7 @@ impl Input {
         let apply_bidirectional = input_processing::get_apply_bidirectional(&matches);
         let skip_io_equivalence_merge = matches.is_present("skip_io_equivalence_merge");
         let allow_empty_clusters = matches.is_present("allow_empty_clusters");
+        let manually_check_acyclic = matches.is_present("manually_check_acyclic");
         let smt_signal_names = matches.is_present("smt_signal_names");
         let no_clustering = matches.is_present("no_clustering");
 
@@ -88,6 +90,7 @@ impl Input {
             apply_bidirectional,
             skip_io_equivalence_merge,
             allow_empty_clusters,
+            manually_check_acyclic,
             smt_signal_names,
             no_clustering,
             equivalence_mode,
@@ -506,6 +509,14 @@ mod input_processing {
                     .hidden(false)
                     .requires("check_semantic_equivalence")
                     .help("--check_semantic_equivalence only: name the symbols of the generated .smt2 after the circuit's own signals -- `r1cs_main_isz_in` for an r1cs wire and `spec_main_isz_out` for the specification variable bound to it -- so a query reads without the correspondence file at hand. Without it the .smt2 looks like --check_correctness's: `s_{id}` for an r1cs signal and the macro's own `v_j` for a specification variable, with the names kept in the trailing comments either way")
+                    .display_order(600)
+            )
+            .arg(
+                Arg::with_name("manually_check_acyclic")
+                    .long("manually_check_acyclic")
+                    .takes_value(false)
+                    .hidden(false)
+                    .help("Check that each DAG the clustering builds is acyclic, by asking for a topological ordering and discarding it. Off by default: it is a self-check of the clustering, it costs time on every node of every instance, and a cycle is a bug in the clustering rather than something a circuit can cause")
                     .display_order(600)
             )
             .arg(

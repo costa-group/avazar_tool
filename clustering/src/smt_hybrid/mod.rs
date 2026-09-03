@@ -26,6 +26,14 @@ pub struct HybridClusteringMethodOptions {
     pub recipient_requires_subsets: bool,
     /// Whether to run `merge_until_all_inputs_outputs_same` as the last pass of `guided_clustering`.
     pub merge_until_io_same: bool,
+    /// Whether an empty cluster the repair could not merge away is an error.
+    ///
+    /// `merge_until_all_clusters_nonempty` leaves one behind only when it had no
+    /// adjacent to merge into -- a cluster sharing no signal with anything. That
+    /// is a partition that should not have been produced, so by default it stops
+    /// the run. Off, the pair is handed on as it is and whoever consumes the
+    /// clustering decides: see avazar's `--allow_empty_clusters`.
+    pub empty_clusters_are_an_error: bool,
 }
 
 impl Default for HybridClusteringMethodOptions {
@@ -34,6 +42,8 @@ impl Default for HybridClusteringMethodOptions {
             tiebreaking_strategy: TiebreakingStrategy::default(),
             recipient_requires_subsets: false,
             merge_until_io_same: true,
+            // On, as it has been since the check was introduced.
+            empty_clusters_are_an_error: true,
         }
     }
 }

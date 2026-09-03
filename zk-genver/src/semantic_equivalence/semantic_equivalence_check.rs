@@ -571,6 +571,7 @@ pub fn prove_semantic_equivalence(user_input: Input) -> Result<(), ()> {
         ..Default::default()
     };
     let hybrid_options = HybridClusteringOptions {
+        manually_check_acyclic: user_input.manually_check_acyclic,
         guide_decompose_options: decompose_options,
         hybrid_decompose_method: HybridClusteringMethods::default(),
         hybrid_decompose_options: HybridClusteringMethodOptions {
@@ -580,6 +581,10 @@ pub fn prove_semantic_equivalence(user_input: Input) -> Result<(), ()> {
             // variables at all.
             recipient_requires_subsets: true,
             merge_until_io_same: !user_input.skip_io_equivalence_merge,
+            // Same flag that silences the vacuous-obligation check downstream:
+            // with it there is one abort left, not two, and only one of them
+            // could be silenced.
+            empty_clusters_are_an_error: !user_input.allow_empty_clusters,
             ..Default::default()
         },
     };
@@ -872,11 +877,16 @@ fn prove_flat(
         ..Default::default()
     };
     let hybrid_options = HybridClusteringOptions {
+        manually_check_acyclic: user_input.manually_check_acyclic,
         guide_decompose_options: decompose_options,
         hybrid_decompose_method: HybridClusteringMethods::default(),
         hybrid_decompose_options: HybridClusteringMethodOptions {
             recipient_requires_subsets: true,
             merge_until_io_same: !user_input.skip_io_equivalence_merge,
+            // Same flag that silences the vacuous-obligation check downstream:
+            // with it there is one abort left, not two, and only one of them
+            // could be silenced.
+            empty_clusters_are_an_error: !user_input.allow_empty_clusters,
             ..Default::default()
         },
     };
