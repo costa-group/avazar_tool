@@ -387,11 +387,11 @@ fn print_pretty_results(
     println!("--------------------------------------------\n");
 
     if results.failed_nodes.is_empty() && results.unknown_nodes.is_empty(){
-        println!("-> All nodes are equivalent :)");
+        println!("-> All nodes are semantically equivalent :)");
     } else{
-    	println!("-> ZK-GENVER could not verify the equivalence of all components");
+    	println!("-> ZK-GENVER could not verify the semantic equivalence of all components");
     	if !results.failed_nodes.is_empty(){
-        	println!("Nodes that are not equivalent: ");
+        	println!("Nodes that are not semantically equivalent: ");
         	for c in &results.failed_nodes{
                 let pos = node_id_to_pos.get(c).unwrap();
                 let node_name = &structure.nodes[*pos].node_name;
@@ -399,7 +399,7 @@ fn print_pretty_results(
     		}
         }
     	if !results.unknown_nodes.is_empty() {
-        	println!("Nodes that timeout when checking equivalence: ");
+        	println!("Nodes that timeout when checking semantic equivalence: ");
         	for c in &results.unknown_nodes{
     			let pos = node_id_to_pos.get(c).unwrap();
                 let node_name = &structure.nodes[*pos].node_name;
@@ -407,8 +407,8 @@ fn print_pretty_results(
     		}
         }
     }
-    println!("  * Number of verified nodes (equivalence): {}",  results.verified_nodes.len());
-    println!("  * Number of failed nodes (equivalence): {}",  results.failed_nodes.len());        
-    println!("  * Number of timeout nodes (equivalence): {}",  results.unknown_nodes.len());
+    println!("  * Number of verified nodes (semantic equivalence): {}",  results.verified_nodes.len());
+    println!("  * Number of failed nodes (semantic equivalence): {}",  results.failed_nodes.len());        
+    println!("  * Number of timeout nodes (semantic equivalence): {}",  results.unknown_nodes.len());
 
 }

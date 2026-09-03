@@ -140,12 +140,12 @@ mod input_processing {
     }
 
     pub fn get_check_correctness(matches: &ArgMatches) -> Result<Option<PathBuf>, ()> {
-        if matches.is_present("check_correctness"){
-            let route = Path::new(matches.value_of("check_correctness").unwrap()).to_path_buf();
+        if matches.is_present("check_semantic_equivalence"){
+            let route = Path::new(matches.value_of("check_semantic_equivalence").unwrap()).to_path_buf();
             if route.is_file() {
                 Result::Ok(Some(route))
             } else {
-                Result::Err(eprintln!("{}", Colour::Red.paint("invalid file to check correctness")))
+                Result::Err(eprintln!("{}", Colour::Red.paint("invalid file to check semantic equivalence")))
             }
         } else{
             Ok(None)
@@ -359,11 +359,11 @@ mod input_processing {
                     .display_order(130)
             )
             .arg(
-                Arg::with_name("check_correctness")
-                    .long("check_correctness")
+                Arg::with_name("check_semantic_equivalence")
+                    .long("check_semantic_equivalence")
                     .hidden(false)
                     .takes_value(true)
-                    .help("Argument to activate the correctness check mode. It checks if the input is correct with respect to the given SMT2 formula")
+                    .help("Argument to activate the semantic equivalence check mode. It checks if the input is semantically equivalent to the given SMT2 formula")
                     .display_order(130)
             )
             .arg(

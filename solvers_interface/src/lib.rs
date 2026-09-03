@@ -225,15 +225,15 @@ pub fn correctness_smt2_name(original_file: &str, template_name: &str, solver: &
     let random: u32 = rand::Rng::gen(&mut rand::thread_rng());
     let original = sanitize_name(original_file, false);
     if template_name.is_empty() {
-        let file_name = format!("correctness_{}_{}_{}.smt2", original, solver, random);
+        let file_name = format!("semantic_equivalence_{}_{}_{}.smt2", original, solver, random);
         ensure_safe_length(file_name, original_file, template_name, |o, _t| {
-            format!("correctness_{}_{}_{}.smt2", o, solver, random)
+            format!("semantic_equivalence_{}_{}_{}.smt2", o, solver, random)
         })
     } else {
         let template = sanitize_name(template_name, false);
-        let file_name = format!("correctness_{}_{}_{}_{}.smt2", original, template, solver, random);
+        let file_name = format!("semantic_equivalence_{}_{}_{}_{}.smt2", original, template, solver, random);
         ensure_safe_length(file_name, original_file, template_name, |o, t| {
-            format!("correctness_{}_{}_{}_{}.smt2", o, t, solver, random)
+            format!("semantic_equivalence_{}_{}_{}_{}.smt2", o, t, solver, random)
         })
     }
 }

@@ -59,7 +59,10 @@ pub struct SpecificationInfo {
 pub fn read_smt_specification<P: AsRef<Path>>(path: P) -> Result<SpecificationInfo, Box<dyn Error>> {
     let file = File::open(path)?;
     let reader = BufReader::new(file);
-    let u: SpecificationInfo = serde_json::from_reader(reader)?;
+    let mut u: SpecificationInfo = serde_json::from_reader(reader)?;
+     for (_, m) in &mut u.macros{
+         m.formula = m.formula.replace(r#"\"#, r#"""#);
+     }
     Ok(u)
 }
 

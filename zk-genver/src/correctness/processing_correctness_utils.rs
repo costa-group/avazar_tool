@@ -3,6 +3,7 @@ use std::collections::{HashSet, HashMap};
 use utils::read_specification::*;
 use std::collections::BTreeMap;
 use indexmap::IndexMap;
+use regex::Regex;
 use utils::structure::*;
 
 
@@ -24,8 +25,23 @@ pub fn process_correspondence_node_macro(
         let pos_suc = nodeid2pos.get(suc).unwrap();
 
         let suc_name = &structure.nodes[*pos_suc].component_name;
-        //println!("Suc name: {}", suc_name);
-        let macro_suc = macro_studied.components_info.get(suc_name).unwrap();
+
+        // Captures the variable name followed by one or more [...] blocks
+        let re = Regex::new(r"([a-zA-Z_]\w*)((?:\[\d+\])+)").unwrap();
+
+        let new_suc_name = re.replace_all(suc_name, |caps: &regex::Captures| {
+            let name = &caps[1];
+            let brackets = &caps[2];
+
+            // Removes all ']' and replaces '[' with '#'
+            let formatted_indices = brackets.replace(']', "").replace('[', "#");
+
+            format!("{}{}", name, formatted_indices)
+        });
+
+        let new_suc_name_str = new_suc_name.to_string();
+        println!("Suc {}", new_suc_name_str);
+        let macro_suc = macro_studied.components_info.get(&new_suc_name_str).unwrap();
         correspondence_node_macro.insert(*suc, macro_suc.clone());
 
         process_correspondence_node_macro(structure, nodeid2pos, macros, *pos_suc, macro_suc, correspondence_node_macro);
@@ -61,8 +77,23 @@ pub fn get_equivalent_subcomponent_signal_in_macro(signal: usize, studied_macro:
     let last_access: Vec<&str> = remaining.rsplit('.').take(2).collect();
     let signal_name: String = format!("{}.{}", last_access[1], last_access[0]);
 
+        // Captures the variable name followed by one or more [...] blocks
+        let re = Regex::new(r"([a-zA-Z_]\w*)((?:\[\d+\])+)").unwrap();
 
-    let signal_info_macro = studied_macro.vars_info.get(&signal_name).unwrap();
+        let new_signal_name = re.replace_all(&signal_name, |caps: &regex::Captures| {
+            let name = &caps[1];
+            let brackets = &caps[2];
+
+            // Removes all ']' and replaces '[' with '#'
+            let formatted_indices = brackets.replace(']', "").replace('[', "#");
+
+            format!("{}{}", name, formatted_indices)
+        });
+
+        let new_signal_name_str = new_signal_name.to_string();
+
+
+    let signal_info_macro = studied_macro.vars_info.get(&new_signal_name_str).unwrap();
     if signal_info_macro.is_array(){
         assert!(possible_array_access.is_some());
         signal_info_macro.as_array().unwrap()[possible_array_access.unwrap()].to_string()
@@ -116,6 +147,7 @@ pub fn get_input_signals_macro(number_inputs: usize, studied_macro: &MacroDef) -
     let mut input_var_index = 0;
     while inputs.len() < number_inputs{
         let arg_name = format!("%arg{}", input_var_index);
+        //println!("Studied macro vars info: {:?}", studied_macro.vars_info);
         let signal_info_macro = studied_macro.vars_info.get(&arg_name).unwrap();
         if signal_info_macro.is_array(){
             if let Some(array) = signal_info_macro.as_array() {

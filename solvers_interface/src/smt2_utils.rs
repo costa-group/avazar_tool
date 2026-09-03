@@ -31,7 +31,7 @@ pub fn correctness_problem_to_smt2(problem: &CorrectnessVerification)->LinkedLis
     }
 
 
-    // include the macros!!!
+    //include the macros!!!
     for (_, macro_info) in &problem.macros{
         smt2_problem.push_back(
             macro_info.to_string()
