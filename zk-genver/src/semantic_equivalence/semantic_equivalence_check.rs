@@ -351,16 +351,18 @@ pub fn prove_semantic_equivalence(user_input: Input) -> Result<(), ()> {
     };
 
     // The formula as the clustering sees it, in the shape the preprocessor
-    // writes: macro -> [ { instance, tag: [signals] } ]. Avazar builds this
-    // itself with `build_atoms`, so the two can drift; this makes them
-    // comparable.
+    // writes: macro -> [ { instance, tag: [signals] } ].
+    //
+    // What it shows is the footprint the clustering actually gets, which is no
+    // longer the preprocessor's: `build_atoms` closes each tag over the
+    // temporaries it mentions and adds the tie groups as `equalityN` atoms. So
+    // this is NOT byte-comparable with `llzk_smt_preprocessor --mode flat` any
+    // more -- that view has the direct footprint, this one the closed one, and
+    // the difference between the two IS the closure.
+    //
+    // No filtering of the invented ids either, and none is needed: after the
+    // closure a footprint is r1cs wires and nothing else.
     if let Some(dump_dir) = &user_input.dump_dir {
-        // The ids invented for specification variables with no r1cs wire are
-        // left out. They are real to the clustering -- that is what they are for
-        // -- but they are not signals, and the preprocessor's own view omits the
-        // variables behind them, so printing them here would make every tag look
-        // different from its counterpart in a file written to be diffed.
-        let synthetic: HashSet<usize> = table.unresolved_ids.values().copied().collect();
         let mut by_macro: IndexMap<String, IndexMap<String, IndexMap<String, Vec<usize>>>> =
             IndexMap::new();
         for (idx, info) in table.atoms.iter().enumerate() {
@@ -368,8 +370,7 @@ pub fn prove_semantic_equivalence(user_input: Input) -> Result<(), ()> {
                 .atoms()
                 .get(idx)
                 .map(|a| {
-                    let mut s: Vec<usize> =
-                        a.signals.iter().copied().filter(|x| !synthetic.contains(x)).collect();
+                    let mut s = a.signals.clone();
                     s.sort_unstable();
                     s
                 })

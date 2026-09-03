@@ -16,6 +16,17 @@
 //! the atoms cover it without overlapping. Nested tags overlap (a parent's text
 //! contains its children's) and the leaves lose the structure holding them
 //! together (the `ite` of an `if`).
+//!
+//! Two things happen to a tag's SIGNAL FOOTPRINT that do not happen to its text,
+//! both so that the atoms of one circom line stay connected once llzk has split
+//! it into several operations:
+//!
+//! - it is closed over the temporaries it mentions, transitively, so an atom
+//!   reading a value with no r1cs wire behind it inherits the wires that value
+//!   was computed from (see `real_signals_reachable`);
+//! - the instance's tie groups become atoms of their own, asserting `true`,
+//!   because two signals bound to one specification variable are the same wire
+//!   and no tag says so on its own.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -23,7 +34,9 @@ use circuits_constraints_and_algebra::num_bigint::BigInt;
 use circuits_constraints_and_algebra::smt_formula::{Formula, FormulaAtom};
 use indexmap::IndexMap;
 use llzk_smt_preprocessor::graph::resolve_full;
-use llzk_smt_preprocessor::resolve::{aggregate_resolved, ResolvedMacroEntry, ResolvedVar};
+use llzk_smt_preprocessor::resolve::{
+    aggregate_resolved, equality_groups, ResolvedMacroEntry, ResolvedTagNode, ResolvedVar,
+};
 use utils::read_specification::MacroDef;
 use utils::structure::StructureInfo;
 
@@ -140,7 +153,7 @@ impl AtomTable {
 
 /// Sanitises an instance prefix into something usable inside an SMT-LIB
 /// symbol: `"main.sub[0]"` -> `"main_sub_0_"`.
-fn sanitise(prefix: &str) -> String {
+pub(crate) fn sanitise(prefix: &str) -> String {
     prefix
         .chars()
         .map(|c| if c.is_alphanumeric() || c == '_' { c } else { '_' })
@@ -228,6 +241,77 @@ fn resolved_signals(table: &mut AtomTable, instance: &str, var: &ResolvedVar) ->
     }
 }
 
+/// Whether a tag's body asserts nothing: a conjunction of `true`s, however
+/// deeply nested and however many `:meta-data` annotations hang off it.
+///
+/// llzk emits such a body for a whole `repeat_exp` loop that turned out to be
+/// pure bookkeeping -- `array.read`/`array.write` over indices that constant
+/// tracking already resolved to literals, so not one leaf of it reaches the
+/// field. `mux1` has two, of 20 and 32 leaves each. The textual test this
+/// replaces (`body == "true"`) only caught the single-alias tag llzk writes as
+/// literally `true`.
+///
+/// Keeping them is not harmless. Such a body names no `v_k` either, so its atom
+/// has an EMPTY signal footprint and is an isolated vertex of the specification
+/// graph -- no edge, hence no merge can absorb it at any `--clustering_size`. It
+/// comes out of the clustering as a cluster of its own, holding no r1cs
+/// constraint and no output the specification names, and that is the vacuous
+/// pair `check_cluster` refuses to report on: it panics and the run dies.
+///
+/// The test is over the SYMBOLS, not the tree: a body is a conjunction of
+/// `true`s exactly when every symbol in it is structural (`and`, `!`, an
+/// annotation keyword) or `true` itself. Anything that asserts something --
+/// `=`, `ff.mul`, `ff.range`, `ite`, a variable, a numeral -- brings a symbol
+/// of its own, and so does anything that could turn a `true` into something
+/// else (`not`, `or`), which is why those are not on the list and a body using
+/// them is kept. Linear rather than recursive on purpose: these bodies nest one
+/// level per conjunct, thousands deep on a real circuit.
+fn asserts_nothing(formula: &str) -> bool {
+    let bytes = formula.as_bytes();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'(' | b')' => i += 1,
+            c if c.is_ascii_whitespace() => i += 1,
+            // A `:meta-data` payload is prose -- `"%10_aft62 := %arg1_w62"` --
+            // and its words are not symbols of the formula.
+            b'"' => {
+                i += 1;
+                while i < bytes.len() {
+                    if bytes[i] == b'"' {
+                        // SMT-LIB escapes a quote by doubling it.
+                        if bytes.get(i + 1) == Some(&b'"') {
+                            i += 2;
+                            continue;
+                        }
+                        i += 1;
+                        break;
+                    }
+                    i += 1;
+                }
+            }
+            _ => {
+                let start = i;
+                while i < bytes.len()
+                    && !bytes[i].is_ascii_whitespace()
+                    && !matches!(bytes[i], b'(' | b')' | b'"')
+                {
+                    i += 1;
+                }
+                let symbol = &formula[start..i];
+                let structural = symbol == "and"
+                    || symbol == "!"
+                    || symbol == "true"
+                    || symbol.starts_with(':');
+                if !structural {
+                    return false;
+                }
+            }
+        }
+    }
+    true
+}
+
 /// Builds the [`Formula`] the clustering consumes plus its [`AtomTable`].
 ///
 /// `structure` is the circom component structure: the preprocessor needs it
@@ -249,6 +333,10 @@ pub fn build_atoms(
 
     let mut table = AtomTable::with_signal_base(synthetic_id_base);
     let mut trivial_atoms = 0usize;
+    // Of those, the ones the literal test would have missed: a whole nested
+    // conjunction of `true`s rather than a bare `true`. Reported separately
+    // because a run that drops one of these is a run that used to die.
+    let mut trivial_conjunctions = 0usize;
     // Instance -> its atoms, in the order the atoms were built. Kept as a
     // Vec of pairs (not a map) because `Formula::from_atoms` lays the atoms
     // out in this order and each instance must end up contiguous.
@@ -261,6 +349,12 @@ pub fn build_atoms(
     // SMT-LIB.
     let mut infos_by_instance: Vec<Vec<AtomInfo>> = Vec::new();
     let mut instance_position: HashMap<String, usize> = HashMap::new();
+    // Parallel to the atoms of `by_instance[position]`, flattened the same way:
+    // the variables each atom defines, for the transitive closure below.
+    let mut defines_by_instance: Vec<Vec<Vec<String>>> = Vec::new();
+    // `(tag, macro, signals)` per instance for the tie groups, appended as atoms
+    // AFTER the closure so they never get out of step with `defines_by_instance`.
+    let mut equalities_by_instance: Vec<Vec<(String, String, Vec<usize>)>> = Vec::new();
 
     for entry in resolved.iter() {
         // The "main" macro is only a wrapper whose body is the `@Root` call
@@ -290,19 +384,27 @@ pub fn build_atoms(
             None => {
                 by_instance.push((entry.instance_prefix.clone(), Vec::new()));
                 infos_by_instance.push(Vec::new());
+                defines_by_instance.push(Vec::new());
+                equalities_by_instance.push(Vec::new());
                 instance_position.insert(entry.instance_prefix.clone(), by_instance.len() - 1);
                 by_instance.len() - 1
             }
         };
 
         for node in entry.tree.iter() {
-            // A tag whose whole body is `true` asserts nothing: llzk emits
-            // these to document an alias or a constant, and in a real
-            // specification they are the majority. Dropping them is sound —
-            // `true` is the identity of conjunction — and it avoids handing
-            // the clustering atoms with no content to cluster.
+            // A tag that asserts nothing: llzk emits these to document an
+            // alias or a constant, and in a real specification they are the
+            // majority. Dropping them is sound — `true` is the identity of
+            // conjunction — and it avoids handing the clustering atoms with no
+            // content to cluster. See `asserts_nothing` for why the whole
+            // conjunction has to be looked at and not just the literal `true`.
             if node.formula.trim() == "true" {
                 trivial_atoms += 1;
+                continue;
+            }
+            if asserts_nothing(&node.formula) {
+                trivial_atoms += 1;
+                trivial_conjunctions += 1;
                 continue;
             }
 
@@ -315,6 +417,12 @@ pub fn build_atoms(
                     }
                 }
             }
+            // Which llzk variable, if any, this tag DEFINES: the left of its
+            // `:=`. Recorded now, while the macro is in hand; `close_over_
+            // synthetics` needs it to walk back from a temporary to the atom
+            // that produced it.
+            defines_by_instance[position]
+                .push(defined_vars_deep(node, macro_defs.get(&entry.name)));
 
             by_instance[position].1.push(FormulaAtom {
                 name: node.tag.clone(),
@@ -329,6 +437,97 @@ pub fn build_atoms(
                     &rewrite_formula(&node.formula, &entry.instance_prefix, &local_vars),
                     &macro_names,
                 ),
+            });
+        }
+
+        // Every variable the instance mentions anywhere, tags and loose ones
+        // alike, so a tie is caught wherever it shows up. Same rule and the same
+        // first-seen order as the preprocessor's own view, which is what keeps
+        // the two files comparable.
+        let mut mentioned: Vec<ResolvedVar> = entry.level0.clone();
+        for node in entry.tree.iter() {
+            mentioned.extend(aggregate_resolved(node));
+        }
+        for ids in equality_groups(&mentioned).into_iter() {
+            // An instance can come from several entries; a group already found
+            // in one of them is the same group, not a second one.
+            if equalities_by_instance[position].iter().any(|(_, _, seen)| *seen == ids) {
+                continue;
+            }
+            let name = format!("equality{}", equalities_by_instance[position].len() + 1);
+            equalities_by_instance[position].push((name, entry.name.clone(), ids));
+        }
+    }
+
+    // ---- transitive closure over the temporaries -------------------------
+    // An atom's footprint is one llzk OPERATION, not the circom line it came
+    // from: `n2b_in <== lt_in[0] + 4 - lt_in[1]` is split into `%8 := add ...`
+    // and `%11 := sub %8 ...`, and `%8` is a temporary with no r1cs wire, so
+    // the second op never mentions `lt_in[0]`. Two atoms that share a wire in
+    // the circuit end up sharing nothing here, and the clustering separates
+    // what belongs together.
+    //
+    // So: a variable standing for a real signal is left alone -- there is no
+    // walking backwards from it -- and a temporary is REPLACED by the signals
+    // of the atom that defined it, transitively. Replaced, not added to: the
+    // footprint is then r1cs wires and nothing else. The cost is that an atom
+    // whose every variable is a temporary with no real ancestor comes out with
+    // no signals at all, and joins nothing.
+    let synthetic: HashSet<usize> = table.unresolved_ids.values().copied().collect();
+    let mut atoms_without_signals = 0usize;
+    for (position, (instance, atoms)) in by_instance.iter_mut().enumerate() {
+        // Temporary id -> the atom that defines it. A tag whose body is `true`
+        // was dropped above, so some temporaries have no definer at all; those
+        // contribute nothing, which is the same as not being there.
+        // EVERY atom that pins a temporary down, not just the first: one can
+        // compute it with a `:=` while another equates it to a real signal, and
+        // keeping only whichever came first drops the other. `Num2Bits` loses a
+        // bit that way -- the loop defines all three, and the tag equating them
+        // to the output port is a different atom.
+        let mut definer: HashMap<usize, Vec<usize>> = HashMap::new();
+        for (index, vars) in defines_by_instance[position].iter().enumerate() {
+            for var in vars.iter() {
+                if let Some(id) = table.unresolved_ids.get(&(instance.clone(), var.clone())) {
+                    let seen = definer.entry(*id).or_default();
+                    if !seen.contains(&index) {
+                        seen.push(index);
+                    }
+                }
+            }
+        }
+        let closed: Vec<Vec<usize>> = (0..atoms.len())
+            .map(|index| real_signals_reachable(index, atoms, &definer, &synthetic))
+            .collect();
+        for (atom, signals) in atoms.iter_mut().zip(closed.into_iter()) {
+            if signals.is_empty() && !atom.signals.is_empty() {
+                atoms_without_signals += 1;
+            }
+            atom.signals = signals;
+        }
+    }
+    if atoms_without_signals > 0 && debug > 0 {
+        println!(
+            "LOG: {} atom(s) mention only temporaries with no r1cs wire behind them, so their \
+             footprint closed to nothing and they join no cluster of their own accord",
+            atoms_without_signals
+        );
+    }
+
+    // ---- the tie groups, as atoms ----------------------------------------
+    // Two r1cs signals bound to one specification variable are the same wire,
+    // and nothing else in the formula says so: a tag lists the variable once,
+    // and which signals it stands for is not recoverable from the tag alone.
+    // They enter as atoms asserting `true` -- the same idiom `flat_mode` uses
+    // for the resolved file's `equalityN` keys -- so they shape the partition
+    // without adding anything to a query.
+    for (position, groups) in equalities_by_instance.into_iter().enumerate() {
+        for (name, macro_name, ids) in groups.into_iter() {
+            by_instance[position].1.push(FormulaAtom { name: name.clone(), signals: ids });
+            infos_by_instance[position].push(AtomInfo {
+                instance: by_instance[position].0.clone(),
+                macro_name,
+                tag: name,
+                formula: "true".to_string(),
             });
         }
     }
@@ -350,9 +549,10 @@ pub fn build_atoms(
             by_instance.len()
         );
         println!(
-            "LOG: dropped {} tag(s) whose body is just `true`, and gave synthetic ids to {} \
-             variable(s) with no r1cs signal",
+            "LOG: dropped {} tag(s) whose body asserts nothing ({} of them a whole conjunction \
+             of `true`s), and gave synthetic ids to {} variable(s) with no r1cs signal",
             trivial_atoms,
+            trivial_conjunctions,
             table.unresolved_ids.len()
         );
     }
@@ -403,6 +603,128 @@ pub fn build_atoms(
     }
 
     Ok((formula, table))
+}
+
+/// The variables a tag DEFINES: the left-hand side of its `:=`, resolved through
+/// the macro's `vars_info`.
+///
+/// llzk names a tag after the operation it encloses (`%8 := felt.add %7
+/// %felt_const_4`), so the name itself says what the operation produces. The
+/// left side is an llzk local (`%8`); `vars_info` maps it to the SMT variable
+/// the formula is written in (`v_14`), which is the name a temporary is filed
+/// under in [`AtomTable::unresolved_ids`].
+///
+/// Empty for a tag that defines nothing -- `and0`, `repeat_exp 3`, `if (%3 ==
+/// 1)`, a `call ... to ...` -- and for one whose left side is a constant rather
+/// than a variable, which `vars_info` records as a number.
+/// Both sides of every BARE equality in a tag's text: `(= v_117 v_74)`.
+///
+/// llzk ties a component's output port to the temporary that computed it with a
+/// loose `=`, not with a `:=`, and it writes the real signal on the LEFT and the
+/// variable that has no value of its own on the right. The closure walks from a
+/// user of a temporary to whatever DEFINES it, so that direction is the wrong
+/// way round: nothing defines `v_117`, it is merely equated to `v_74`, and the
+/// atom that computes the bits never reaches the signals they land on.
+///
+/// Recording both sides as definitions of the tag asserting the equality makes
+/// the relation symmetric for these, and ONLY these -- a `:=` keeps its
+/// direction, so the closure stays a walk back along the computation rather
+/// than a free propagation through every variable in sight.
+fn equated_vars(formula: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let bytes = formula.as_bytes();
+    let mut i = 0;
+    while i + 2 < bytes.len() {
+        if bytes[i] == b'(' && bytes[i + 1] == b'=' && bytes[i + 2] == b' ' {
+            let rest = &formula[i + 3..];
+            if let Some(end) = rest.find(')') {
+                let inside = &rest[..end];
+                let parts: Vec<&str> = inside.split_whitespace().collect();
+                // Exactly two operands, both plain variables: anything else is a
+                // real assertion about a term, not an alias.
+                if parts.len() == 2
+                    && parts.iter().all(|p| {
+                        p.starts_with("v_") && p[2..].chars().all(|c| c.is_ascii_digit())
+                    })
+                {
+                    out.push(parts[0].to_string());
+                    out.push(parts[1].to_string());
+                }
+            }
+        }
+        i += 1;
+    }
+    out
+}
+
+/// Every variable the tag and its NESTED tags define, in subtree order.
+///
+/// The `:=` that matter are usually not the top-level tag's: an unrolled loop
+/// comes out as one atom tagged `repeat_exp 3` whose own text defines nothing,
+/// while every `%2_aft11 := bit.and ...` inside it does. Reading only the top
+/// tag left those definitions unrecorded, so the closure below had nowhere to
+/// jump to and an atom that computes a component's outputs came out mentioning
+/// only its input. Mirrors `aggregate_resolved`, which already walks the whole
+/// subtree for the VARIABLES; this is the same walk for the DEFINITIONS.
+fn defined_vars_deep(node: &ResolvedTagNode, macro_def: Option<&MacroDef>) -> Vec<String> {
+    let mut out = defined_vars(&node.tag, macro_def);
+    out.extend(equated_vars(&node.formula));
+    for child in node.children.iter() {
+        out.extend(defined_vars_deep(child, macro_def));
+    }
+    out
+}
+
+fn defined_vars(tag: &str, macro_def: Option<&MacroDef>) -> Vec<String> {
+    let Some(def) = macro_def else { return Vec::new() };
+    let Some((left, _)) = tag.split_once(":=") else { return Vec::new() };
+    match def.vars_info.get(left.trim()) {
+        Some(serde_json::Value::String(var)) => vec![var.clone()],
+        // A tuple-valued op (`%12#0`, `%12#1`, ...) is recorded as a list, and
+        // the op defines all of them at once.
+        Some(serde_json::Value::Array(items)) => items
+            .iter()
+            .filter_map(|item| item.as_str().map(|s| s.to_string()))
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// The r1cs signals atom `start` reaches: its own, plus -- for every temporary
+/// it mentions -- those of the atom that defined that temporary, transitively.
+///
+/// Temporaries are followed, real signals are not: reaching `lt_in[0]` is the
+/// end of the walk, not an invitation to pull in whatever computed `lt_in[0]`.
+/// That is what keeps the closure from collapsing into "every atom touches
+/// everything".
+///
+/// `visited` is over ATOMS, so the loop variables llzk emits (`%arg1_w38 :=
+/// %24_aft38` and back) terminate instead of spinning.
+fn real_signals_reachable(
+    start: usize,
+    atoms: &[FormulaAtom],
+    definer: &HashMap<usize, Vec<usize>>,
+    synthetic: &HashSet<usize>,
+) -> Vec<usize> {
+    let mut real: Vec<usize> = Vec::new();
+    let mut visited: HashSet<usize> = HashSet::new();
+    let mut pending: Vec<usize> = vec![start];
+    while let Some(index) = pending.pop() {
+        if !visited.insert(index) {
+            continue;
+        }
+        for signal in atoms[index].signals.iter().copied() {
+            if synthetic.contains(&signal) {
+                if let Some(next) = definer.get(&signal) {
+                    pending.extend(next.iter().copied());
+                }
+            } else if !real.contains(&signal) {
+                real.push(signal);
+            }
+        }
+    }
+    real.sort_unstable();
+    real
 }
 
 /// Records an instance's spec variables and their binding to r1cs signals.
@@ -538,4 +860,163 @@ pub fn required_macro_definitions(
             })
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    //! The closure is what makes two atoms of the same circom line share a
+    //! wire again, so what it must and must not follow is worth pinning down.
+
+    use super::*;
+
+    fn synthetics(ids: &[usize]) -> HashSet<usize> {
+        ids.iter().copied().collect()
+    }
+
+    /// `(temporary, atom)` pairs as the map the closure takes. A temporary can
+    /// be pinned down by several atoms, so the value is a list; these cases
+    /// give one definer each.
+    fn definers(pairs: &[(usize, usize)]) -> HashMap<usize, Vec<usize>> {
+        let mut map: HashMap<usize, Vec<usize>> = HashMap::new();
+        for (temporary, atom) in pairs.iter().copied() {
+            map.entry(temporary).or_default().push(atom);
+        }
+        map
+    }
+
+    fn atom(name: &str, signals: &[usize]) -> FormulaAtom {
+        FormulaAtom { name: name.to_string(), signals: signals.to_vec() }
+    }
+
+    fn macro_def(vars: &[(&str, serde_json::Value)]) -> MacroDef {
+        MacroDef {
+            params: Vec::new(),
+            vars_info: vars.iter().map(|(k, v)| (k.to_string(), v.clone())).collect(),
+            components_info: HashMap::new(),
+            formula: String::new(),
+        }
+    }
+
+    #[test]
+    fn the_left_of_an_assignment_is_what_the_tag_defines() {
+        let def = macro_def(&[
+            ("%8", serde_json::json!("v_14")),
+            ("%12", serde_json::json!(["v_125", "v_124"])),
+            ("%9", serde_json::json!(1)),
+        ]);
+        assert_eq!(defined_vars("%8 := felt.add %7 %felt_const_4", Some(&def)), vec!["v_14"]);
+        // A tuple-valued op defines all of its components at once.
+        assert_eq!(defined_vars("%12 := call @F ()", Some(&def)), vec!["v_125", "v_124"]);
+        // A constant is not a variable, and these tags define nothing at all.
+        assert!(defined_vars("%9 := felt.const 1", Some(&def)).is_empty());
+        assert!(defined_vars("and0", Some(&def)).is_empty());
+        assert!(defined_vars("call @IsZero_0 (a) to oa", Some(&def)).is_empty());
+        assert!(defined_vars("%8 := felt.add %7", None).is_empty());
+    }
+
+    #[test]
+    fn a_temporary_is_followed_back_to_the_signals_that_defined_it() {
+        // The case this exists for: circom's `n2b_in <== lt_in[0] + 4 - lt_in[1]`
+        // becomes two llzk ops, and `%8` is a temporary with no r1cs wire, so
+        // the second op never mentions lt_in[0] (5) or in[1] (3).
+        let atoms = vec![
+            atom("%8 := felt.add %7 %felt_const_4", &[3, 5, 17]),
+            atom("%11 := felt.sub %8 %10", &[2, 6, 10, 17]),
+        ];
+        let synthetic = synthetics(&[17]);
+        let definer = definers(&[(17, 0)]);
+
+        assert_eq!(real_signals_reachable(0, &atoms, &definer, &synthetic), vec![3, 5]);
+        assert_eq!(real_signals_reachable(1, &atoms, &definer, &synthetic), vec![2, 3, 5, 6, 10]);
+    }
+
+    #[test]
+    fn a_real_signal_is_not_walked_back_through() {
+        // Atom 1 reads signal 4, which atom 0 produces. That is NOT a reason to
+        // pull atom 0's inputs into atom 1: chase real wires and every atom ends
+        // up touching everything.
+        let atoms = vec![atom("produces 4", &[7, 8, 4]), atom("reads 4", &[4, 9])];
+        let definer: HashMap<usize, Vec<usize>> = HashMap::new();
+        assert_eq!(
+            real_signals_reachable(1, &atoms, &definer, &HashSet::new()),
+            vec![4, 9]
+        );
+    }
+
+    #[test]
+    fn a_temporary_nobody_defines_simply_drops_out() {
+        // A tag whose body is `true` is not an atom, so the temporary it would
+        // have defined has no definer. Nothing to add, and no panic.
+        let atoms = vec![atom("only a temporary", &[20])];
+        let synthetic = synthetics(&[20]);
+        assert!(real_signals_reachable(0, &atoms, &HashMap::new(), &synthetic).is_empty());
+    }
+
+    #[test]
+    fn two_temporaries_defining_each_other_terminate() {
+        // llzk's loop variables do this: `%arg1_w38 := %24_aft38` on one side
+        // and `%24_aft38 := ... %arg1_w38` on the other.
+        let atoms = vec![atom("a", &[1, 31, 30]), atom("b", &[2, 30, 31])];
+        let synthetic = synthetics(&[30, 31]);
+        let definer = definers(&[(30, 0), (31, 1)]);
+
+        assert_eq!(real_signals_reachable(0, &atoms, &definer, &synthetic), vec![1, 2]);
+        assert_eq!(real_signals_reachable(1, &atoms, &definer, &synthetic), vec![1, 2]);
+    }
+
+    #[test]
+    fn the_closure_reaches_through_a_chain_of_temporaries() {
+        let atoms = vec![
+            atom("first", &[3, 40]),
+            atom("second", &[40, 41]),
+            atom("third", &[41, 9]),
+        ];
+        let synthetic = synthetics(&[40, 41]);
+        let definer = definers(&[(40, 0), (41, 1)]);
+
+        assert_eq!(real_signals_reachable(2, &atoms, &definer, &synthetic), vec![3, 9]);
+    }
+
+    #[test]
+    fn a_bare_true_asserts_nothing() {
+        assert!(asserts_nothing("true"));
+        assert!(asserts_nothing("  true  "));
+    }
+
+    #[test]
+    fn a_conjunction_of_nothing_but_true_asserts_nothing() {
+        // The shape `mux1`'s two `repeat_exp 2` tags have: every leaf `true`,
+        // the whole loop recorded in the annotations. This is the case the
+        // literal test missed, and the one that used to kill the run.
+        assert!(asserts_nothing(
+            r#" (and  (and  (! true :meta-data "%10_aft62 := %arg1_w62") (and  (! true :meta-data "array.read %nondet_1[%10_aft62] %11_aft62") (! true :meta-data "%5 := %arg1_w62"))) true) "#
+        ));
+    }
+
+    #[test]
+    fn an_annotation_payload_is_not_read_as_symbols() {
+        // `ff.mul` inside the prose of a `:meta-data` string must not make the
+        // body look like it computes something.
+        assert!(asserts_nothing(
+            r#"(! true :meta-data "%11_aft77_t0 := felt.mul %12_aft77 %11_aft77_s0")"#
+        ));
+    }
+
+    #[test]
+    fn a_body_with_one_equation_asserts_something() {
+        // `and0` of `mux1`: a single `(= v_178 v_167)` buried under `true`s is
+        // still content, and dropping it would weaken the specification.
+        assert!(!asserts_nothing(
+            r#" (and  (! true :meta-data "%9 := %21_aft95") (= v_178 v_167)) "#
+        ));
+        assert!(!asserts_nothing("(ff.range v_20 (as ff0 FFp) (as ff1 FFp))"));
+    }
+
+    #[test]
+    fn anything_that_could_falsify_a_true_is_kept() {
+        // `(not true)` is `false`, not nothing: the token test leaves `not`
+        // and `or` off the structural list precisely so these are not dropped.
+        assert!(!asserts_nothing("(not true)"));
+        assert!(!asserts_nothing("(or true true)"));
+    }
 }
