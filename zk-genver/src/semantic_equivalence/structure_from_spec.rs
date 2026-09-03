@@ -306,19 +306,29 @@ fn assign_constraints(
 ///
 /// - the r1cs header numbers them, outputs `1..=n_outputs` and inputs the
 ///   `n_inputs` after them;
-/// - the called macro's `vars_info` names the outputs, which the correspondence
-///   turns into ids under the `main` prefix. Only outputs get a plain key of
-///   their own, so the inputs are the r1cs's to give either way.
+/// - the called macro's `vars_info` names signals of its own, which the
+///   correspondence turns into ids under the `main` prefix. Inputs are never
+///   among them -- they arrive as `%arg0` -- so the inputs are the r1cs's to
+///   give either way.
 ///
-/// The two are CHECKED against each other rather than one being preferred. They
-/// describe the same circuit, so a disagreement means the specification and the
-/// r1cs were not built from the same source, and every signal-to-variable
-/// equality the queries go on to build would be pairing the wrong things.
-/// Returns `Err` in that case instead of picking a side.
+/// Those plain keys are NOT the outputs and nothing else: llzk gives a
+/// `struct.member` to every named signal of the template, so the intermediate
+/// ones (`lt_out`, `n2b_in`, the ports of a subcomponent inlined into its
+/// parent) sit there next to the real outputs, and `vars_info` says nothing that
+/// tells them apart -- only `llzk.pub` in the .llzk does, and that does not
+/// reach the specification JSON.
+///
+/// So the r1cs header is what SAYS which ids are outputs, and the specification
+/// is checked against it by CONTAINMENT rather than by equality: every r1cs
+/// output has to be a signal the root macro names, and anything else it names is
+/// an intermediate signal and is ignored. An r1cs output the specification never
+/// names does mean the two files were not built from the same source, and every
+/// signal-to-variable equality the queries go on to build would be pairing the
+/// wrong things, so that comes back as `Err` instead of picking a side.
 ///
 /// When the correspondence resolves none of the names -- an older
-/// correspondence, a specification with no ports of its own -- there is nothing
-/// to check against and the r1cs's own numbering stands.
+/// correspondence, a specification with no signals of its own -- there is
+/// nothing to check against and the r1cs's own numbering stands.
 fn root_ports(
     root_macro: &str,
     macros: &IndexMap<String, MacroDef>,
@@ -355,12 +365,25 @@ fn root_ports(
     }
 
     let (r1cs_inputs, r1cs_outputs) = from_r1cs;
-    if from_spec != r1cs_outputs {
+    // Containment, not equality: what the root names beyond the outputs are its
+    // intermediate signals, which have a `vars_info` key of their own like
+    // everything else llzk keeps a member for.
+    let named: HashSet<usize> = from_spec.iter().copied().collect();
+    let unnamed: Vec<usize> = r1cs_outputs
+        .iter()
+        .copied()
+        .filter(|id| !named.contains(id))
+        .collect();
+    if !unnamed.is_empty() {
         return Err(format!(
-            "the r1cs and the specification disagree on the circuit's outputs: the r1cs header              declares {} of them ({:?}), while '{}' names {} ({:?}, from the port(s) {:?}). Both              files have to describe the same circuit.",
+            "the r1cs and the specification disagree on the circuit's outputs: the r1cs header \
+             declares {} of them ({}), and '{}' names no signal of its own for {} of those ({}). \
+             It names {} ({}), from the key(s) {:?}. Both files have to describe the same circuit.",
             r1cs_outputs.len(),
             preview(&r1cs_outputs),
             root_macro,
+            unnamed.len(),
+            preview(&unnamed),
             from_spec.len(),
             preview(&from_spec),
             port_names
@@ -606,6 +629,43 @@ mod tests {
                 .collect::<Vec<_>>()
         };
         assert_eq!(build(&["a", "b", "c"]), build(&["c", "a", "b"]));
+    }
+
+    /// llzk keeps a `struct.member` -- and so a plain `vars_info` key -- for every
+    /// named signal of the template, not only for the outputs, so the root names
+    /// its intermediate signals too (`lt_out`, `n2b_in`: the ports of a
+    /// subcomponent inlined into it). They are not outputs: the r1cs header is
+    /// what numbers those, and the specification only has to NAME them.
+    #[test]
+    fn the_roots_intermediate_signals_are_not_taken_for_outputs() {
+        let mut macros = IndexMap::new();
+        macros.insert(
+            "@Root".to_string(),
+            macro_def(&[], &["out", "lt_out", "n2b_in", "%arg0"]),
+        );
+        let n2s = names(&[
+            ("main.out", 1),
+            ("main.in[0]", 2),
+            ("main.in[1]", 3),
+            ("main.lt_out", 4),
+            ("main.n2b_in", 5),
+        ]);
+        let (inputs, outputs) =
+            root_ports("@Root", &macros, &n2s, 1, 2).expect("the intermediate names are ignored");
+        assert_eq!(outputs, vec![1], "the r1cs header's single output");
+        assert_eq!(inputs, vec![2, 3], "the two after it");
+    }
+
+    /// The containment check still catches the case it is there for: an output of
+    /// the r1cs that the specification names no signal for means the two files
+    /// were not built from the same source.
+    #[test]
+    fn an_r1cs_output_the_specification_never_names_is_an_error() {
+        let mut macros = IndexMap::new();
+        macros.insert("@Root".to_string(), macro_def(&[], &["lt_out"]));
+        let n2s = names(&[("main.lt_out", 4)]);
+        let err = root_ports("@Root", &macros, &n2s, 1, 2).unwrap_err();
+        assert!(err.contains("names no signal of its own"), "{}", err);
     }
 
     #[test]
