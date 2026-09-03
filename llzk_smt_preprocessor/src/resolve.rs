@@ -588,12 +588,25 @@ fn group_by_name(macros: &[ResolvedMacroEntry]) -> Vec<(&str, Vec<&ResolvedMacro
 /// deterministic and the same across every occurrence of that same tied
 /// group — which is what lets a reader go from an id seen inline back to
 /// its `"equalityN"` entry.
+/// EVERY id a variable is tied to, not just the smallest.
+///
+/// A variable tied to several r1cs signals -- `main.lt.out` and the parent's
+/// `lt.out` are one variable and two ids -- names all of them, so an atom that
+/// mentions it depends on all of them. Printing one representative and leaving
+/// the rest to the `equalityN` entries loses that for anyone reading the array
+/// on its own, and the clustering reads exactly these arrays: fewer ids means
+/// fewer edges in the shared-signal graph and a different partition. This is
+/// what `zk-genver`'s `build_atoms` does with the same data, and the two have to
+/// agree or the same circuit gets clustered two ways.
 fn resolved_first_var_json(v: &ResolvedVar) -> String {
     match v {
-        ResolvedVar::Signal(ids) => match ids.first() {
-            Some(&first) => first.to_string(),
-            None => resolved_var_json(v), // unreachable in practice: resolve_var never returns an empty Signal.
-        },
+        ResolvedVar::Signal(ids) if !ids.is_empty() => ids
+            .iter()
+            .map(|id| id.to_string())
+            .collect::<Vec<_>>()
+            .join(", "),
+        // Unreachable in practice: resolve_var never returns an empty Signal.
+        ResolvedVar::Signal(_) => resolved_var_json(v),
         ResolvedVar::Unresolved(_) => resolved_var_json(v),
     }
 }
@@ -615,7 +628,7 @@ fn resolved_first_var_array_json(items: &[ResolvedVar], show_unresolved: bool) -
 /// variable) referenced anywhere in `items`, in first-seen order. See
 /// [`resolved_first_var_json`]: only the smallest id of each such group is
 /// printed inline, so this is what lets a reader recover the rest.
-fn equality_groups(items: &[ResolvedVar]) -> Vec<Vec<usize>> {
+pub fn equality_groups(items: &[ResolvedVar]) -> Vec<Vec<usize>> {
     let mut seen = HashSet::new();
     let mut groups = Vec::new();
     for var in items {
@@ -673,36 +686,251 @@ fn equality_groups_json(groups: &[Vec<usize>], pad: &str) -> Vec<String> {
 ///
 /// `show_unresolved = false` (the CLI default) omits the `v_i`s with no
 /// r1cs signal associated; see [`resolved_first_var_array_json`].
-pub fn to_json_flat_resolved(macros: &[ResolvedMacroEntry], show_unresolved: bool) -> String {
-    let groups = group_by_name(macros);
-    let mut out = String::from("{\n");
-    for (gi, (name, instances)) in groups.iter().enumerate() {
-        out.push_str(&format!("  {}: [\n", crate::json_string(name)));
-        for (ii, m) in instances.iter().enumerate() {
-            let mut pairs: Vec<(String, Vec<ResolvedVar>)> = Vec::new();
-            pairs.push(("level0".to_string(), m.level0.clone()));
-            for node in &m.tree {
-                merge_pair_resolved(&mut pairs, node.tag.clone(), aggregate_resolved(node));
+
+/// The r1cs signals a tag reaches: its own, plus -- for every UNRESOLVED
+/// variable it mentions -- those of the tag that defined that variable,
+/// transitively.
+///
+/// llzk writes a chain of temporaries: `%8 := add %7 %felt_const_4` and
+/// `%11 := sub %8 %10`, where `%8` has no r1cs wire, so the second op never
+/// mentions the signal the first one landed on. Two tags that share a wire in
+/// the circuit would share nothing here, and anything clustering on these lists
+/// would separate what belongs together.
+///
+/// A variable that already IS a signal is left alone -- reaching `lt_in[0]` ends
+/// the walk rather than inviting whatever computed it -- which is what keeps the
+/// closure from collapsing into "every tag touches everything".
+///
+/// `visited` is over TAGS, so llzk's loop variables (`%arg1_w38 := %24_aft38`
+/// and back) terminate instead of spinning.
+///
+/// Duplicated from `zk-genver`'s `real_signals_reachable`: the two have to agree
+/// on what a tag's signals are, or the same circuit gets clustered two ways
+/// depending on which of them produced the file.
+fn signals_reachable(
+    start: usize,
+    per_tag: &[Vec<ResolvedVar>],
+    definer: &HashMap<String, Vec<usize>>,
+) -> Vec<usize> {
+    let mut real: Vec<usize> = Vec::new();
+    let mut visited: HashSet<usize> = HashSet::new();
+    let mut pending: Vec<usize> = vec![start];
+    while let Some(index) = pending.pop() {
+        if !visited.insert(index) {
+            continue;
+        }
+        for var in per_tag[index].iter() {
+            match var {
+                ResolvedVar::Signal(ids) => {
+                    for id in ids.iter().copied() {
+                        if !real.contains(&id) {
+                            real.push(id);
+                        }
+                    }
+                }
+                ResolvedVar::Unresolved(name) => {
+                    if let Some(next) = definer.get(name) {
+                        pending.extend(next.iter().copied());
+                    }
+                }
             }
-            out.push_str(&format!(
-                "    {{\n      \"instance\": {},\n",
-                crate::json_string(&m.instance_prefix)
-            ));
-            let mut v_acum = Vec::new();
+        }
+    }
+    real.sort_unstable();
+    real
+}
+
+/// Which macro variable a tag DEFINES: the left of its `:=`, translated through
+/// `vars_info` into the name the formulas use. A tuple-valued op records a list
+/// and defines all of them at once.
+/// Every variable the tag and its NESTED tags define. The `:=` that matter are
+/// usually not the top-level tag's: an unrolled loop is one tag whose own text
+/// defines nothing while every `%2_aft11 := ...` inside it does.
+fn tag_defines_deep(node: &ResolvedTagNode, macro_def: Option<&MacroDef>) -> Vec<String> {
+    let mut out = tag_defines(&node.tag, macro_def);
+    out.extend(equated_vars(&node.formula));
+    for child in node.children.iter() {
+        out.extend(tag_defines_deep(child, macro_def));
+    }
+    out
+}
+
+/// Both sides of every BARE equality `(= v_117 v_74)`. llzk ties an output port
+/// to the temporary that computed it with a loose `=`, real signal on the LEFT,
+/// which is the wrong way round for a closure that walks from a user to a
+/// definer. Recording both sides makes the relation symmetric for these and only
+/// these: a `:=` keeps its direction.
+fn equated_vars(formula: &str) -> Vec<String> {
+    let bytes = formula.as_bytes();
+    let mut out = Vec::new();
+    for i in 0..bytes.len().saturating_sub(2) {
+        if bytes[i] == b'(' && bytes[i + 1] == b'=' && bytes[i + 2] == b' ' {
+            if let Some(end) = formula[i + 3..].find(')') {
+                let parts: Vec<&str> = formula[i + 3..i + 3 + end].split_whitespace().collect();
+                if parts.len() == 2
+                    && parts.iter().all(|p| {
+                        p.starts_with("v_") && p[2..].chars().all(|c| c.is_ascii_digit())
+                    })
+                {
+                    out.push(parts[0].to_string());
+                    out.push(parts[1].to_string());
+                }
+            }
+        }
+    }
+    out
+}
+
+fn tag_defines(tag: &str, macro_def: Option<&MacroDef>) -> Vec<String> {
+    let Some(def) = macro_def else { return Vec::new() };
+    let Some((left, _)) = tag.split_once(":=") else { return Vec::new() };
+    match def.vars_info.get(left.trim()) {
+        Some(serde_json::Value::String(var)) => vec![var.clone()],
+        Some(serde_json::Value::Array(items)) => items
+            .iter()
+            .filter_map(|item| item.as_str().map(|s| s.to_string()))
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// One instance's tags, already resolved to r1cs signal ids.
+///
+/// The single place the per-instance view is COMPUTED; both output modes format
+/// what this returns. `single` used to do its own resolution, with its own rules,
+/// and drifted from `flat` every time one of them was fixed -- it kept only the
+/// smallest id of a tie, emitted `main`, and gave temporaries synthetic ids
+/// instead of closing over them. Sharing the computation is what keeps a fix in
+/// one from having to be made twice.
+pub struct ResolvedInstance {
+    pub macro_name: String,
+    pub instance_prefix: String,
+    /// `("equality1", ids)` per tie group, in first-seen order.
+    pub equalities: Vec<(String, Vec<usize>)>,
+    /// `(tag, ids)`, `level0` first, in the order the tags appear.
+    pub tags: Vec<(String, Vec<usize>)>,
+}
+
+/// Resolves every instance, skipping the `main` wrapper.
+///
+/// `main`'s body is the call binding the root instance's parameters, and the
+/// root's own macro carries the specification under the same prefix, so keeping
+/// both states the root twice. `zk-genver`'s `build_atoms` skips it for the same
+/// reason and the two outputs are meant to be comparable.
+pub fn resolved_instances(
+    macros: &[ResolvedMacroEntry],
+    macro_defs: &indexmap::IndexMap<String, MacroDef>,
+) -> Vec<ResolvedInstance> {
+    let mut out = Vec::new();
+    for (name, instances) in group_by_name(macros).into_iter() {
+        if name == "main" {
+            continue;
+        }
+        let def = macro_defs.get(name);
+        for m in instances.iter() {
+            // `level0` has no tag node of its own: loose variables, nothing to
+            // walk into.
+            let mut nodes: Vec<Option<&ResolvedTagNode>> = vec![None];
+            let mut pairs: Vec<(String, Vec<ResolvedVar>)> =
+                vec![("level0".to_string(), m.level0.clone())];
+            for node in &m.tree {
+                let before = pairs.len();
+                merge_pair_resolved(&mut pairs, node.tag.clone(), aggregate_resolved(node));
+                // `merge_pair_resolved` appends OR merges into an existing tag of
+                // the same name; only track a node when it actually appended.
+                if pairs.len() > before {
+                    nodes.push(Some(node));
+                }
+            }
+
+            let mut v_acum: Vec<ResolvedVar> = Vec::new();
             for (_, v) in &pairs {
                 v_acum.extend_from_slice(v);
             }
-            for line in equality_groups_json(&equality_groups(&v_acum), "      ") {
-                out.push_str(&line);
-                out.push_str(",\n");
+            let equalities: Vec<(String, Vec<usize>)> = equality_groups(&v_acum)
+                .into_iter()
+                .enumerate()
+                .map(|(i, ids)| (format!("equality{}", i + 1), ids))
+                .collect();
+
+            let per_tag: Vec<Vec<ResolvedVar>> = pairs.iter().map(|(_, v)| v.clone()).collect();
+            // EVERY tag that pins a variable down, not just the first: one can
+            // compute it with a `:=` while another equates it to a real signal,
+            // and keeping only whichever came first drops the other. The two
+            // relate the same variable and both have to be followed.
+            let mut definer: HashMap<String, Vec<usize>> = HashMap::new();
+            for (index, node) in nodes.iter().enumerate() {
+                if let Some(node) = node {
+                    for var in tag_defines_deep(node, def) {
+                        let seen = definer.entry(var).or_default();
+                        if !seen.contains(&index) {
+                            seen.push(index);
+                        }
+                    }
+                }
             }
-            for (pi, (k, v)) in pairs.iter().enumerate() {
+
+            let tags: Vec<(String, Vec<usize>)> = pairs
+                .iter()
+                .enumerate()
+                .map(|(i, (tag, _))| (tag.clone(), signals_reachable(i, &per_tag, &definer)))
+                .collect();
+
+            out.push(ResolvedInstance {
+                macro_name: name.to_string(),
+                instance_prefix: m.instance_prefix.clone(),
+                equalities,
+                tags,
+            });
+        }
+    }
+    out
+}
+
+fn ids_json(ids: &[usize]) -> String {
+    format!(
+        "[{}]",
+        ids.iter().map(|id| id.to_string()).collect::<Vec<_>>().join(", ")
+    )
+}
+
+pub fn to_json_flat_resolved(
+    macros: &[ResolvedMacroEntry],
+    macro_defs: &indexmap::IndexMap<String, MacroDef>,
+    _show_unresolved: bool,
+) -> String {
+    // Grouped back by macro: one key per macro, one object per instance of it.
+    let resolved = resolved_instances(macros, macro_defs);
+    let mut by_macro: Vec<(String, Vec<&ResolvedInstance>)> = Vec::new();
+    for r in resolved.iter() {
+        match by_macro.iter_mut().find(|(name, _)| *name == r.macro_name) {
+            Some((_, v)) => v.push(r),
+            None => by_macro.push((r.macro_name.clone(), vec![r])),
+        }
+    }
+
+    let mut out = String::from("{\n");
+    for (gi, (name, instances)) in by_macro.iter().enumerate() {
+        out.push_str(&format!("  {}: [\n", crate::json_string(name)));
+        for (ii, r) in instances.iter().enumerate() {
+            out.push_str(&format!(
+                "    {{\n      \"instance\": {},\n",
+                crate::json_string(&r.instance_prefix)
+            ));
+            for (tag, ids) in r.equalities.iter() {
+                out.push_str(&format!(
+                    "      {}: {},\n",
+                    crate::json_string(tag),
+                    ids_json(ids)
+                ));
+            }
+            for (pi, (tag, ids)) in r.tags.iter().enumerate() {
                 out.push_str(&format!(
                     "      {}: {}",
-                    crate::json_string(k),
-                    resolved_first_var_array_json(v, show_unresolved)
+                    crate::json_string(tag),
+                    ids_json(ids)
                 ));
-                if pi + 1 < pairs.len() {
+                if pi + 1 < r.tags.len() {
                     out.push(',');
                 }
                 out.push('\n');
@@ -714,7 +942,7 @@ pub fn to_json_flat_resolved(macros: &[ResolvedMacroEntry], show_unresolved: boo
             out.push('\n');
         }
         out.push_str("  ]");
-        if gi + 1 < groups.len() {
+        if gi + 1 < by_macro.len() {
             out.push(',');
         }
         out.push('\n');
@@ -726,92 +954,45 @@ pub fn to_json_flat_resolved(macros: &[ResolvedMacroEntry], show_unresolved: boo
 /// Single-dictionary view: EVERY instance's tags in one map, each tag prefixed
 /// with the instance it belongs to.
 ///
-/// The per-macro view ([`to_json_flat_resolved`])
-/// keep one entry per macro and, inside it, one object per instance. That shape
-/// is what the structure-driven clustering wants, because it looks the atoms of
-/// each component up by name. The PLAIN hybrid clustering wants the opposite: one
-/// global formula to pair against the whole r1cs, with no component decomposition
-/// at all -- and for that the instances have to be merged into a single map.
+/// The per-macro view ([`to_json_flat_resolved`]) keeps one entry per macro and,
+/// inside it, one object per instance. That shape is what the structure-driven
+/// clustering wants, because it looks the atoms of each component up by name.
+/// The PLAIN hybrid clustering wants the opposite: one global formula to pair
+/// against the whole r1cs, with no component decomposition at all -- and for
+/// that the instances have to be merged into a single map.
 ///
 /// Merging them needs the prefix, or two instances of the same template would
 /// collide on every tag they share (`"if (%6 == 1)"` appears once per instance).
-/// So the key becomes `main.lt.if (%6 == 1)`, and the value is exactly what the
-/// per-macro views already produce for that tag.
+/// So the key becomes `main.lt.if (%6 == 1)`.
+///
+/// Built on top of [`resolved_instances`], the same resolution `flat` uses, and
+/// differing from it ONLY in the envelope. It used to resolve on its own -- ties
+/// collapsed to their smallest id, `main` emitted, temporaries given synthetic
+/// ids instead of being closed over -- and drifted apart every time one of the
+/// two was fixed. Now a fix in the shared core reaches both.
 ///
 /// The envelope is the one `parse_formula` reads (`{ name: [ { "instance": ...,
 /// tag: [...] } ] }`), with a single outer key and a single instance, so the
 /// clustering takes the file as it stands. That also means this file must NOT be
 /// passed with `--circuit-structure`: the structure-driven mode looks every
-/// component up by name and only `main` is there.
-pub fn to_json_single_resolved(macros: &[ResolvedMacroEntry], synthetic_base: usize) -> String {
-    // Every variable with no r1cs wire behind it gets an id of its own, above
-    // every real signal. Unlike the other modes, which just omit them: the point
-    // of this file is to be clustered, the clustering works by shared ids, and
-    // the chain computing an output runs THROUGH those temporaries -- omitted,
-    // the atoms doing the work look signal-less, land nowhere, and their part of
-    // the specification is never asserted. `main.%3 := felt.mul %2 %1` is the
-    // whole of an llzk body and would vanish. Per instance, since `%1` of
-    // `main.a` and `%1` of `main.b` are different variables.
-    let mut synthetic: BTreeMap<(String, String), usize> = BTreeMap::new();
-    let mut next_synthetic = synthetic_base;
-    // Every instance in the order `resolve_full` produced them, which is the
-    // walk down from the root, so the file reads top-down like the circuit.
-    let mut pairs: Vec<(String, Vec<usize>)> = Vec::new();
-    let mut equalities: Vec<(String, Vec<usize>)> = Vec::new();
-    for m in macros {
-        let prefixed = |tag: &str| format!("{}.{}", m.instance_prefix, tag);
+/// component up by name and only the root is there.
+pub fn to_json_single_resolved(
+    macros: &[ResolvedMacroEntry],
+    macro_defs: &indexmap::IndexMap<String, MacroDef>,
+) -> String {
+    let resolved = resolved_instances(macros, macro_defs);
+    let root = resolved
+        .first()
+        .map(|r| r.instance_prefix.clone())
+        .unwrap_or_else(|| "main".to_string());
 
-        let mut own: Vec<(String, Vec<ResolvedVar>)> = Vec::new();
-        own.push((prefixed("level0"), m.level0.clone()));
-        for node in &m.tree {
-            merge_pair_resolved(&mut own, prefixed(&node.tag), aggregate_resolved(node));
-        }
-
-        // The tie groups are per instance too, and their names (`equality1`,
-        // `equality2`) repeat across instances, so they get the same treatment.
-        let mut v_acum: Vec<ResolvedVar> = Vec::new();
-        for (_, v) in &own {
-            v_acum.extend_from_slice(v);
-        }
-        for (idx, ids) in equality_groups(&v_acum).into_iter().enumerate() {
-            equalities.push((prefixed(&format!("equality{}", idx + 1)), ids));
-        }
-
-        // Resolved to plain ids here, where the instance prefix is still in
-        // scope: it is what tells two instances' temporaries apart.
-        for (tag, vars) in own {
-            let mut ids: Vec<usize> = Vec::new();
-            for var in vars.iter() {
-                match var {
-                    ResolvedVar::Signal(signals) => {
-                        // The smallest of a tie, same as every other view; the
-                        // rest of the group is in the `equalityN` entries.
-                        if let Some(first) = signals.first() {
-                            ids.push(*first);
-                        }
-                    }
-                    ResolvedVar::Unresolved(name) => {
-                        let key = (m.instance_prefix.clone(), name.clone());
-                        let id = *synthetic.entry(key).or_insert_with(|| {
-                            let id = next_synthetic;
-                            next_synthetic += 1;
-                            id
-                        });
-                        ids.push(id);
-                    }
-                }
-            }
-            // An instance prefix is unique, so this only ever appends; going
-            // through the same guard as the other views keeps the "same tag
-            // twice" rule identical.
-            merge_pair_ids(&mut pairs, tag, ids);
+    let mut entries: Vec<(String, Vec<usize>)> = Vec::new();
+    for r in resolved.iter() {
+        let prefixed = |tag: &str| format!("{}.{}", r.instance_prefix, tag);
+        for (tag, ids) in r.equalities.iter().chain(r.tags.iter()) {
+            entries.push((prefixed(tag), ids.clone()));
         }
     }
-
-    let root = macros
-        .first()
-        .map(|m| m.instance_prefix.clone())
-        .unwrap_or_else(|| "main".to_string());
 
     let mut out = String::from("{\n");
     out.push_str(&format!("  {}: [\n", crate::json_string("all")));
@@ -819,22 +1000,13 @@ pub fn to_json_single_resolved(macros: &[ResolvedMacroEntry], synthetic_base: us
         "    {{\n      \"instance\": {},\n",
         crate::json_string(&root)
     ));
-    for (tag, ids) in equalities.iter() {
-        let ids_str: Vec<String> = ids.iter().map(|id| id.to_string()).collect();
+    for (ei, (tag, ids)) in entries.iter().enumerate() {
         out.push_str(&format!(
-            "      {}: [{}],\n",
+            "      {}: {}",
             crate::json_string(tag),
-            ids_str.join(", ")
+            ids_json(ids)
         ));
-    }
-    for (pi, (tag, ids)) in pairs.iter().enumerate() {
-        let ids_str: Vec<String> = ids.iter().map(|id| id.to_string()).collect();
-        out.push_str(&format!(
-            "      {}: [{}]",
-            crate::json_string(tag),
-            ids_str.join(", ")
-        ));
-        if pi + 1 < pairs.len() {
+        if ei + 1 < entries.len() {
             out.push(',');
         }
         out.push('\n');
@@ -877,11 +1049,15 @@ mod tests {
         }
     }
 
+    /// No macro definitions: with none, `tag_defines` finds no `:=` to follow and
+    /// the closure is a no-op, so a fixture's footprints stay exactly as written.
+    fn no_macro_defs() -> indexmap::IndexMap<String, MacroDef> {
+        indexmap::IndexMap::new()
+    }
+
     /// The written JSON, parsed back: what the clustering will actually see.
-    /// 100 as the synthetic base, well above the ids these fixtures use, so a
-    /// temporary's id is recognisable on sight.
     fn single_json(entries: &[ResolvedMacroEntry]) -> serde_json::Value {
-        serde_json::from_str(&to_json_single_resolved(entries, 100))
+        serde_json::from_str(&to_json_single_resolved(entries, &no_macro_defs()))
             .expect("the single mode has to emit valid JSON")
     }
 
@@ -921,35 +1097,37 @@ mod tests {
 
     #[test]
     fn the_value_is_the_same_as_the_per_macro_view() {
-        // The only difference between the two views is the key. A tie still
-        // prints its smallest id inline, and its group still comes out as an
+        // The only difference between the two views is the key. A tie prints
+        // EVERY id it holds inline, and its group still comes out as an
         // `equality` entry -- prefixed too, or the instances would collide there.
         let mut entry = resolved_entry("@Main_0", "main", &[("step0", &[4])]);
         entry.tree[0].own.push(ResolvedVar::Signal(vec![7, 9]));
         let v = single_json(&[entry]);
         let inst = v["all"][0].as_object().unwrap();
 
-        assert_eq!(inst["main.step0"], json!([4, 7]), "the tie shows its smallest id");
+        assert_eq!(inst["main.step0"], json!([4, 7, 9]), "the tie shows every id");
         assert_eq!(inst["main.equality1"], json!([7, 9]), "and the group is listed apart");
     }
 
     #[test]
-    fn an_unresolved_variable_gets_an_id_above_every_real_signal() {
-        // Not omitted, as the other views do: the clustering works by shared
-        // ids, so a tag written only over temporaries would otherwise carry no
-        // signal at all, land nowhere, and never be asserted.
+    fn a_temporary_with_no_definer_contributes_no_id() {
+        // No invented id stands in for it any more. A temporary is meant to be
+        // replaced by the signals of the tag that DEFINED it (`signals_reachable`);
+        // with no macro definition there is no `:=` to follow, nothing is reachable
+        // from it, and it adds nothing rather than an id of its own. A footprint is
+        // then r1cs wires and nothing else, in every view alike.
         let mut entry = resolved_entry("@Main_0", "main", &[("step0", &[4])]);
         entry.tree[0].own.push(ResolvedVar::Unresolved("v_9".to_string()));
         let v = single_json(std::slice::from_ref(&entry));
 
-        assert_eq!(v["all"][0]["main.step0"], json!([4, 100]));
+        assert_eq!(v["all"][0]["main.step0"], json!([4]));
     }
 
     #[test]
-    fn the_same_temporary_keeps_one_id_and_two_instances_keep_two() {
-        // `v_9` twice in one instance is one variable and has to share an id, or
-        // the two tags stop being connected. `v_9` of another instance is a
-        // different variable and must not be tied to it.
+    fn temporaries_do_not_tie_tags_together_by_themselves() {
+        // `v_9` in two tags of one instance used to share an invented id and so
+        // connect them. It no longer does: what connects two tags is a real
+        // signal, or the closure over the tag that defines the temporary.
         let mut a = resolved_entry("@Lt_0", "main.a", &[("step0", &[1]), ("step1", &[2])]);
         a.tree[0].own.push(ResolvedVar::Unresolved("v_9".to_string()));
         a.tree[1].own.push(ResolvedVar::Unresolved("v_9".to_string()));
@@ -958,9 +1136,9 @@ mod tests {
         let v = single_json(&[a, b]);
         let inst = v["all"][0].as_object().unwrap();
 
-        assert_eq!(inst["main.a.step0"], json!([1, 100]));
-        assert_eq!(inst["main.a.step1"], json!([2, 100]), "the same variable, the same id");
-        assert_eq!(inst["main.b.step0"], json!([3, 101]), "another instance, another variable");
+        assert_eq!(inst["main.a.step0"], json!([1]));
+        assert_eq!(inst["main.a.step1"], json!([2]));
+        assert_eq!(inst["main.b.step0"], json!([3]));
     }
 
     #[test]
@@ -1257,7 +1435,7 @@ mod tests {
         assert_eq!(first.level0[0], ResolvedVar::Signal(vec![69]));
         assert_eq!(second.level0[0], ResolvedVar::Signal(vec![102]));
 
-        let json = to_json_flat_resolved(&[first, second], false);
+        let json = to_json_flat_resolved(&[first, second], &no_macro_defs(), false);
         // Exactly one "@Num2Bits_0" key...
         assert_eq!(json.matches("\"@Num2Bits_0\"").count(), 1);
         // ...mapping to an array holding both instances' data.
@@ -1321,9 +1499,11 @@ mod tests {
     }
 
     #[test]
-    fn flat_json_shows_smallest_tied_id_inline_and_lists_the_group_as_an_equality() {
-        let text = to_json_flat_resolved(&[mux4_1_collision_resolved()], true);
-        assert!(text.contains("\"level0\": [3]"), "{text}");
+    fn flat_json_lists_every_tied_id_inline_and_the_group_as_an_equality() {
+        let text = to_json_flat_resolved(&[mux4_1_collision_resolved()], &no_macro_defs(), true);
+        // Every id, not just the smallest: the clustering reads these arrays, and
+        // one representative would cost it the edges to the rest of the group.
+        assert!(text.contains("\"level0\": [3, 20]"), "{text}");
         assert!(text.contains("\"equality1\": [3, 20]"), "{text}");
     }
 

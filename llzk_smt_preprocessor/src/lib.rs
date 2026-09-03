@@ -34,7 +34,7 @@ use yaspar::smtlib2::ScriptParser;
 use yaspar::{binary_to_string, hex_to_string, tokenize_str};
 
 use indexmap::IndexMap;
-use utils::read_specification::{MacroDef, VarInfo};
+use utils::read_specification::{normalize_smt_string_escapes, MacroDef, VarInfo};
 
 pub mod graph;
 pub mod pretty;
@@ -80,6 +80,13 @@ pub struct MacroEntry {
 /// `block_comments` enables SMT-LIB 2.7's `#| ... |#` comments.
 /// Returns `Err` with the parse error message if the script is invalid.
 pub fn analyze(source: &str, block_comments: bool) -> Result<Vec<MacroEntry>, String> {
+    // llzk's raw output can carry JSON-escaped string literals, which SMT-LIB
+    // has no escapes for (see `normalize_smt_string_escapes`). The normalized
+    // text is what gets parsed AND what the formulas are sliced out of, so the
+    // ranges the parser reports keep pointing at the right characters.
+    // A no-op for a specification JSON, whose formulas `read_smt_specification`
+    // has already normalized.
+    let source = &normalize_smt_string_escapes(source);
     let mut col = MetaCollector::default();
     match ScriptParser::new().parse(&mut col, tokenize_str(source, block_comments)) {
         Ok(_) => {
@@ -113,13 +120,13 @@ fn fill_formulas(node: &mut TagNode, chars: &[char]) {
     }
 }
 
-/// Wraps a macro body in a valid `define-fun` so [`analyze`] can take it. Any
-/// sort works: yaspar doesn't typecheck (see `parses_one_macro`, which uses the
-/// undeclared sort `FFp`).
+/// Wraps a macro body in a valid `define-fun` so [`analyze`] can take it. The
+/// sort is the same `FFp` the queries declare, though any name would do here:
+/// yaspar does not typecheck, and this wrapper is never handed to a solver.
 fn wrap_macro_formula(name: &str, params: &[VarInfo], formula: &str) -> String {
     let mut script = format!("(define-fun {} (", name);
     for par in params {
-        script.push_str(&format!("({} FF0) ", par.name));
+        script.push_str(&format!("({} FFp) ", par.name));
     }
     script.push_str(") Bool\n");
     script.push_str(formula);

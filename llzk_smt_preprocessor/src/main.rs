@@ -140,14 +140,11 @@ fn main() {
                 });
 
             let json = match args.mode {
-                Mode::Flat => to_json_flat_resolved(&resolved, args.show_unresolved),
+                Mode::Flat => to_json_flat_resolved(&resolved, macro_defs, args.show_unresolved),
                 // The `single` mode gives the variables with no r1cs wire an id
                 // of their own instead of omitting them, so they start above
                 // every real signal and can never be mistaken for one.
-                Mode::Single => to_json_single_resolved(
-                    &resolved,
-                    name_to_signal.values().copied().max().unwrap_or(0) + 1,
-                ),
+                Mode::Single => to_json_single_resolved(&resolved, macro_defs),
             };
             println!("{}", json);
         }
