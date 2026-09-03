@@ -258,7 +258,7 @@ impl<C: Default + Clone + Display + Hash + Eq> R1CSConstraint<C> {
     pub fn constraint_to_smt2(&self, signal_to_smt2_name: &HashMap<C,String>) -> String{
         
         let right_side: String = if self.a.is_empty() || self.b.is_empty(){
-            format!("(as ff0 FF0)")
+            format!("(as ff0 FFp)")
         } else{
             let mul = format!("(ff.mul {} {})",
                 ArithmeticExpression::coefficients_to_smt2(self.a(),signal_to_smt2_name),
@@ -267,7 +267,7 @@ impl<C: Default + Clone + Display + Hash + Eq> R1CSConstraint<C> {
             mul
         };
         let left_side: String = if self.c.is_empty(){
-            format!("(as ff0 FF0)")
+            format!("(as ff0 FFp)")
         } else{
             ArithmeticExpression::coefficients_to_smt2(self.c(),signal_to_smt2_name)
         };

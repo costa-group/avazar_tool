@@ -126,14 +126,14 @@ impl<C: Default + Clone + Display + Hash + Eq> ArithmeticExpression<C> {
             let component_string = if value.is_zero() {
                 "".to_string()
             } else if signal.eq(&ArithmeticExpression::constant_coefficient()) {
-                format!("(as ff{} FF0) ", value.to_str_radix(10))
+                format!("(as ff{} FFp) ", value.to_str_radix(10))
             } else {
                 if *value == BigInt::from(1){
                     format!("{} ", 
                         signal_to_smt2_name[signal]                    
                     )
                 } else{
-                    format!("(ff.mul {} (as ff{} FF0)) ", 
+                    format!("(ff.mul {} (as ff{} FFp)) ", 
                         signal_to_smt2_name[signal], 
                         value.to_str_radix(10)
                     )

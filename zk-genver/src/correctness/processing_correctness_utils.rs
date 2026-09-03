@@ -166,7 +166,7 @@ pub fn get_all_signals_macro(studied_macro: &MacroDef)-> Vec<String>{
         
         let mut macro_to_build = format!("(define-fun {} (", name);
         for par in params{
-            macro_to_build.push_str(&format!("(macro_{} FF0) ", par.name));
+            macro_to_build.push_str(&format!("(macro_{} FFp) ", par.name));
         }
         macro_to_build.push_str(") Bool\n");
 

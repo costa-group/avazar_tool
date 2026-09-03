@@ -299,14 +299,14 @@ fn unique_symbol(candidate: &str, id: usize, taken: &mut HashSet<String>) -> Str
 }
 
 pub fn declare_signal(signal_name: &String)->String{
-    format!("(declare-fun {} () FF0)",signal_name)
+    format!("(declare-fun {} () FFp)",signal_name)
 }
 
 
 pub fn declare_header(prime: &BigInt)->LinkedList<String>{
     let mut aux = LinkedList::new();
     aux.push_back("(set-logic QF_FF)".to_string());
-    aux.push_back(format!("(define-sort FF0 () (_ FiniteField {}))", prime));
+    aux.push_back(format!("(define-sort FFp () (_ FiniteField {}))", prime));
     aux
 }
 
