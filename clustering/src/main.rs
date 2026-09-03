@@ -99,6 +99,7 @@ fn start(args: Args) -> Result<(), Box<dyn Error>> {
         extract_raw_partition: args.extract_raw_partition,
         clique_cluster_size: args.clique_cluster_size,
         dead_ends_as_outputs: args.dead_ends_as_outputs,
+        manually_check_acyclic: args.manually_check_acyclic,
 
         ..Default::default()
     };
@@ -107,6 +108,7 @@ fn start(args: Args) -> Result<(), Box<dyn Error>> {
         guide_decompose_options: decompose_options.clone(),
         hybrid_decompose_method: HybridClusteringMethods::default(),
         hybrid_decompose_options: HybridClusteringMethodOptions {tiebreaking_strategy: TiebreakingStrategy::default(), recipient_requires_subsets: true, ..Default::default()} ,
+        manually_check_acyclic: args.manually_check_acyclic,
     };
     
     let mut structure_info: Option<StructureReader> = None;

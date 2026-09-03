@@ -79,6 +79,7 @@ pub struct DecomposeOptions<'a> {
     pub extract_raw_partition: Option<PathBuf>,
     pub clique_cluster_size: Option<usize>,
     pub dead_ends_as_outputs: bool,
+    pub manually_check_acyclic: bool,
     pub seed: Option<u64>,
     pub debug: usize
 }
@@ -94,6 +95,7 @@ impl<'a> DecomposeOptions<'a> {
             hierarchy_mode: self.hierarchy_mode,
             clique_cluster_size: self.clique_cluster_size,
             dead_ends_as_outputs: self.dead_ends_as_outputs,
+            manually_check_acyclic: self.manually_check_acyclic,
             seed: self.seed,
             debug: self.debug
     }}
@@ -109,6 +111,7 @@ pub struct CopyableDecomposeOptions {
     pub hierarchy_mode: HierarchyMode,
     pub clique_cluster_size: Option<usize>,
     pub dead_ends_as_outputs: bool,
+    pub manually_check_acyclic: bool,
     pub seed: Option<u64>,
     pub debug: usize
 }
@@ -132,6 +135,7 @@ impl CopyableDecomposeOptions {
             extract_raw_partition: None,
             clique_cluster_size: self.clique_cluster_size,
             dead_ends_as_outputs: self.dead_ends_as_outputs,
+            manually_check_acyclic: self.manually_check_acyclic,
             seed: self.seed,
             debug: self.debug
     }}

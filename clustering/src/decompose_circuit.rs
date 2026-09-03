@@ -88,7 +88,7 @@ pub(crate) fn decompose_circuit_and_return_dagnodes<'a, C: Constraint, S: Circui
 
     // Unconditional: a cycle here means every consumer downstream is reasoning over an
     // order that does not exist, and `get_topological_ordering` panics on one.
-    let _ = DAGNode::get_topological_ordering(&dagnodes);
+    if decompose_options.manually_check_acyclic { let _ = DAGNode::get_topological_ordering(&dagnodes); }
     
     //insert_and_print_timing(debug, &mut timing, "dag_construction_merging", dagnode_timer.elapsed());
     timing_info.insert(TimingCategories::DagConstruction, dagnode_timer.elapsed().as_secs_f32());
@@ -140,6 +140,7 @@ fn decompose_circuit_over_dagnodes<'a, C: Constraint, S: Circuit<C>>(
             hierarchy_mode: decompose_options.hierarchy_mode,
             inverse_coni_mapping: Some(&node.get_constraint_indices().collect::<Vec<_>>()),
             debug: decompose_options.debug.checked_sub(1).unwrap_or_default(),
+            manually_check_acyclic: decompose_options.manually_check_acyclic,
             ..Default::default()
         };
 
@@ -169,7 +170,7 @@ fn decompose_circuit_over_dagnodes<'a, C: Constraint, S: Circuit<C>>(
         }
     }
 
-    let _ = DAGNode::get_topological_ordering(&new_dagnodes);
+    if decompose_options.manually_check_acyclic {let _ = DAGNode::get_topological_ordering(&new_dagnodes);}
 
     new_dagnodes
 }
