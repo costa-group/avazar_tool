@@ -163,7 +163,9 @@ pub(crate) fn guided_clustering<'a, Cons: Constraint, Circ: Circuit<Cons> , Atom
     } else {
         merge_until_all_left_is_subset_to_right(guide, recipient, guide_clustering, &mut recipient_clustering);
     }
-    merge_until_all_inputs_outputs_same(guide, recipient, guide_clustering, &mut recipient_clustering);
+    if options.merge_until_io_same {
+        merge_until_all_inputs_outputs_same(guide, recipient, guide_clustering, &mut recipient_clustering);
+    }
 
     timing_info.insert(TimingCategories::SecondaryDagConstruction, secondary_dag_construction_timer.elapsed().as_secs_f32());
     *timing_info.entry(TimingCategories::Total).or_default() += timing_info[&TimingCategories::SecondaryDagConstruction];

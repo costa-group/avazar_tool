@@ -17,6 +17,7 @@ pub struct Input {
     pub include_niaz3_in_all: bool,
     pub apply_predecessors: bool,
     pub apply_bidirectional: bool,
+    pub skip_io_equivalence_merge: bool,
     pub allow_empty_clusters: bool,
     pub smt_signal_names: bool,
     pub no_clustering: bool,
@@ -53,6 +54,7 @@ impl Input {
         let include_niaz3_in_all = input_processing::get_include_niaz3_in_all(&matches);
         let apply_predecessors = input_processing::get_apply_predecessors(&matches);
         let apply_bidirectional = input_processing::get_apply_bidirectional(&matches);
+        let skip_io_equivalence_merge = matches.is_present("skip_io_equivalence_merge");
         let allow_empty_clusters = matches.is_present("allow_empty_clusters");
         let smt_signal_names = matches.is_present("smt_signal_names");
         let no_clustering = matches.is_present("no_clustering");
@@ -84,6 +86,7 @@ impl Input {
             include_niaz3_in_all,
             apply_predecessors,
             apply_bidirectional,
+            skip_io_equivalence_merge,
             allow_empty_clusters,
             smt_signal_names,
             no_clustering,
@@ -476,6 +479,14 @@ mod input_processing {
                     .takes_value(false)
                     .hidden(false)
                     .help("Abstract/expand towards both the predecessors and the successors. Read by --check_correctness, --check_equivalence, the determinism mode and --check_semantic_equivalence alike")
+                    .display_order(600)
+            )
+            .arg(
+                Arg::with_name("skip_io_equivalence_merge")
+                    .long("skip_io_equivalence_merge")
+                    .takes_value(false)
+                    .hidden(false)
+                    .help("--check_semantic_equivalence only: do NOT run the last merge pass of the clustering, the one that forces a cluster pair to have exactly the same inputs and the same outputs by merging away the excess. With it the clustering keeps the finer split it had before that pass existed (e.g. greaterthan's `main` comes out as two clusters instead of one), which makes each query smaller at the cost of pairs whose interfaces no longer match signal by signal")
                     .display_order(600)
             )
             .arg(

@@ -20,10 +20,22 @@ pub enum HybridClusteringMethods {
     GuidedClustering
 }
 
-#[derive(Debug, Default, Copy, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub struct HybridClusteringMethodOptions {
     pub tiebreaking_strategy: TiebreakingStrategy,
     pub recipient_requires_subsets: bool,
+    /// Whether to run `merge_until_all_inputs_outputs_same` as the last pass of `guided_clustering`.
+    pub merge_until_io_same: bool,
+}
+
+impl Default for HybridClusteringMethodOptions {
+    fn default() -> Self {
+        HybridClusteringMethodOptions {
+            tiebreaking_strategy: TiebreakingStrategy::default(),
+            recipient_requires_subsets: false,
+            merge_until_io_same: true,
+        }
+    }
 }
 
 #[derive(Debug, Default, Display, Copy, Clone, ValueEnum, PartialEq)]

@@ -579,6 +579,7 @@ pub fn prove_semantic_equivalence(user_input: Input) -> Result<(), ()> {
             // which is what lets a cluster's interface be stated in spec
             // variables at all.
             recipient_requires_subsets: true,
+            merge_until_io_same: !user_input.skip_io_equivalence_merge,
             ..Default::default()
         },
     };
@@ -875,6 +876,7 @@ fn prove_flat(
         hybrid_decompose_method: HybridClusteringMethods::default(),
         hybrid_decompose_options: HybridClusteringMethodOptions {
             recipient_requires_subsets: true,
+            merge_until_io_same: !user_input.skip_io_equivalence_merge,
             ..Default::default()
         },
     };
