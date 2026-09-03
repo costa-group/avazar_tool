@@ -32,6 +32,7 @@ pub struct ReportSummary {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub previously_verified_nodes: Option<usize>,
     pub failed_nodes: usize,
+    /// Ran out of time or came back inconclusive: a question left open.
     pub timeout_nodes: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub total_constraints: Option<usize>,
@@ -50,7 +51,7 @@ pub struct NodeResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub num_constraints: Option<usize>,
     /// Wall-clock seconds this node took, solver call included. Absent when the
-    /// node was settled without one -- nothing to verify, or a syntactic proof.
+    /// node was settled without one -- a syntactic proof, say.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub seconds: Option<f64>,
     /// True when the node was proven safe by syntactic analysis (determinism only)

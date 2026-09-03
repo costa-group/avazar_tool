@@ -17,6 +17,7 @@ pub struct Input {
     pub include_niaz3_in_all: bool,
     pub apply_predecessors: bool,
     pub apply_bidirectional: bool,
+    pub allow_empty_clusters: bool,
     pub smt_signal_names: bool,
     pub prime: BigInt,
     pub clustering_size: usize,
@@ -51,6 +52,7 @@ impl Input {
         let include_niaz3_in_all = input_processing::get_include_niaz3_in_all(&matches);
         let apply_predecessors = input_processing::get_apply_predecessors(&matches);
         let apply_bidirectional = input_processing::get_apply_bidirectional(&matches);
+        let allow_empty_clusters = matches.is_present("allow_empty_clusters");
         let smt_signal_names = matches.is_present("smt_signal_names");
 
         let equivalence_mode = input_processing::get_equivalence_mode(&matches)?;
@@ -80,6 +82,7 @@ impl Input {
             include_niaz3_in_all,
             apply_predecessors,
             apply_bidirectional,
+            allow_empty_clusters,
             smt_signal_names,
             equivalence_mode,
             target_size,
@@ -479,6 +482,15 @@ mod input_processing {
                     .hidden(false)
                     .requires("check_semantic_equivalence")
                     .help("--check_semantic_equivalence only: name the symbols of the generated .smt2 after the circuit's own signals -- `r1cs_main_isz_in` for an r1cs wire and `spec_main_isz_out` for the specification variable bound to it -- so a query reads without the correspondence file at hand. Without it the .smt2 looks like --check_correctness's: `s_{id}` for an r1cs signal and the macro's own `v_j` for a specification variable, with the names kept in the trailing comments either way")
+                    .display_order(600)
+            )
+            .arg(
+                Arg::with_name("allow_empty_clusters")
+                    .long("allow_empty_clusters")
+                    .takes_value(false)
+                    .hidden(false)
+                    .requires("check_semantic_equivalence")
+                    .help("--check_semantic_equivalence only: pass over a cluster pair with no output the specification names instead of aborting on it. Such a pair has nothing to prove -- its query would be vacuously unsat -- so by default it stops the run as a broken clustering; with this flag it is left unverified and unreported, and the rest of the clusters are checked as usual")
                     .display_order(600)
             )
             .arg(

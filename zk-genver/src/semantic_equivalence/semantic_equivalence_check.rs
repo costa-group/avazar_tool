@@ -63,8 +63,8 @@ use crate::report;
 use crate::semantic_equivalence::atoms::{build_atoms, required_macro_definitions, AtomTable};
 use crate::semantic_equivalence::flat_mode::{align_atoms, read_flat_formula, restrict_to_asserted};
 use crate::semantic_equivalence::modular_reasoning::{
-    check_cluster, child_implication, index_by_id, unbound_boundary_signals, ChildPorts,
-    ClusterPair, InlinedInstances, InstanceInterface, VerificationContext,
+    check_cluster, child_implication, has_bound_output, index_by_id, unbound_boundary_signals,
+    ChildPorts, ClusterPair, InlinedInstances, InstanceInterface, VerificationContext,
 };
 use crate::Input;
 
@@ -88,10 +88,6 @@ pub enum ClusterVerdict {
     LocalCounterexample,
     /// Timeout, or the solver gave up.
     Unknown,
-    /// The cluster has no output signal that the specification names, so there
-    /// is no equality to refute and any query would be vacuously `unsat`.
-    /// Counted apart from VERIFIED, because it establishes nothing.
-    NothingToVerify,
 }
 
 impl ClusterVerdict {
@@ -101,7 +97,6 @@ impl ClusterVerdict {
             ClusterVerdict::Failed => "FAILED",
             ClusterVerdict::LocalCounterexample => "INCONCLUSIVE_LOCAL_COUNTEREXAMPLE",
             ClusterVerdict::Unknown => "UNKNOWN",
-            ClusterVerdict::NothingToVerify => "NOTHING_TO_VERIFY",
         }
     }
 }
@@ -539,6 +534,8 @@ pub fn prove_semantic_equivalence(user_input: Input) -> Result<(), ()> {
         original_file: &original_file,
         extra_rounds: user_input.extra_rounds,
         signal_names: &pos_to_name,
+        allow_empty_clusters: user_input.allow_empty_clusters,
+        smt_signal_names: user_input.smt_signal_names,
     };
 
     // Every instance's clusterings, reachable by prefix: the refinement's second
@@ -798,6 +795,8 @@ fn prove_flat(
         original_file: &original_file,
         extra_rounds: user_input.extra_rounds,
         signal_names: pos_to_name,
+        allow_empty_clusters: user_input.allow_empty_clusters,
+        smt_signal_names: user_input.smt_signal_names,
     };
 
     // No children: the whole circuit is this one instance. The second phase of
@@ -941,31 +940,27 @@ fn verify_instance(
                 .insert(spec_node.node_id, unbound);
         }
 
+        // Nothing to prove: no output of this cluster's boundary is a wire the
+        // specification names, so the disagreement clause would be `(not true)`
+        // and the query vacuously unsat. `check_cluster` aborts on that -- a pair
+        // like this is a clustering that should not have been produced -- and
+        // `--allow_empty_clusters` is the way to keep going anyway: no query, no
+        // verdict, no line in the report, just this note.
+        if ctx.allow_empty_clusters && !has_bound_output(spec_node, instance_info, &synthetic) {
+            println!(
+                "NOTE: cluster {} of {} has no output the specification names, so there is \
+                 nothing to verify in it; passed over (--allow_empty_clusters). It is NOT \
+                 counted anywhere: its {} r1cs constraint(s) go unverified.",
+                spec_node.node_id,
+                instance,
+                circuit_node.constraints.len()
+            );
+            continue;
+        }
+
         let cluster_started = std::time::Instant::now();
-        let outcome = verify_cluster_with_refinement(&pair, &circuit_by_id, &spec_by_id, interface,
-                                                     catalogue, ctx);
-        let verdict = match outcome {
-            Some(verdict) => verdict,
-            None => {
-                println!(
-                    "NOTE: cluster {} has no output signal the specification names, so there is \
-                     nothing to verify for it (a query would be vacuously unsat).",
-                    spec_node.node_id
-                );
-                results
-                    .clusters
-                    .insert(spec_node.node_id, ClusterVerdict::NothingToVerify);
-                results
-                    .cluster_instance
-                    .insert(spec_node.node_id, instance.to_string());
-                results
-                    .cluster_size
-                    .insert(spec_node.node_id, circuit_node.constraints.len());
-                record_cluster(results, instance, circuit_node, spec_node,
-                               ClusterVerdict::NothingToVerify);
-                continue;
-            }
-        };
+        let verdict = verify_cluster_with_refinement(&pair, &circuit_by_id, &spec_by_id,
+                                                    interface, catalogue, ctx);
 
         if verdict == ClusterVerdict::Failed {
             println!(
@@ -1187,7 +1182,6 @@ fn spec_of<'a>(spec_by_id: &HashMap<usize, &'a NodeInfo>, id: &usize) -> &'a Nod
 ///
 /// Stops when the verdict cannot improve: VERIFIED, or a counterexample with
 /// nothing left abstracted (the query is the whole story), or no neighbours left.
-/// `None` when there is nothing to verify, which refinement cannot change.
 fn verify_cluster_with_refinement(
     pair: &ClusterPair,
     circuit_by_id: &HashMap<usize, &NodeInfo>,
@@ -1195,7 +1189,7 @@ fn verify_cluster_with_refinement(
     interface: &InstanceInterface,
     catalogue: &Catalogue,
     ctx: &VerificationContext,
-) -> Option<ClusterVerdict> {
+) -> ClusterVerdict {
 
     // Two phases, in this order:
     //
@@ -1256,7 +1250,7 @@ fn verify_cluster_with_refinement(
             && !children_abstracted
             && instances.implications.is_empty();
 
-        let (result, logs) = check_cluster(pair, &abstracted, &inlined, &instances, interface, ctx)?;
+        let (result, logs) = check_cluster(pair, &abstracted, &inlined, &instances, interface, ctx);
         for log in logs {
             println!("{}", log);
         }
@@ -1290,7 +1284,7 @@ fn verify_cluster_with_refinement(
                     instances.names.len()
                 );
             }
-            return Some(verdict);
+            return verdict;
         }
 
         round += 1;
@@ -1564,8 +1558,7 @@ fn build_semantic_equivalence_report(
     let overall = report::compute_overall(
         results.count(ClusterVerdict::Failed) == 0,
         results.count(ClusterVerdict::Unknown) == 0
-            && results.count(ClusterVerdict::LocalCounterexample) == 0
-            && results.count(ClusterVerdict::NothingToVerify) == 0,
+            && results.count(ClusterVerdict::LocalCounterexample) == 0,
     );
 
     let summary = report::ReportSummary {
@@ -1574,8 +1567,7 @@ fn build_semantic_equivalence_report(
         previously_verified_nodes: None,
         failed_nodes: results.count(ClusterVerdict::Failed),
         timeout_nodes: results.count(ClusterVerdict::Unknown)
-            + results.count(ClusterVerdict::LocalCounterexample)
-            + results.count(ClusterVerdict::NothingToVerify),
+            + results.count(ClusterVerdict::LocalCounterexample),
         total_constraints: Some(results.cluster_size.values().sum()),
         verified_constraints: Some(
             results
@@ -1628,14 +1620,13 @@ fn build_semantic_equivalence_report(
 
 /// Laid out like the other modes' `print_pretty_results`: banner, headline, one
 /// list per non-empty bucket, counters. The buckets stay apart on purpose —
-/// FAILED, a local counterexample and "nothing to verify" are three different
-/// things (see [`ClusterVerdict`]).
+/// FAILED and a local counterexample are two different things (see
+/// [`ClusterVerdict`]).
 fn print_pretty_results(results: &ResultInfoSemanticEquivalence) {
     let verified = results.count(ClusterVerdict::Verified);
     let failed = results.count(ClusterVerdict::Failed);
     let local = results.count(ClusterVerdict::LocalCounterexample);
     let unknown = results.count(ClusterVerdict::Unknown);
-    let vacuous = results.count(ClusterVerdict::NothingToVerify);
 
     println!();
 
@@ -1647,7 +1638,7 @@ fn print_pretty_results(results: &ResultInfoSemanticEquivalence) {
 
     if results.clusters.is_empty() {
         println!("-> There was no cluster pair to verify");
-    } else if failed == 0 && local == 0 && unknown == 0 && vacuous == 0 {
+    } else if failed == 0 && local == 0 && unknown == 0 {
         println!("-> All cluster pairs are semantically equivalent to their specification :)");
         // Saying "the circuit is equivalent" needs the per-cluster results to
         // compose, which nothing here establishes -- see the assumption recorded
@@ -1670,17 +1661,11 @@ fn print_pretty_results(results: &ResultInfoSemanticEquivalence) {
             ClusterVerdict::Unknown,
             "Cluster pairs that timeout when checking semantic equivalence: ",
         );
-        print_cluster_list(
-            results,
-            ClusterVerdict::NothingToVerify,
-            "Cluster pairs with nothing to verify, no output of theirs is named by the specification (skipped, NOT verified): ",
-        );
     }
     println!("  * Number of verified cluster pairs (semantic equivalence): {}", verified);
     println!("  * Number of failed cluster pairs (semantic equivalence): {}", failed);
     println!("  * Number of inconclusive cluster pairs (local counterexample): {}", local);
     println!("  * Number of timeout cluster pairs (semantic equivalence): {}", unknown);
-    println!("  * Number of skipped cluster pairs (nothing to verify): {}", vacuous);
     if !results.unbound_signals.is_empty() {
         println!(
             "  * Number of cluster pairs with boundary signals the specification never names: {} (a VERIFIED verdict says nothing about those signals)",

@@ -149,6 +149,15 @@ pub struct VerificationContext<'a> {
     /// r1cs signal id -> its name in the circom program, straight from
     /// `--correspondence`. Only used to annotate the generated `.smt2`.
     pub signal_names: &'a BTreeMap<usize, String>,
+    /// `--allow_empty_clusters`: pass over a pair with nothing to prove instead
+    /// of aborting on it. Read where the pair is picked up, not here — by the
+    /// time [`check_cluster`] has one, the decision is already made.
+    pub allow_empty_clusters: bool,
+    /// `--smt_signal_names`: name the symbols of the generated `.smt2` after the
+    /// circuit's own signals (`r1cs_main_isz_in`, `spec_main_isz_out`) instead of
+    /// the `s_{id}` / `v_j` that `--check_correctness` writes. Presentation only:
+    /// the same query either way, and the names are in the comments regardless.
+    pub smt_signal_names: bool,
 }
 
 /// The `inputs ⇒ outputs` abstraction of one adjacent cluster: **that cluster's
@@ -183,14 +192,28 @@ pub fn child_implication(
     (bind(&child.inputs), bind(&child.outputs))
 }
 
+/// Whether this pair has anything to prove: an output on its boundary that the
+/// specification names and that is a real r1cs wire.
+///
+/// The same condition [`check_cluster`] aborts on, exposed so the caller can
+/// decide what to do with such a pair BEFORE a query is built for it (see
+/// `--allow_empty_clusters`). Kept as one function so the two cannot drift: the
+/// boundary and the filter are the ones the obligation is stated over.
+pub fn has_bound_output(
+    spec_node: &NodeInfo,
+    instance: &InstanceInfo,
+    synthetic: &HashSet<usize>,
+) -> bool {
+    let (_, proved) = bound_boundary(spec_node, instance);
+    proved.iter().any(|(signal, _)| !synthetic.contains(signal))
+}
+
 /// Assembles the query for one cluster pair and hands it to the solver.
 ///
 /// `adjacent` are abstracted by an implication; `inlined` are asserted in full
 /// (empty unless `--extra_rounds` asked for them). The two must be disjoint.
 /// Either way the obligation never moves: it is always about THIS cluster's
 /// boundary, and inlining only adds hypotheses on the left of it.
-///
-/// `None` when there is nothing to verify (the vacuity guard below).
 pub fn check_cluster(
     pair: &ClusterPair,
     adjacent: &[&NodeInfo],
@@ -198,7 +221,7 @@ pub fn check_cluster(
     instances: &InlinedInstances,
     interface: &InstanceInterface,
     ctx: &VerificationContext,
-) -> Option<(PossibleResult, Vec<String>)> {
+) -> (PossibleResult, Vec<String>) {
     let instance = ctx.table.instance(pair.instance);
     // The ids the preprocessor invented for specification variables with no r1cs
     // wire behind them. Needed early: the boundary and the neighbour abstractions
@@ -342,19 +365,32 @@ pub fn check_cluster(
     };
     // From the SPECIFICATION side. The two clusterings agree on which signals a
     // cluster holds but not on how they split into inputs and outputs, and the
-    // circuit split leaves clusters with no output at all -- skipped as
-    // NOTHING_TO_VERIFY -- while a sibling inherits the output without the
-    // constraints producing it. Measured over circomlib: recovers four circuits,
-    // removes a false FAILED, changes nothing in the ten that already worked.
+    // circuit split leaves clusters with no output at all while a sibling
+    // inherits the output without the constraints producing it. Measured over
+    // circomlib: recovers four circuits, removes a false FAILED, changes nothing
+    // in the ten that already worked.
     let (assumed, proved) = bound_boundary(pair.spec, instance);
     let (inputs_1, mut inputs_2) = split(drop_synthetic(assumed));
     let (outputs_1, mut outputs_2) = split(drop_synthetic(proved));
 
-    // No output the spec names means a VACUOUS query: the disagreement clause
-    // becomes `(assert (not true))` and is `unsat` whatever the circuit says.
-    // Reporting that as VERIFIED would be a lie.
+    // No output the spec names makes the query VACUOUS: the disagreement clause
+    // becomes `(assert (not true))` and is `unsat` whatever the circuit says, so
+    // any verdict read off it would be a lie -- and there is no honest verdict
+    // to give instead, since the pair states nothing to prove. That is a
+    // clustering that should not have been produced, typically an atom whose
+    // footprint closed to nothing ending up alone in a cluster that holds no
+    // r1cs constraint either. Fail loudly rather than report on it.
     if outputs_2.is_empty() {
-        return None;
+        panic!(
+            "Cluster {} of instance '{}' ({} r1cs constraint(s), {} atom(s)) has no output signal \
+             the specification names, so its query would be vacuously unsat: there is nothing to \
+             verify in it and nothing sound to report about it. The clustering must not produce \
+             such a pair.",
+            pair.spec.node_id,
+            pair.instance,
+            pair.circuit.constraints.len(),
+            pair.spec.constraints.len()
+        );
     }
 
     // ---- neighbours ------------------------------------------------------
@@ -509,6 +545,50 @@ pub fn check_cluster(
         }
     }
 
+    // ---- one assertion per non-trivial conjunct ---------------------------
+    // See `split_atom_assertions`: a tag covering several operations arrives as
+    // one `and` tree that is mostly `(! true :meta-data "...")`, and asserting it
+    // whole gives an unreadable megabyte-scale assert. Here, at the end, because
+    // everything above reads `constraints_2` POSITIONALLY against
+    // `pair.spec.constraints` -- splitting earlier would break that pairing.
+    let mut trivial_conjuncts = 0usize;
+    let mut trivial_atoms = 0usize;
+    {
+        let mut split_texts: Vec<String> = Vec::with_capacity(constraints_2.len());
+        let mut split_notes: Vec<String> = Vec::with_capacity(constraints_2.len());
+        for (idx, text) in constraints_2.iter().enumerate() {
+            let note = atom_notes.get(idx).cloned().unwrap_or_default();
+            let (parts, trivial) = split_atom_assertions(text);
+            trivial_conjuncts += trivial;
+            if parts.is_empty() {
+                // Nothing but `true`: a tie group, or a tag that is pure
+                // annotation. Asserting it says nothing, so it is only counted.
+                trivial_atoms += 1;
+                continue;
+            }
+            let total = parts.len();
+            for (n, (part, tag)) in parts.into_iter().enumerate() {
+                // The tag goes in only when it adds something: the note already
+                // carries the atom's own, and repeating it reads like two
+                // different tags.
+                let tag_note = match tag {
+                    Some(t) if !note.contains(&format!("tag \"{}\"", t)) => {
+                        format!(", from \"{}\"", t)
+                    }
+                    _ => String::new(),
+                };
+                split_notes.push(if total == 1 {
+                    format!("{}{}", note, tag_note)
+                } else {
+                    format!("{} -- conjunct {} of {}{}", note, n + 1, total, tag_note)
+                });
+                split_texts.push(part);
+            }
+        }
+        constraints_2 = split_texts;
+        atom_notes = split_notes;
+    }
+
     // Always `cluster_N`, never the DAGNode's own `node_name`: that one defaults
     // to `node_N`, which reads on disk like a circom template rather than a
     // cluster the algorithm chose.
@@ -601,37 +681,123 @@ pub fn check_cluster(
             entry.push_str(&format!(" = {}", label));
         }
     }
+    if trivial_conjuncts > 0 || trivial_atoms > 0 {
+        annotations.header.push(format!(
+            "left out of the assertions: {} annotation(s) whose body is just `true` (an operation \
+             that constrains nothing), of which {} tag(s) were nothing else",
+            trivial_conjuncts, trivial_atoms
+        ));
+    }
     annotations.constraints = constraint_notes;
     annotations.atoms = atom_notes;
     annotations.implications = implication_notes;
+    // The circuit side: `r1cs_main_isz_in` or `s_5`. The writer decides from
+    // this, and keeps `annotations.signals` for the comments either way.
+    annotations.descriptive_symbols = ctx.smt_signal_names;
 
-    // `spec_main_isz_out` rather than `spec_main_v_14`, for variables tied to a
-    // real wire (synthetic ones name nothing and keep their `v_N`). Textual,
-    // because the atoms carry the old names inside their formulas; longest first,
-    // or `spec_main_v_1` would corrupt every `spec_main_v_14`.
+
+    // `required_macro_definitions` computes reachability over every atom of the
+    // run, so its set is global: two thirds of a query's definitions are never
+    // called by it. Cheap for the solver, noise for the reader.
+    let macros_for_query = narrow_macros(ctx.macros, &constraints_2);
+
+    // Declare only what is left. After the call removal and `narrow_macros`, so
+    // it sees the final assertions. The interface variables are added by name:
+    // the hypothesis and the goal are built downstream, not from any text here.
     {
-        // A variable covering several signals is the spec saying they are the
-        // same wire: name it after all of them, sorted. Picking one arbitrarily
-        // named consecutive elements of one bus after different components.
-        let mut wires_of: BTreeMap<&String, Vec<String>> = BTreeMap::new();
-        for (signal, var) in instance.signal_to_spec_var.iter() {
-            if synthetic.contains(signal) {
-                continue;
-            }
-            if let Some(wire) = ctx.signal_names.get(signal) {
-                wires_of.entry(var).or_default().push(sanitize_symbol(wire));
-            }
+        let mut used: HashSet<String> = HashSet::new();
+        for text in constraints_2.iter().chain(macros_for_query.values()) {
+            used.extend(spec_variables(text));
         }
+        for (ins, outs) in implications.iter() {
+            used.extend(ins.iter().chain(outs.iter()).map(|(_, v)| v.clone()));
+        }
+        used.extend(inputs_2.iter().cloned());
+        used.extend(outputs_2.iter().cloned());
+        signals_2.retain(|v| used.contains(v));
+        // Drop the notes for what is no longer declared.
+        annotations.spec_vars.retain(|v, _| used.contains(v));
+    }
+
+    // LAST, after every use of `spec_variables` above: it recognises a
+    // specification variable by its `spec_` prefix, so renaming before the sweep
+    // would leave a variable an atom mentions undeclared -- and the solver reads
+    // an undeclared symbol as a function application ("Problem with sorts with
+    // application of v_12"). Cosmetic either way: same query, other names.
+    // The specification side, in one of two shapes. Textual either way, because
+    // the atoms carry the names inside their formulas, and longest first, or
+    // `spec_main_v_1` would corrupt every `spec_main_v_14`.
+    {
         let mut rename: Vec<(String, String)> = Vec::new();
-        let mut taken: HashSet<String> = HashSet::new();
-        for (var, mut wires) in wires_of {
-            wires.sort();
-            wires.dedup();
-            let candidate = format!("spec_{}", wires.join("__"));
-            if candidate == *var || !taken.insert(candidate.clone()) {
-                continue;
+        if ctx.smt_signal_names {
+            // `spec_main_isz_out` rather than `spec_main_v_14`, for variables
+            // tied to a real wire (synthetic ones name nothing and keep their
+            // `v_N`).
+            //
+            // A variable covering several signals is the spec saying they are the
+            // same wire: name it after all of them, sorted. Picking one
+            // arbitrarily named consecutive elements of one bus after different
+            // components.
+            let mut wires_of: BTreeMap<&String, Vec<String>> = BTreeMap::new();
+            for (signal, var) in instance.signal_to_spec_var.iter() {
+                if synthetic.contains(signal) {
+                    continue;
+                }
+                if let Some(wire) = ctx.signal_names.get(signal) {
+                    wires_of.entry(var).or_default().push(sanitize_symbol(wire));
+                }
             }
-            rename.push((var.clone(), candidate));
+            let mut taken: HashSet<String> = HashSet::new();
+            for (var, mut wires) in wires_of {
+                wires.sort();
+                wires.dedup();
+                let candidate = format!("spec_{}", wires.join("__"));
+                if candidate == *var || !taken.insert(candidate.clone()) {
+                    continue;
+                }
+                rename.push((var.clone(), candidate));
+            }
+        } else {
+            // The default, the shape `--check_correctness` writes: the macro's
+            // own `v_j`, with the `spec_{instance}_` prefix off.
+            //
+            // The prefix only comes off where the bare name is still unambiguous.
+            // It is there because two instances use the SAME local names for
+            // different wires, and with `--extra_rounds` a query holds several
+            // instances at once, so a `v_j` claimed by two of them keeps its
+            // prefix -- one symbol cannot stand for two variables. An SMT-LIB
+            // reserved word is left prefixed too: `(declare-fun as () FFp)` does
+            // not parse.
+            const RESERVED: [&str; 9] =
+                ["as", "let", "exists", "forall", "match", "par", "true", "false", "_"];
+            let mut prefixes: Vec<String> = std::iter::once(pair.instance.to_string())
+                .chain(instances.names.iter().cloned())
+                .map(|instance| format!("spec_{}_", crate::semantic_equivalence::atoms::sanitise(&instance)))
+                .collect();
+            // Longest first: `main.lt` is a prefix of `main.lt.n2b`, and cutting
+            // at the shorter one would leave `n2b_v_3` instead of `v_3`.
+            prefixes.sort_by(|a, b| b.len().cmp(&a.len()));
+
+            let mut bare_of: BTreeMap<String, String> = BTreeMap::new();
+            let mut claimants: BTreeMap<String, usize> = BTreeMap::new();
+            for var in instance.spec_vars.iter().chain(instances.spec_vars.iter()) {
+                if bare_of.contains_key(var) {
+                    continue;
+                }
+                if let Some(prefix) = prefixes.iter().find(|p| var.starts_with(p.as_str())) {
+                    let bare = var[prefix.len()..].to_string();
+                    if bare.is_empty() || RESERVED.contains(&bare.as_str()) {
+                        continue;
+                    }
+                    *claimants.entry(bare.clone()).or_insert(0) += 1;
+                    bare_of.insert(var.clone(), bare);
+                }
+            }
+            for (var, bare) in bare_of {
+                if claimants.get(&bare).copied().unwrap_or(0) == 1 {
+                    rename.push((var, bare));
+                }
+            }
         }
         rename.sort_by(|a, b| b.0.len().cmp(&a.0.len()));
 
@@ -668,29 +834,6 @@ pub fn check_cluster(
         }
     }
 
-    // `required_macro_definitions` computes reachability over every atom of the
-    // run, so its set is global: two thirds of a query's definitions are never
-    // called by it. Cheap for the solver, noise for the reader.
-    let macros_for_query = narrow_macros(ctx.macros, &constraints_2);
-
-    // Declare only what is left. After the call removal and `narrow_macros`, so
-    // it sees the final assertions. The interface variables are added by name:
-    // the hypothesis and the goal are built downstream, not from any text here.
-    {
-        let mut used: HashSet<String> = HashSet::new();
-        for text in constraints_2.iter().chain(macros_for_query.values()) {
-            used.extend(spec_variables(text));
-        }
-        for (ins, outs) in implications.iter() {
-            used.extend(ins.iter().chain(outs.iter()).map(|(_, v)| v.clone()));
-        }
-        used.extend(inputs_2.iter().cloned());
-        used.extend(outputs_2.iter().cloned());
-        signals_2.retain(|v| used.contains(v));
-        // Drop the notes for what is no longer declared.
-        annotations.spec_vars.retain(|v, _| used.contains(v));
-    }
-
     // After the sweep, or the count would predate it. Against the circuit's and
     // the instance's totals, so the ratio shows how much this query carries.
     let header_pos = annotations.header.len().min(2);
@@ -705,6 +848,16 @@ pub fn check_cluster(
             instance.spec_vars.len()
         ),
     );
+
+    // The notes go with the names. Without `--smt_signal_names` the file carries
+    // none of them -- no header block, no wire beside a declaration, no tag beside
+    // an assertion -- so what comes out is the shape `--check_correctness` writes.
+    // Dropped here, in one place, rather than guarded at each of the six sites
+    // that fill them: the work of building them is not worth a branch apiece, and
+    // one `if` cannot leave half a file annotated.
+    if !ctx.smt_signal_names {
+        annotations = ProblemAnnotations::default();
+    }
 
     let verification = CorrectnessVerification::new(
         &node_name,
@@ -728,11 +881,188 @@ pub fn check_cluster(
     .with_file_prefix("semantic")
     .with_annotations(annotations);
 
-    Some(run_solver(&verification, ctx.solver))
+    run_solver(&verification, ctx.solver)
 }
 
 
 
+
+/// Index just past the s-expression, string literal or token that starts at
+/// `start`. `start` has to be at its first character, not at whitespace.
+///
+/// A string literal is skipped as a unit, `""` and all: a `:meta-data` value can
+/// hold anything, parentheses included, and counting those as nesting would put
+/// every span after it out by one.
+fn sexpr_end(bytes: &[u8], start: usize) -> usize {
+    let mut i = start;
+    if i >= bytes.len() {
+        return i;
+    }
+    if bytes[i] == b'"' {
+        i += 1;
+        while i < bytes.len() {
+            if bytes[i] == b'"' {
+                // `""` is an escaped quote inside the string, not the end of it.
+                if bytes.get(i + 1) == Some(&b'"') {
+                    i += 2;
+                    continue;
+                }
+                return i + 1;
+            }
+            i += 1;
+        }
+        return i;
+    }
+    if bytes[i] == b'(' {
+        let mut depth = 0usize;
+        while i < bytes.len() {
+            match bytes[i] {
+                b'"' => {
+                    i = sexpr_end(bytes, i);
+                    continue;
+                }
+                b'(' => depth += 1,
+                b')' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return i + 1;
+                    }
+                }
+                _ => {}
+            }
+            i += 1;
+        }
+        return i;
+    }
+    while i < bytes.len()
+        && !(bytes[i] as char).is_ascii_whitespace()
+        && bytes[i] != b'('
+        && bytes[i] != b')'
+    {
+        i += 1;
+    }
+    i
+}
+
+/// The content of an SMT-LIB string literal: quotes off, `""` back to `"`.
+fn unquote_smt_string(text: &str) -> String {
+    let inner = text.strip_prefix('"').and_then(|t| t.strip_suffix('"')).unwrap_or(text);
+    inner.replace("\"\"", "\"")
+}
+
+/// Splits one atom's SMT-LIB text into the assertions worth making, and says how
+/// many conjuncts were dropped for being `true`.
+///
+/// An atom is one top-level tag of a macro, and a tag covering several
+/// operations -- an unrolled loop, a branch -- is a right-nested `and` tree. Most
+/// of that tree is `(! true :meta-data "...")`: an annotation naming an operation
+/// that constrains nothing (a constant, an array read, a rename). Asserted whole,
+/// `greaterthan`'s `repeat_exp 33` atom is a single 142 KB assert holding 363 of
+/// those around 132 real equalities, which is unreadable and hands the solver
+/// nothing.
+///
+/// So: the `and` tree is flattened, the `true` conjuncts are dropped, and each of
+/// the rest comes out on its own carrying the tag of the `(! ... )` it sat in --
+/// the annotation moves from the asserted text to the note beside it.
+///
+/// Sound because the only thing flattened is `and`, and `(assert (and A B))` is
+/// `(assert A) (assert B)`. Nothing else is descended into: an `ite`, an `or`, a
+/// `=>`, a `let` stays whole, so a conjunct that only holds under a branch keeps
+/// the branch around it.
+fn split_atom_assertions(formula: &str) -> (Vec<(String, Option<String>)>, usize) {
+    let mut out: Vec<(String, Option<String>)> = Vec::new();
+    let mut trivial = 0usize;
+    collect_conjuncts(formula, None, &mut out, &mut trivial);
+    (out, trivial)
+}
+
+fn collect_conjuncts(
+    text: &str,
+    inherited: Option<&str>,
+    out: &mut Vec<(String, Option<String>)>,
+    trivial: &mut usize,
+) {
+    let text = text.trim();
+    if text.is_empty() {
+        return;
+    }
+    if text == "true" {
+        *trivial += 1;
+        return;
+    }
+    let bytes = text.as_bytes();
+    if bytes[0] != b'(' {
+        out.push((text.to_string(), inherited.map(str::to_string)));
+        return;
+    }
+
+    let mut i = 1;
+    while i < bytes.len() && (bytes[i] as char).is_ascii_whitespace() {
+        i += 1;
+    }
+    let head_end = sexpr_end(bytes, i);
+    let head = &text[i..head_end];
+
+    match head {
+        "and" => {
+            let mut j = head_end;
+            loop {
+                while j < bytes.len() && (bytes[j] as char).is_ascii_whitespace() {
+                    j += 1;
+                }
+                if j >= bytes.len() || bytes[j] == b')' {
+                    break;
+                }
+                let end = sexpr_end(bytes, j);
+                collect_conjuncts(&text[j..end], inherited, out, trivial);
+                j = end;
+            }
+        }
+        // `(! body :key value ...)`: the body is what is asserted, and the
+        // `:meta-data` among the attributes is the tag that names it. An inner
+        // tag wins over the one inherited from an enclosing `(! ... )`: it is the
+        // more precise of the two.
+        "!" => {
+            let mut j = head_end;
+            while j < bytes.len() && (bytes[j] as char).is_ascii_whitespace() {
+                j += 1;
+            }
+            let body_end = sexpr_end(bytes, j);
+            let body = &text[j..body_end];
+
+            let mut tag: Option<String> = None;
+            let mut k = body_end;
+            while k < bytes.len() {
+                while k < bytes.len() && (bytes[k] as char).is_ascii_whitespace() {
+                    k += 1;
+                }
+                if k >= bytes.len() || bytes[k] == b')' {
+                    break;
+                }
+                let key_end = sexpr_end(bytes, k);
+                let key = &text[k..key_end];
+                let mut v = key_end;
+                while v < bytes.len() && (bytes[v] as char).is_ascii_whitespace() {
+                    v += 1;
+                }
+                // A keyword may stand on its own (`:flag`), so only take a value
+                // when there is one that is not the next keyword.
+                if v < bytes.len() && bytes[v] != b')' && bytes[v] != b':' {
+                    let value_end = sexpr_end(bytes, v);
+                    if key == ":meta-data" {
+                        tag = Some(unquote_smt_string(&text[v..value_end]));
+                    }
+                    k = value_end;
+                } else {
+                    k = key_end;
+                }
+            }
+
+            collect_conjuncts(body, tag.as_deref().or(inherited), out, trivial);
+        }
+        _ => out.push((text.to_string(), inherited.map(str::to_string))),
+    }
+}
 
 /// Whole-identifier replacement: `spec_main_v_1` must not be rewritten inside
 /// `spec_main_v_14`.
@@ -1033,5 +1363,62 @@ mod tests {
 
         assert_eq!(ids(&assumed), vec![2]);
         assert_eq!(ids(&proved), vec![3]);
+    }
+}
+
+#[cfg(test)]
+mod split_tests {
+    use super::split_atom_assertions;
+
+    #[test]
+    fn drops_trivial_annotations_and_keeps_the_rest_with_their_tags() {
+        let formula = r#"(and  (! true :meta-data "%c := 1")
+                              (and  (! (= v_1 v_0) :meta-data "%z := felt.mul %x 1")
+                                    (! true :meta-data "array.read %arg0[%0] %1")))"#;
+        let (parts, trivial) = split_atom_assertions(formula);
+        assert_eq!(trivial, 2);
+        assert_eq!(parts.len(), 1);
+        assert_eq!(parts[0].0, "(= v_1 v_0)");
+        assert_eq!(parts[0].1.as_deref(), Some("%z := felt.mul %x 1"));
+    }
+
+    #[test]
+    fn an_inner_tag_wins_over_the_group_it_sits_in() {
+        let formula = r#"(! (and (! (= v_1 1) :meta-data "inner") (= v_2 2)) :meta-data "repeat_exp 2")"#;
+        let (parts, _) = split_atom_assertions(formula);
+        assert_eq!(parts.len(), 2);
+        assert_eq!(parts[0].1.as_deref(), Some("inner"));
+        // No tag of its own: it keeps the group's, which is the best there is.
+        assert_eq!(parts[1].1.as_deref(), Some("repeat_exp 2"));
+    }
+
+    #[test]
+    fn nothing_below_an_ite_is_split_out() {
+        // Splitting here would assert a branch unconditionally.
+        let formula = r#"(! (ite c (and (= v_1 1) (= v_2 2)) true) :meta-data "if (%x == 1)")"#;
+        let (parts, trivial) = split_atom_assertions(formula);
+        assert_eq!(trivial, 0);
+        assert_eq!(parts.len(), 1);
+        assert!(parts[0].0.starts_with("(ite "));
+    }
+
+    #[test]
+    fn a_body_that_is_only_true_yields_no_assertion() {
+        let (parts, trivial) = split_atom_assertions(r#"(! true :meta-data "equality1")"#);
+        assert!(parts.is_empty());
+        assert_eq!(trivial, 1);
+        let (parts, trivial) = split_atom_assertions("true");
+        assert!(parts.is_empty());
+        assert_eq!(trivial, 1);
+    }
+
+    #[test]
+    fn a_parenthesis_inside_a_meta_data_string_does_not_shift_the_spans() {
+        let formula = r#"(and (! (= v_0 1) :meta-data "call @F (%arg0) to out") (! (= v_1 2) :meta-data "b"))"#;
+        let (parts, _) = split_atom_assertions(formula);
+        assert_eq!(parts.len(), 2);
+        assert_eq!(parts[0].0, "(= v_0 1)");
+        assert_eq!(parts[0].1.as_deref(), Some("call @F (%arg0) to out"));
+        assert_eq!(parts[1].0, "(= v_1 2)");
     }
 }
