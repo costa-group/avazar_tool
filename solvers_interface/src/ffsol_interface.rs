@@ -52,8 +52,8 @@ impl FfsolConfig {
             model: None,
             success: true,
             prime: None,
-            apply_la_incremental: false,
-            apply_nra: false,
+            apply_la_incremental: true,
+            apply_nra: true,
             light_check_determinism: true,
             apply_la: true,
             la_with_overflowing_constraints: false,
@@ -87,10 +87,6 @@ impl FfsolConfig {
         let mut args = Vec::new();
         args.push("-tlimit".to_string());
         args.push(self.timeout.to_string());
-
-        if self.use_cocoa {
-            args.push("-using_cocoa".to_string());
-        }
 
         if let Some(model) = &self.model {
             args.push("-model".to_string());
