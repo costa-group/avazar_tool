@@ -330,6 +330,12 @@ impl EquivalenceVerification{
 pub struct ProblemAnnotations {
     /// Lines for the block at the top of the file (what problem this is).
     pub header: Vec<String>,
+    /// Whether the symbols themselves carry the circuit's names
+    /// (`r1cs_main_isz_in`) instead of the plain `s_{id}`. Off by default, which
+    /// is what `--check_correctness` has always written; the names in
+    /// [`Self::signals`] are used for the trailing comments either way, so a
+    /// terse file still says which wire each symbol is.
+    pub descriptive_symbols: bool,
     /// Circuit signal id -> its name in the original program (`main.lt.in[0]`).
     pub signals: HashMap<usize, String>,
     /// Specification variable -> what it is bound to.

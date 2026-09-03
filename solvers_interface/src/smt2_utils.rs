@@ -22,15 +22,19 @@ pub fn correctness_problem_to_smt2(problem: &CorrectnessVerification)->LinkedLis
     let mut signal_to_name = HashMap::new();
 
     smt2_problem.push_back(comment("---- circuit signals ----"));
-    // The wire's own name carries into the symbol -- `r1cs_main_isz_in` rather
+    // The wire's own name can carry into the symbol -- `r1cs_main_isz_in` rather
     // than `s_5` -- so a counterexample reads without consulting the comment or
-    // the correspondence file. Only when the caller supplied names: the other
-    // modes leave `notes.signals` empty and keep the plain `s_N`.
+    // the correspondence file. Only when the caller both supplied names and asked
+    // for them: the other modes leave `notes.signals` empty, and a caller that
+    // fills it still gets `s_N` unless it sets `descriptive_symbols`. The name
+    // goes in the trailing comment regardless.
     let mut taken: HashSet<String> = HashSet::new();
     for s in &problem.signals_1 {
         let name = match notes.signals.get(s) {
-            Some(wire) => unique_symbol(&format!("r1cs_{}", sanitize_symbol(wire)), *s, &mut taken),
-            None => format!("s_{}", s),
+            Some(wire) if notes.descriptive_symbols => {
+                unique_symbol(&format!("r1cs_{}", sanitize_symbol(wire)), *s, &mut taken)
+            }
+            _ => format!("s_{}", s),
         };
         smt2_problem.push_back(with_comment(declare_signal(&name), notes.signals.get(s)));
         signal_to_name.insert(*s,name.clone());

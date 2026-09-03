@@ -17,6 +17,7 @@ pub struct Input {
     pub include_niaz3_in_all: bool,
     pub apply_predecessors: bool,
     pub apply_bidirectional: bool,
+    pub smt_signal_names: bool,
     pub prime: BigInt,
     pub clustering_size: usize,
     pub equivalence_mode: usize,
@@ -50,6 +51,7 @@ impl Input {
         let include_niaz3_in_all = input_processing::get_include_niaz3_in_all(&matches);
         let apply_predecessors = input_processing::get_apply_predecessors(&matches);
         let apply_bidirectional = input_processing::get_apply_bidirectional(&matches);
+        let smt_signal_names = matches.is_present("smt_signal_names");
 
         let equivalence_mode = input_processing::get_equivalence_mode(&matches)?;
         let target_size = input_processing::get_target_size(&matches)?;
@@ -78,6 +80,7 @@ impl Input {
             include_niaz3_in_all,
             apply_predecessors,
             apply_bidirectional,
+            smt_signal_names,
             equivalence_mode,
             target_size,
             extra_rounds,
@@ -467,6 +470,15 @@ mod input_processing {
                     .takes_value(false)
                     .hidden(false)
                     .help("Abstract/expand towards both the predecessors and the successors. Read by --check_correctness, --check_equivalence, the determinism mode and --check_semantic_equivalence alike")
+                    .display_order(600)
+            )
+            .arg(
+                Arg::with_name("smt_signal_names")
+                    .long("smt_signal_names")
+                    .takes_value(false)
+                    .hidden(false)
+                    .requires("check_semantic_equivalence")
+                    .help("--check_semantic_equivalence only: name the symbols of the generated .smt2 after the circuit's own signals -- `r1cs_main_isz_in` for an r1cs wire and `spec_main_isz_out` for the specification variable bound to it -- so a query reads without the correspondence file at hand. Without it the .smt2 looks like --check_correctness's: `s_{id}` for an r1cs signal and the macro's own `v_j` for a specification variable, with the names kept in the trailing comments either way")
                     .display_order(600)
             )
             .arg(
