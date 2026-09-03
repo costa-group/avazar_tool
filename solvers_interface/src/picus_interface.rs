@@ -47,27 +47,56 @@ pub fn deduce(problem: &SafetyVerification<Constraint<usize>>) -> (PossibleResul
         .expect("Failed to start picus process");
 
     let mut stdout = String::new();
-    let stderr = String::new();
-    
-    match cmd.wait_timeout(Duration::from_millis(timeout * 6)).unwrap() {
-        Some(_) => {
-            let _ = fs::remove_file(output_name);
+    let mut stderr = String::new();
 
+    match cmd.wait_timeout(Duration::from_millis(timeout * 6)).unwrap() {
+        Some(status) => {
             if let Some(mut out) = cmd.stdout.take() {
                 let mut buf = Vec::new();
                 out.read_to_end(&mut buf).ok();
                 stdout = String::from_utf8_lossy(&buf).to_string();
             }
+            // Read, not discarded: this used to be an empty String that was
+            // handed back as the logs, so whatever picus complained about was
+            // thrown away before anyone could see it.
+            if let Some(mut err) = cmd.stderr.take() {
+                let mut buf = Vec::new();
+                err.read_to_end(&mut buf).ok();
+                stderr = String::from_utf8_lossy(&buf).to_string();
+            }
+
             //if stdout contains the line "The circuit is properly constrained"
             if stdout.contains("The circuit is properly constrained") {
+                let _ = fs::remove_file(output_name);
                 println!("VERIFIED: picus stdout:\n{}", stdout);
                 (PossibleResult::VERIFIED, vec![stderr])
             }
             else if stdout.contains("underconstrained"){
+                let _ = fs::remove_file(output_name);
                 println!("FAILED: picus stdout:\n{}", stdout);
                 (PossibleResult::FAILED, vec![stderr])
-            } else{
-                println!("TIMEOUT: picus stdout:\n{}", stdout);
+            }
+            // It ran to completion and said neither thing. Unlike the SMT
+            // solvers, picus has no answer protocol to check against -- its
+            // wording for "I gave up" is whatever it is -- so only the two
+            // unambiguous failures abort: it exited badly, or it printed
+            // nothing at all. Anything else stays UNKNOWN, which is what it
+            // has always been.
+            else if !status.success() || stdout.trim().is_empty() {
+                panic!(
+                    "PICUS failed on {}: it exited with {} and said neither that the circuit is \
+                     properly constrained nor that it is underconstrained, so there is no verdict \
+                     to report -- and calling it a timeout would hide the failure. The r1cs is \
+                     kept at {} so the run can be repeated.\n--- stdout ---\n{}\n--- stderr ---\n{}",
+                    output_name,
+                    status,
+                    output_name,
+                    if stdout.trim().is_empty() { "(no output)" } else { stdout.trim() },
+                    if stderr.trim().is_empty() { "(empty)" } else { stderr.trim() },
+                );
+            } else {
+                let _ = fs::remove_file(output_name);
+                println!("UNKNOWN: picus stdout:\n{}", stdout);
                 (PossibleResult::UNKNOWN, vec![stderr])
             }
         }

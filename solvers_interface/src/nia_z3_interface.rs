@@ -473,10 +473,14 @@ pub fn handling_nia_z3_call(
     let check_step = Duration::from_millis(50);
     let start = Instant::now();
 
+    // Whether the process was cut short by US rather than finishing on its own:
+    // what tells a timeout apart from a solver that failed. See `solver_verdict`.
+    let mut stopped_by_us = false;
     loop {
         if cancel_flag.map_or(false, |flag| flag.load(Ordering::Relaxed)) {
             let pgid = Pid::from_raw(child.id() as i32);
             let _ = killpg(pgid, Signal::SIGKILL);
+            stopped_by_us = true;
             break;
         }
 
@@ -484,6 +488,7 @@ pub fn handling_nia_z3_call(
         if elapsed >= timeout {
             let pgid = Pid::from_raw(child.id() as i32);
             let _ = killpg(pgid, Signal::SIGKILL);
+            stopped_by_us = true;
             break;
         }
 
@@ -504,7 +509,9 @@ pub fn handling_nia_z3_call(
         stdout,
         stderr,
     };
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    // Before the file is removed: an abort in here has to leave the query on
+    // disk, and the message sends the reader to it.
+    let verdict = crate::solver_verdict("NIA-Z3", &new_file_name, stopped_by_us, &output);
 
     if !verbose {
         match fs::remove_file(&new_file_name) {
@@ -513,15 +520,5 @@ pub fn handling_nia_z3_call(
         }
     }
 
-    if let Some(last_line) = stdout.lines().rev().find(|l| !l.trim().is_empty()) {
-        if last_line == "unsat" {
-            PossibleResult::VERIFIED
-        } else if last_line == "sat" {
-            PossibleResult::FAILED
-        } else {
-            PossibleResult::UNKNOWN
-        }
-    } else {
-        PossibleResult::UNKNOWN
-    }
+    verdict
 }

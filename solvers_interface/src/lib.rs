@@ -356,6 +356,89 @@ impl ProblemAnnotations {
 /// One line of SMT-LIB comment. Newlines are flattened: a comment runs to the
 /// end of the line, so an embedded one would turn the rest of the note into
 /// code the solver tries to parse.
+/// The verdict of one solver run -- or an abort, when the run was not a verdict
+/// at all.
+///
+/// `UNKNOWN` is kept for the two things it can honestly mean: the process was cut
+/// short by US (the `--timeout`, or a cancel from the racing mode), or the solver
+/// answered `unknown` itself. Anything else -- a non-zero exit, a crash, an empty
+/// answer, an `(error ...)` from a malformed query -- is the SOLVER FAILING, and
+/// mapping that to `UNKNOWN` files a bug under "the query was too hard": the run
+/// reads as a timeout, the number lands in the report, and nobody looks at the
+/// query again. Those abort, with what it takes to reproduce them.
+///
+/// Call this BEFORE deleting the `.smt2`: on the abort path the file has to
+/// survive, and the message points at it.
+pub fn solver_verdict(
+    solver: &str,
+    smt2_path: &str,
+    stopped_by_us: bool,
+    output: &std::process::Output,
+) -> PossibleResult {
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let answer = stdout.lines().rev().find(|l| !l.trim().is_empty()).map(str::trim);
+    match answer {
+        Some("unsat") => PossibleResult::VERIFIED,
+        Some("sat") => PossibleResult::FAILED,
+        // We killed it: a partial answer, or none at all, is exactly what that
+        // looks like, and it is a genuine UNKNOWN.
+        _ if stopped_by_us => PossibleResult::UNKNOWN,
+        Some("unknown") => PossibleResult::UNKNOWN,
+        _ => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let tail: Vec<&str> = stdout.lines().rev().take(10).collect();
+            let tail: Vec<&str> = tail.into_iter().rev().collect();
+            panic!(
+                "{solver} failed on {smt2_path}: it ran to completion on its own ({status}) \
+                 without answering `sat`, `unsat` or `unknown`, so there is no verdict to report \
+                 -- and calling it a timeout would hide the failure. The query is kept at \
+                 {smt2_path} whatever --verbose says, so it can be replayed.\n\
+                 --- last stdout lines ---\n{tail}\n\
+                 --- stderr ---\n{stderr}",
+                solver = solver,
+                smt2_path = smt2_path,
+                status = output.status,
+                tail = if tail.is_empty() { "(no output)".to_string() } else { tail.join("\n") },
+                stderr = if stderr.trim().is_empty() { "(empty)" } else { stderr.trim() },
+            )
+        }
+    }
+}
+
+/// The same rule as [`solver_verdict`], for a solver driven through its API
+/// instead of as a process (z3, and civer through it).
+///
+/// The difference is what `unknown` means there. A process solver that never
+/// says `sat`, `unsat` or `unknown` has failed; z3 says `unknown` in cases that
+/// are perfectly legitimate -- the `set_timeout_msec` we gave it expired, we
+/// interrupted it, or the theory is undecidable and it says so
+/// (`(incomplete ...)`, `smt tactic failed to show goal to be sat/unsat`, which
+/// is the normal answer on a hard nonlinear query). Only z3's own reason tells a
+/// real failure apart from those, so that is what is checked; everything else
+/// stays UNKNOWN.
+///
+/// Returns the log line to record, which carries the reason: reporting a plain
+/// "TIMEOUT" for a query z3 refused for some other reason is the same hiding
+/// this is meant to stop, even where aborting would be wrong.
+pub fn api_unknown_verdict(solver: &str, reason: Option<String>) -> String {
+    let reason = reason.unwrap_or_default();
+    let reason = reason.trim();
+    if reason.to_ascii_lowercase().contains("error") {
+        panic!(
+            "{solver} failed: it answered `unknown` and gave {reason:?} as the reason, which is \
+             the solver reporting an error, not a query it could not decide. Calling that a \
+             timeout would hide it. Re-run with --verbose to keep the .smt2 of this query.",
+            solver = solver,
+            reason = reason,
+        );
+    }
+    format!(
+        "### {}: UNKNOWN, reason given by the solver: {}\n",
+        solver,
+        if reason.is_empty() { "(none)" } else { reason }
+    )
+}
+
 pub fn comment(text: &str) -> String {
     format!("; {}", text.replace('\n', " ").replace('\r', " "))
 }

@@ -260,9 +260,17 @@ fn internal_try_prove_safety_with_z3<C: EncodableConstraint>(
         }
 
         let result = solver.check();
+        // Paired with the verdict: `get_reason_unknown` only means anything
+        // right after the `check` that returned unknown.
+        let reason = match result {
+            SatResult::Unknown => Some(solver.get_reason_unknown()),
+            _ => None,
+        };
         finished.store(true, Ordering::SeqCst);
-        result
+        (result, reason)
     });
+
+    let (check_result, unknown_reason) = check_result;
 
     match check_result {
         SatResult::Sat => {
@@ -300,8 +308,11 @@ fn internal_try_prove_safety_with_z3<C: EncodableConstraint>(
             PossibleResult::VERIFIED
         }
         _ => {
-            logs.push(format!(
-                "### UNKNOWN: VERIFICATION OF WEAK SAFETY USING THE SPECIFICATION TIMEOUT\n"
+            // Aborts if the reason is z3 reporting an error; an undecided query
+            // (the usual case here) just gets its reason recorded.
+            logs.push(crate::api_unknown_verdict(
+                "CIVER-Z3",
+                unknown_reason.unwrap_or_default(),
             ));
             PossibleResult::UNKNOWN
         }

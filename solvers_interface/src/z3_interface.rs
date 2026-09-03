@@ -130,7 +130,7 @@ fn try_prove_safety_with_z3_internal<C: EncodableConstraint>(
     cancel_flag: Option<&AtomicBool>,
 ) -> (PossibleResult,Vec<String>) {
 
-    let logs = Vec::new();
+    let mut logs = Vec::new();
     let mut solver = Solver::new();
     let mut signals_1_to_smt_rep = HashMap::new();
     let mut signals_2_to_smt_rep = HashMap::new();
@@ -198,15 +198,22 @@ fn try_prove_safety_with_z3_internal<C: EncodableConstraint>(
             });
         }
 
+        // The reason comes out with the verdict: `get_reason_unknown` is only
+        // meaningful right after the `check` that returned unknown.
         let result = match solver.check() {
-            SatResult::Sat => PossibleResult::FAILED,
-            SatResult::Unsat => PossibleResult::VERIFIED,
-            _ => PossibleResult::UNKNOWN,
+            SatResult::Sat => (PossibleResult::FAILED, None),
+            SatResult::Unsat => (PossibleResult::VERIFIED, None),
+            _ => (PossibleResult::UNKNOWN, Some(solver.get_reason_unknown())),
         };
 
         finished.store(true, Ordering::SeqCst);
         result
     });
+
+    let (result, unknown_reason) = result;
+    if let Some(reason) = unknown_reason {
+        logs.push(crate::api_unknown_verdict("Z3", reason));
+    }
 
     (result, logs)
 }
@@ -245,7 +252,7 @@ fn internal_try_prove_equivalence_with_z3(
     cancel_flag: Option<&AtomicBool>,
 ) -> (PossibleResult,Vec<String>) {
 
-    let logs = Vec::new();
+    let mut logs = Vec::new();
     let mut solver = Solver::new();
     let mut signals_1_to_smt_rep = HashMap::new();
     let mut signals_2_to_smt_rep = HashMap::new();
@@ -313,15 +320,22 @@ fn internal_try_prove_equivalence_with_z3(
             });
         }
 
+        // The reason comes out with the verdict: `get_reason_unknown` is only
+        // meaningful right after the `check` that returned unknown.
         let result = match solver.check() {
-            SatResult::Sat   => PossibleResult::FAILED,
-            SatResult::Unsat => PossibleResult::VERIFIED,
-            _                => PossibleResult::UNKNOWN,
+            SatResult::Sat   => (PossibleResult::FAILED, None),
+            SatResult::Unsat => (PossibleResult::VERIFIED, None),
+            _                => (PossibleResult::UNKNOWN, Some(solver.get_reason_unknown())),
         };
 
         finished.store(true, Ordering::SeqCst);
         result
     });
+
+    let (result, unknown_reason) = result;
+    if let Some(reason) = unknown_reason {
+        logs.push(crate::api_unknown_verdict("Z3", reason));
+    }
 
     (result, logs)
 }
