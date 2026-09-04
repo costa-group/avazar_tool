@@ -315,7 +315,19 @@ mod input_processing {
                 }
                 Ok(solver_enum)
             }
-            false => Ok(CIVER),
+            // FFSOL, the same default the enum carries. It needs its binary, and
+            // the branch above only checks that when --solver was given, so the
+            // default is checked here too: otherwise a missing `ffsol` surfaces
+            // as a panic inside the solver call rather than as a message.
+            false => {
+                if !FFSOL.is_available() {
+                    return Result::Err(eprintln!("{}", Colour::Red.paint(
+                        "the default solver 'ffsol' requires 'ffsol' which was not found in PATH; \
+                         pass --solver with one that is available"
+                    )));
+                }
+                Ok(FFSOL)
+            }
         }
     }
 
@@ -541,7 +553,7 @@ mod input_processing {
                     .long("solver")
                     .takes_value(true)
                     .hidden(false)
-                        .help("Solver to be used for the verification of the circuit. ZK-GENVER allows ffsol, cvc5, yices, niaz3, z3, picus, civer (default), and ALL")
+                        .help("Solver to be used for the verification of the circuit. ZK-GENVER allows ffsol (default), cvc5, yices, niaz3, z3, picus, civer, and ALL")
                     .display_order(480)
             )
             .arg(

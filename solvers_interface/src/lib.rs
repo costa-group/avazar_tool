@@ -21,7 +21,7 @@ use circuits_constraints_and_algebra::r1cs::{R1CSConstraint as Constraint};
 
 #[derive(Debug, Default, Display, Copy, Clone, ValueEnum, PartialEq)]
 pub enum PossibleSolver{
-    PICUS, #[default] CIVER, FFSOL, CVC5, YICES, NIAZ3, Z3, ALL
+    PICUS, CIVER, #[default] FFSOL, CVC5, YICES, NIAZ3, Z3, ALL
 }
 
 pub fn check_binary_in_path(binary: &str) -> bool {

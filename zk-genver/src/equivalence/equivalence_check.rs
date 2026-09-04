@@ -39,6 +39,27 @@ pub struct ResultInfoEquivalence{
 }
 
 pub fn prove_equivalence(user_input: Input) -> Result<(), ()> {
+    // Checked here rather than where the query is built: `check_node`'s solver
+    // dispatch has no arm for CIVER or PICUS -- neither takes two circuits, one
+    // proves safety of a template and the other determinism -- and used to reach
+    // an `unreachable!()` deep inside, after the structure and the whole query
+    // were already built.
+    if !matches!(
+        user_input.solver_option,
+        PossibleSolver::FFSOL
+            | PossibleSolver::CVC5
+            | PossibleSolver::YICES
+            | PossibleSolver::NIAZ3
+            | PossibleSolver::Z3
+            | PossibleSolver::ALL
+    ) {
+        eprintln!(
+            "CIVER and PICUS cannot be used to check equivalence: neither takes two \
+             circuits. Use FFSOL, CVC5, YICES, NIAZ3, Z3 or ALL instead"
+        );
+        return Err(());
+    }
+
     let original_file = user_input.input_r1cs
         .file_stem()
         .and_then(|s| s.to_str())
