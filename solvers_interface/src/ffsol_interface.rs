@@ -48,7 +48,7 @@ impl FfsolConfig {
             success: true,
             prime: None,
             apply_la_incremental: false,
-            apply_nra: false,
+            apply_nra: true,
             apply_nia: false,
             light_check_determinism: true,
             apply_la: true,
