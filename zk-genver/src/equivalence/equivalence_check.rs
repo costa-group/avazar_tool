@@ -160,7 +160,7 @@ fn process_node(
         results.unknown_nodes.insert(node.node_id);
     }
 
-    println!("LOG: Considering node {} with {} and {} constraints", node.node_id, node.constraints_1.len(), node.constraints_2.len());
+    //println!("LOG: Considering node {} with {} and {} constraints", node.node_id, node.constraints_1.len(), node.constraints_2.len());
     let no_abstract_fails = false;
             
     // If the equivalence class of the node has not been studied, we process it.

@@ -176,7 +176,7 @@ pub fn prove_safety(user_input: Input) -> Result<(), ()> {
     }
 
     // print the results
-    print_pretty_results(&results);
+    print_pretty_results(&results, &structure, &nodeid2pos);
 
     if let Some(report_path) = &user_input.report_output {
         let rep = build_determinism_report(&user_input, &results, &structure, &nodeid2pos);
@@ -235,7 +235,7 @@ fn process_node(
         results.unknown_nodes.insert(node.node_id);
     }
 
-    println!("LOG: Considering node {} with {} constraints", node.node_id, node.constraints.len());
+    //println!("LOG: Considering node {} with {} constraints", node.node_id, node.constraints.len());
     let no_abstract_fails = false;
             
     // If the equivalence class of the node has not been studied, we process it.
@@ -337,7 +337,7 @@ fn decompose_and_study(
     verbose: bool,
     original_file: &str,
 ) {
-    println!("LOG: Reconsidering again node {}", node_id);
+    //println!("LOG: Reconsidering again node {}", node_id);
     let node_info = structure.nodes.get(*nodeid2pos.get(&node_id).unwrap()).unwrap();
 
     //print_node_info(node_info, constraints);
@@ -715,7 +715,11 @@ fn build_determinism_report(
     }
 }
 
-fn print_pretty_results(results: &ResultInfoDeterminism){
+fn print_pretty_results(
+    results: &ResultInfoDeterminism,
+    structure: &StructureInfo,
+    node_id_to_pos: &HashMap<usize, usize>,
+){
 
     println!();
 
@@ -732,16 +736,21 @@ fn print_pretty_results(results: &ResultInfoDeterminism){
     	if !results.failed_nodes.is_empty(){
         	println!("Nodes that do not satisfy determinism: ");
         	for c in &results.failed_nodes{
-    			println!("    - Node {}, ", c);
-    		}
+                let pos = node_id_to_pos.get(c).unwrap();
+                let node_name = &structure.nodes[*pos].node_name;
+    			println!("    - Node {}: {}, ", c,  node_name);    		}
         }
     	if !results.unknown_nodes.is_empty() || !results.unknown_undivisible_nodes.is_empty(){
         	println!("Nodes that timeout when checking determinism: ");
         	for c in &results.unknown_nodes{
-    			println!("    - Node {}, ", c);
+                let pos = node_id_to_pos.get(c).unwrap();
+                let node_name = &structure.nodes[*pos].node_name;
+    			println!("    - Node {}: {}, ", c,  node_name);    
     		}
             for c in &results.unknown_undivisible_nodes{
-    			println!("    - Node {}, ", c);
+                let pos = node_id_to_pos.get(c).unwrap();
+                let node_name = &structure.nodes[*pos].node_name;
+    			println!("    - Node {}: {}, ", c,  node_name);
     		}
         }
     }

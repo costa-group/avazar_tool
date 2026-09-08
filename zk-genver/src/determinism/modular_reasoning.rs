@@ -74,7 +74,7 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
         }
 
         
-        logs.push(format!("Checking template {}\n", node_info.node_id));
+        logs.push(format!("Checking template {}\n", node_info.node_name));
         logs.push(format!("Number of signals (i,int,o): {}\n", node_info.signals.len()));      
         logs.push(format!("Number of constraints in template: {}\n", node_info.constraints.len()));
         let inicio = Instant::now();
