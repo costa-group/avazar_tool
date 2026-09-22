@@ -12,6 +12,8 @@ use solvers_interface::cvc5_interface;
 use solvers_interface::nia_z3_interface;
 use solvers_interface::yices_interface;
 use solvers_interface::z3_interface;
+use utils::read_correspondence::read_signal_correspondence;
+
 use crate::report;
 
 use utils::small_utilities::{GraphBackend, EquivalenceMode, ClusteringPreprocessing};
@@ -44,14 +46,21 @@ pub fn prove_equivalence(user_input: Input) -> Result<(), ()> {
     let (constraints,
         signals,
         n_outputs,
-        n_inputs)
-        = process_constraints(&user_input.input_r1cs);
+        n_inputs,
+        field_1
+    ) = process_constraints(&user_input.input_r1cs);
 
     let (constraints_aux,
         signals_aux,
         n_outputs_aux,
-        n_inputs_aux)
-        = process_constraints(&user_input.check_equivalence.clone().unwrap());
+        n_inputs_aux,
+        field_2
+    )= process_constraints(&user_input.check_equivalence.clone().unwrap());
+
+    if field_1 != field_2{
+        eprintln!("*** The two circuits are defined over different fields");
+        return Err(());
+    }
 
     // Read the structure
     let structure  = if user_input.input_structure.is_some(){
@@ -60,6 +69,20 @@ pub fn prove_equivalence(user_input: Input) -> Result<(), ()> {
     } else{
         generate_empty_equivalence_structure(constraints.len(), constraints_aux.len(), signals.len(), signals_aux.len(), n_outputs, n_outputs_aux, n_inputs, n_inputs_aux)
     }; 
+
+    let (pos_to_signal_name_1, signal_name_to_pos) = if user_input.input_correspondence.is_some(){
+        let input_correspondence_str = &format!("{}", user_input.input_correspondence.as_ref().unwrap().display());
+        read_signal_correspondence(input_correspondence_str).unwrap()
+    } else{
+        (HashMap::new(), HashMap::new())
+    };
+
+    let (pos_to_signal_name_2, signal_name_to_pos) = if user_input.input_correspondence_2.is_some(){
+        let input_correspondence_str = &format!("{}", user_input.input_correspondence_2.as_ref().unwrap().display());
+        read_signal_correspondence(input_correspondence_str).unwrap()
+    } else{
+        (HashMap::new(), HashMap::new())
+    };
         
     let timeout: u64 = user_input.timeout;
     let apply_deduction_assigned: bool = user_input.apply_deduction_assigned;
@@ -67,8 +90,6 @@ pub fn prove_equivalence(user_input: Input) -> Result<(), ()> {
     let apply_predecessors: bool = user_input.apply_predecessors;
     let apply_bidirectional: bool = user_input.apply_bidirectional;
 
-
-    let field = user_input.prime.clone();
 
     let (
         nodeid2pos, 
@@ -91,10 +112,12 @@ pub fn prove_equivalence(user_input: Input) -> Result<(), ()> {
             &structure,
             &constraints,
             &constraints_aux,
+            &pos_to_signal_name_1,
+            &pos_to_signal_name_2,
             &local_equivalence_classes,
             &structural_equivalence_classes,
             &nodeid2pos,
-            &field,
+            &field_1,
             timeout,
             user_input.solver_option,
             apply_deduction_assigned,
@@ -125,6 +148,8 @@ fn process_node(
     structure: &EquivalenceStructureInfo,
     constraints_1: &Vec<Constraint<usize>>,
     constraints_2: &Vec<Constraint<usize>>,
+    signals_names_1: &HashMap<usize, String>,
+    signals_names_2: &HashMap<usize, String>,
     local_equivalence_classes: &HashMap<usize, usize>,
     structural_equivalence_classes: &HashMap<usize, usize>,
     //studied_eq_classes: &mut HashMap<usize, PossibleResult>,
@@ -172,6 +197,8 @@ fn process_node(
         &nodeid2pos,
         &constraints_1,
         &constraints_2,
+        signals_names_1,
+        signals_names_2,
         solver,
         apply_deduction_assigned,
         include_niaz3_in_all,

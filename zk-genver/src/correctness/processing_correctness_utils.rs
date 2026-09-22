@@ -51,7 +51,7 @@ pub fn process_correspondence_node_macro(
 }
 
 
-pub fn get_equivalent_subcomponent_signal_in_macro(signal: usize, studied_macro: &MacroDef, signal_to_name: &BTreeMap<usize, String>)->String{
+pub fn get_equivalent_subcomponent_signal_in_macro(signal: usize, studied_macro: &MacroDef, signal_to_name: &HashMap<usize, String>)->String{
 
     let complete_signal_name = signal_to_name.get(&signal).unwrap();
         //println!("Signal name: {}", complete_signal_name);
@@ -103,7 +103,7 @@ pub fn get_equivalent_subcomponent_signal_in_macro(signal: usize, studied_macro:
 
 }
 
-pub fn get_equivalent_signal_in_macro(signal: usize, studied_macro: &MacroDef, signal_to_name: &BTreeMap<usize, String>)->String{
+pub fn get_equivalent_signal_in_macro(signal: usize, studied_macro: &MacroDef, signal_to_name: &HashMap<usize, String>)->String{
 
     let complete_signal_name = signal_to_name.get(&signal).unwrap();
 
@@ -148,6 +148,7 @@ pub fn get_input_signals_macro(number_inputs: usize, studied_macro: &MacroDef) -
     while inputs.len() < number_inputs{
         let arg_name = format!("%arg{}", input_var_index);
         //println!("Studied macro vars info: {:?}", studied_macro.vars_info);
+        //println!("Looking for signal: {}", arg_name);
         let signal_info_macro = studied_macro.vars_info.get(&arg_name).unwrap();
         if signal_info_macro.is_array(){
             if let Some(array) = signal_info_macro.as_array() {

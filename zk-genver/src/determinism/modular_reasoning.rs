@@ -17,6 +17,7 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
         node_list: &Vec<NodeInfo>,
         nodeid2pos: &HashMap<usize, usize>,
         constraint_list: &Vec<Constraint>,
+        signals_names: & HashMap<usize, String>,
         solver: PossibleSolver,
         apply_deduction_assigned: bool,
         include_niaz3_in_all: bool,
@@ -79,7 +80,7 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
         logs.push(format!("Number of constraints in template: {}\n", node_info.constraints.len()));
         let inicio = Instant::now();
 
-        let (mut result_safety, mut logs_round) = prove_safety(&verification, solver);
+        let (mut result_safety, mut logs_round) = prove_safety(&verification, solver,signals_names);
 
         let mut used_extra_rounds = false;
         let mut finished_verification = match result_safety{
@@ -116,7 +117,7 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
  
 
             logs.push(format!("### Trying to verify adding constraints of the children\n"));
-            (result_safety, logs_round) = prove_safety(&verification, solver);
+            (result_safety, logs_round) = prove_safety(&verification, solver, signals_names);
             finished_verification = match result_safety{
                 PossibleResult::UNKNOWN =>{
                     unknown_rounds += 1;
@@ -272,6 +273,7 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
     fn prove_safety(
         problem: &SafetyVerification,
         solver: PossibleSolver,
+        signals_names: & HashMap<usize, String>,
     )-> (PossibleResult, Vec<String>) {
         match solver{
             PossibleSolver::CIVER =>{
@@ -283,14 +285,16 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
             PossibleSolver::FFSOL=>{
                 ffsol_interface::study_safety(
                     problem,
-                    &ffsol_interface::FfsolConfig::default(problem.verification_timeout, problem.verbose),
-)
+                    None,
+                    &mut ffsol_interface::FfsolConfig::default(problem.verification_timeout, problem.verbose),
+                    signals_names
+                )
             },
             PossibleSolver::CVC5=>{
-                cvc5_interface::study_safety(problem)
+                cvc5_interface::study_safety(problem, signals_names)
             },
             PossibleSolver::YICES=>{
-                yices_interface::study_safety(problem)
+                yices_interface::study_safety(problem, signals_names)
             },
             PossibleSolver::NIAZ3=>{
                 nia_z3_interface::study_safety(problem)
@@ -299,7 +303,7 @@ pub type SafetyImplication = (Vec<usize>, Vec<usize>);
                 z3_interface::study_safety(problem)
             },
             PossibleSolver::ALL=>{
-                parallel_interface::study_safety(problem)
+                parallel_interface::study_safety(problem, signals_names)
             }
 
         }

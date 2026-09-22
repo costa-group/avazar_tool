@@ -35,7 +35,7 @@ pub type CorrectnessImplication = (Vec<(usize, String)>, Vec<(usize, String)>);
         constraint_list: &Vec<Constraint>,
         macros: &IndexMap<String, MacroDef>,
         correspondence_nodeid_macros: &HashMap<usize, String>,
-        signal_to_name: &BTreeMap<usize, String>,
+        signal_to_name: &HashMap<usize, String>,
         solver: PossibleSolver,
         apply_deduction_assigned: bool,
         include_niaz3_in_all: bool,
@@ -87,7 +87,7 @@ pub type CorrectnessImplication = (Vec<(usize, String)>, Vec<(usize, String)>);
         
 
         let mut macros_to_include = HashSet::new();
-        macros_to_include.insert(macro_name.clone());
+        //macros_to_include.insert(macro_name.clone());
         let unpacked_macros = build_macros(macros, &macros_to_include);
 
         let mut logs =  Vec::new();
@@ -133,14 +133,14 @@ pub type CorrectnessImplication = (Vec<(usize, String)>, Vec<(usize, String)>);
         }
 
         
-        //logs.push(format!("Checking template {}\n", node_info.node_id));
+        logs.push(format!("Checking template {}\n", node_info.node_name));
         logs.push(format!("Number of signals (i,int,o): {}\n", node_info.signals.len()));      
 
         logs.push(format!("Number of constraints in the template: {}\n", node_info.constraints.len()));
 
         let inicio = Instant::now();
 
-        let (mut result_safety, mut logs_round) = prove_equivalence(&verification, solver);
+        let (mut result_safety, mut logs_round) = prove_equivalence(&verification, solver, signal_to_name);
 
         let mut used_extra_rounds = false;
         let mut finished_verification = match result_safety{
@@ -177,7 +177,7 @@ pub type CorrectnessImplication = (Vec<(usize, String)>, Vec<(usize, String)>);
  
 
             logs.push(format!("### Trying to verify adding constraints of the children\n"));
-            (result_safety, logs_round) = prove_equivalence(&verification, solver);
+            (result_safety, logs_round) = prove_equivalence(&verification, solver, signal_to_name);
             finished_verification = match result_safety{
                 PossibleResult::UNKNOWN =>{
                     unknown_rounds += 1;
@@ -217,7 +217,7 @@ pub type CorrectnessImplication = (Vec<(usize, String)>, Vec<(usize, String)>);
         father_macro: &MacroDef,
         macros: &IndexMap<String, MacroDef>,
         correspondence_nodeid_macros: &HashMap<usize, String>,
-        signal_to_name: &BTreeMap<usize, String>,
+        signal_to_name: &HashMap<usize, String>,
         results:&ResultInfoCorrectness,
         apply_predecessors: bool,
         apply_bidirectional: bool,
@@ -274,7 +274,7 @@ pub type CorrectnessImplication = (Vec<(usize, String)>, Vec<(usize, String)>);
         father_macro: &MacroDef,
         macros: &IndexMap<String, MacroDef>,
         correspondence_nodeid_macros: &HashMap<usize, String>,
-        signal_to_name: &BTreeMap<usize, String>,        
+        signal_to_name: &HashMap<usize, String>,        
         results:&ResultInfoCorrectness, 
         apply_bidirectional: bool,
         no_abstract_fails: bool,
@@ -321,7 +321,7 @@ pub type CorrectnessImplication = (Vec<(usize, String)>, Vec<(usize, String)>);
     fn generate_info_subtree(
         info: &NodeInfo,
         macro_info: &MacroDef,
-        signal_to_name: &BTreeMap<usize, String>,     
+        signal_to_name: &HashMap<usize, String>,     
     )-> (LinkedList<usize>, CorrectnessImplication){
         let io_signals_1 = generate_io_signals(info);
         ( 
@@ -344,7 +344,7 @@ pub type CorrectnessImplication = (Vec<(usize, String)>, Vec<(usize, String)>);
     fn generate_implications_safety(
         info: &NodeInfo,
         macro_info: &MacroDef,
-        signal_to_name: &BTreeMap<usize, String>,     
+        signal_to_name: &HashMap<usize, String>,     
     )-> CorrectnessImplication{
         let mut list_inputs = Vec::new();
         let mut list_outputs = Vec::new();
@@ -376,19 +376,22 @@ pub type CorrectnessImplication = (Vec<(usize, String)>, Vec<(usize, String)>);
     fn prove_equivalence(
         problem: &CorrectnessVerification,
         solver: PossibleSolver,
+        signals_names: &HashMap<usize, String>
     )-> (PossibleResult, Vec<String>) {
         match solver{
             PossibleSolver::FFSOL=>{
                 ffsol_interface::study_correctness(
                     problem,
-                    &ffsol_interface::FfsolConfig::default(problem.verification_timeout, problem.verbose),
+                    None,
+                    &mut ffsol_interface::FfsolConfig::default(problem.verification_timeout, problem.verbose),
+                    signals_names
                 )
             },
             PossibleSolver::CVC5=>{
-                cvc5_interface::study_correctness(problem)
+                cvc5_interface::study_correctness(problem, signals_names)
             },
             PossibleSolver::YICES=>{
-                yices_interface::study_correctness(problem)
+                yices_interface::study_correctness(problem, signals_names)
             },
             PossibleSolver::NIAZ3=>{
                 nia_z3_interface::study_correctness(problem)
@@ -399,7 +402,7 @@ pub type CorrectnessImplication = (Vec<(usize, String)>, Vec<(usize, String)>);
             },
             */
             PossibleSolver::ALL=>{
-                parallel_interface::study_correctness(problem)
+                parallel_interface::study_correctness(problem, signals_names)
             },
             _ => unreachable!()
         }

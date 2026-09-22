@@ -44,7 +44,9 @@ pub fn prove_correctness(user_input: Input) -> Result<(), ()> {
     let (constraints,
         signals,
         n_outputs,
-        n_inputs)
+        n_inputs,
+        field_1
+    )
         = process_constraints(&user_input.input_r1cs);
 
         
@@ -68,7 +70,11 @@ pub fn prove_correctness(user_input: Input) -> Result<(), ()> {
     let input_correspondence_str = &format!("{}", user_input.input_correspondence.as_ref().unwrap().display());
     let (pos_to_signal_name, signal_name_to_pos) = read_signal_correspondence(input_correspondence_str).unwrap();
 
-    let (macros, main_section) = process_smt_formula(user_input.check_correctness.as_ref().unwrap());
+    let (
+        macros,
+         main_section,
+         field_2
+    ) = process_smt_formula(user_input.check_correctness.as_ref().unwrap());
     let main_macro = macros.get("main").expect("specification has no 'main' macro");
 
 
@@ -83,6 +89,11 @@ pub fn prove_correctness(user_input: Input) -> Result<(), ()> {
         unreachable!()
     };
 
+
+    if field_1 != field_2{
+        eprintln!("*** The two circuits are defined over different fields");
+        return Err(());
+    }
 
 
     let mut correspondence_nodeid_macro: HashMap<usize, String> = HashMap::new();
@@ -105,7 +116,6 @@ pub fn prove_correctness(user_input: Input) -> Result<(), ()> {
     let macros: Vec<String> = build_macros(&macros, &to_include);
     */
 
-    let field = user_input.prime.clone();
 
     if !(user_input.solver_option==PossibleSolver::FFSOL||user_input.solver_option==PossibleSolver::CVC5||user_input.solver_option==PossibleSolver::YICES||user_input.solver_option==PossibleSolver::NIAZ3){
         println!("Z3, CIVER and PICUS cannot be used to check correctness. Use FFSOL, CVC5, YICES or NIAZ3 instead");
@@ -140,7 +150,7 @@ pub fn prove_correctness(user_input: Input) -> Result<(), ()> {
             &local_equivalence_classes,
             &structural_equivalence_classes,
             &nodeid2pos,
-            &field,
+            &field_1,
             timeout,
             user_input.solver_option,
             apply_deduction_assigned,
@@ -174,7 +184,7 @@ fn process_node(
     constraints: &Vec<Constraint<usize>>,
     macros: &IndexMap<String, MacroDef>,
     correspondence_nodeid_macros: &HashMap<usize, String>,
-    signal_to_name: &BTreeMap<usize, String>,
+    signal_to_name: &HashMap<usize, String>,
     local_equivalence_classes: &HashMap<usize, usize>,
     structural_equivalence_classes: &HashMap<usize, usize>,
     //studied_eq_classes: &mut HashMap<usize, PossibleResult>,

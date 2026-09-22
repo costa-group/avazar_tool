@@ -9,8 +9,6 @@ pub mod parallel_interface;
 mod smt2_utils;
 use indexmap::IndexMap;
 
-use std::collections::HashMap;
-
 use std::collections::{HashSet, LinkedList};
 use std::path::Path;
 use num_bigint_dig::BigInt;

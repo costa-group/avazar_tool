@@ -8,6 +8,7 @@ pub struct Input {
     pub input_r1cs: PathBuf,
     pub input_structure: Option<PathBuf>,
     pub input_correspondence: Option<PathBuf>,
+    pub input_correspondence_2: Option<PathBuf>,
 
     pub timeout: u64,
     pub original_structure: Option<PathBuf>,
@@ -18,7 +19,6 @@ pub struct Input {
     pub apply_predecessors: bool,
     pub apply_bidirectional: bool,
     pub add_llzk_sub: bool,
-    pub prime: BigInt,
     pub clustering_size: usize,
     pub equivalence_mode: usize,
     pub target_size: usize,
@@ -36,11 +36,11 @@ impl Input {
         let input_r1cs = input_processing::get_input_r1cs(&matches)?;
         let input_structure = input_processing::get_input_structure(&matches)?;
         let input_correspondence = input_processing::get_input_correspondence(&matches)?;
+        let input_correspondence_2 = input_processing::get_input_correspondence_2(&matches)?;
         let timeout =  input_processing::get_timeout(&matches)?;
         let original_structure = input_processing::get_original_structure(&matches)?;
         let solver_option = input_processing::get_solver(&matches)?;
         let flag_verbose =  input_processing::get_flag_verbose(&matches);
-        let prime = input_processing::get_prime(&matches)?;
         let clustering_size = input_processing::get_clustering_size(&matches)?;
         let desactivate_deduction_assigned = input_processing::get_apply_deduction_assigned(&matches);
         let include_niaz3_in_all = input_processing::get_include_niaz3_in_all(&matches);
@@ -60,11 +60,11 @@ impl Input {
             input_r1cs,
             input_structure,
             input_correspondence,
+            input_correspondence_2,
             timeout,
             original_structure,
             solver_option,
             flag_verbose,
-            prime,
             clustering_size,
             apply_deduction_assigned: !desactivate_deduction_assigned,
             include_niaz3_in_all,
@@ -119,7 +119,20 @@ mod input_processing {
             if route.is_file() {
                 Result::Ok(Some(route))
             } else {
-                Result::Err(eprintln!("{}", Colour::Red.paint("invalid input structure")))
+                Result::Err(eprintln!("{}", Colour::Red.paint("invalid input signal correspondence")))
+            }
+        } else{
+            Ok(None)
+        }
+    }
+
+    pub fn get_input_correspondence_2(matches: &ArgMatches) -> Result<Option<PathBuf>, ()> {
+        if matches.is_present("correspondence_2"){
+            let route = Path::new(matches.value_of("correspondence_2").unwrap()).to_path_buf();
+            if route.is_file() {
+                Result::Ok(Some(route))
+            } else {
+                Result::Err(eprintln!("{}", Colour::Red.paint("invalid input signal correspondence 2")))
             }
         } else{
             Ok(None)
@@ -200,16 +213,7 @@ mod input_processing {
         matches.is_present("add_llzk_subcomponent")
     }
 
-    pub fn get_prime(matches: &ArgMatches) -> Result<BigInt, ()>{
-        let prime_argument = matches.value_of("prime").unwrap();
-        let prime = prime_argument.parse::<BigInt>();
-        if let Result::Ok(p) = prime { 
-           Ok(p)
-        }
-        else { 
-            Result::Err(eprintln!("{}", Colour::Red.paint("invalid prime")))
-        }
-    }
+
 
     pub fn get_clustering_size(matches: &ArgMatches) -> Result<usize, ()> {
         let timeout_argument = matches.value_of("clustering_size").unwrap();
@@ -266,7 +270,7 @@ mod input_processing {
                 }
                 Ok(solver_enum)
             }
-            false => Ok(CIVER),
+            false => Ok(FFSOL),
         }
     }
 
@@ -348,6 +352,14 @@ mod input_processing {
                     .hidden(false)
                     .takes_value(true)
                     .help("The correspondence between the witness signals and the original names in the circom program")
+                    .display_order(460)
+            )
+            .arg(
+                Arg::with_name("correspondence_2")
+                    .long("correspondence_2")
+                    .hidden(false)
+                    .takes_value(true)
+                    .help("The correspondence between the witness signals and the original names in the circom program of the second circuit to check equivalence")
                     .display_order(460)
             )
             .arg(
@@ -437,7 +449,7 @@ mod input_processing {
                     .long("solver")
                     .takes_value(true)
                     .hidden(false)
-                        .help("Solver to be used for the verification of the circuit. ZK-GENVER allows ffsol, cvc5, yices, niaz3, z3, picus, civer (default), and ALL")
+                        .help("Solver to be used for the verification of the circuit. ZK-GENVER allows ffsol (default), cvc5, yices, niaz3, z3, picus, civer, and ALL")
                     .display_order(480)
             )
             .arg(
@@ -447,15 +459,6 @@ mod input_processing {
                     .hidden(false)
                     .help("Select the equivalence between nodes that is going to be used by ZK-GENVER: none, local or structural. ZK-GENVER uses structural by default")
                     .display_order(620)
-            )
-            .arg (
-                Arg::with_name("prime")
-                    .short("prime")
-                    .long("prime")
-                    .takes_value(true)
-                    .default_value("21888242871839275222246405745257275088548364400416034343698204186575808495617")
-                    .display_order(600)
-                    .help("To choose the prime number to use to verify the circuit"),
             )
             .arg (
                 Arg::with_name("clustering_size")

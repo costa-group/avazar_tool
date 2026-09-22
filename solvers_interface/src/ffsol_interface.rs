@@ -17,12 +17,17 @@ use nix::sys::signal::killpg;
 use std::fs;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
+use std::io::BufReader;
+
+
+use std::collections::HashMap;
 
 #[derive(Clone)]
 pub struct FfsolConfig {
     pub timeout: u64,
     pub use_cocoa: bool,
     pub model: Option<String>,
+    pub json_model: Option<String>,
     pub success: bool,
     pub prime: Option<String>,
     pub apply_la_incremental: bool,
@@ -45,6 +50,7 @@ impl FfsolConfig {
             timeout,
             use_cocoa: true,
             model: None,
+            json_model: None,
             success: true,
             prime: None,
             apply_la_incremental: false,
@@ -92,6 +98,11 @@ impl FfsolConfig {
             args.push(model.clone());
         }
 
+        if let Some(json_model) = &self.json_model {
+            args.push("-json_model".to_string());
+            args.push(json_model.clone());
+        }
+
         push_bool_arg(&mut args, "-success", self.success);
 
         if let Some(prime) = &self.prime {
@@ -118,17 +129,76 @@ impl FfsolConfig {
 }
 
 
-pub fn study_correctness(problem: &CorrectnessVerification, config: &FfsolConfig)-> (PossibleResult, Vec<String>){
+pub fn study_correctness(
+    problem: &CorrectnessVerification, 
+    cancel_flag: Option<&AtomicBool>, 
+    config: & mut FfsolConfig,
+    signals_names: &HashMap<usize, String>,
+
+)-> (PossibleResult, Vec<String>){
     let mut logs = Vec::new();
 
-    let smt2_problem: LinkedList<String> = correctness_problem_to_smt2(problem);
+    if let Some(flag) = cancel_flag {
+        if flag.load(Ordering::Relaxed) {
+            logs.push("### CANCELLED BEFORE STARTING FFSOL\n".to_string());
+            return (PossibleResult::UNKNOWN, logs);
+        }
+    }
+
+    let smt2_problem: LinkedList<String> = correctness_problem_to_smt2(problem, signals_names);
     let file_name = crate::correctness_smt2_name(&problem.original_file, &problem.template_name, "ffsol");
 
-    let result_solver = handling_ffsol_call(&smt2_problem, config, None, file_name);
+    let (result_solver, counterexample)  = handling_ffsol_call(&smt2_problem, config, cancel_flag, file_name);
 
     match result_solver{
         PossibleResult::FAILED=>{
             logs.push(format!("### FFSOL: THE CONSTRAINT SYSTEMS AND THE FORMULA ARE NOT EQUIVALENT. FOUND COUNTEREXAMPLE USING SMT:\n"));
+            
+            logs.push(format!("\nThe value of the inputs in the counterexample are:\n"));
+
+            for index in 0..problem.inputs_1.len(){
+
+                let in_1: usize = problem.inputs_1[index];
+                let inp_name = if signals_names.contains_key(&in_1){
+                    signals_names[&in_1].clone().replace(&['#', '[', ']'][..], "_")
+                } else{
+                    format!("s_{}",in_1)
+                };
+                let comp_name_1 = format!("cons.{}",inp_name);
+
+
+                let in_2 = &problem.inputs_2[index];
+
+                let comp_name_2 = format!("wit.{}", in_2);
+
+                if let Some(value) = counterexample.get(&comp_name_1){
+                    logs.push(format!(" * {} = {}  -> {}\n", comp_name_1, comp_name_2, value));
+                }
+            }
+
+
+            logs.push(format!("\nThe two different values of the outputs in the counterexample proving no equivalence are:\n"));
+            for index in 0..problem.outputs_1.len(){
+                let out_1: usize = problem.outputs_1[index];
+                let out_name = if signals_names.contains_key(&out_1){
+                    format!("cons.{}", signals_names[&out_1].clone().replace(&['#', '[', ']'][..], "_"))
+                } else{
+                    format!("cons.s_{}",out_1)
+                };
+                
+                let out_2 = &problem.outputs_2[index];
+                let out_name_2 = format!("wit.{}", out_2);
+
+
+                if let Some(value) = counterexample.get(&out_name){
+                    if let Some(value_2) = counterexample.get(&out_name_2){
+                        logs.push(format!(" * {} -> {} | {} -> {}\n", out_name,value,  out_name_2, value_2));
+                    }
+                }
+            }
+            logs.push(format!("The complete counterexample can be found in the file: {}\n", config.json_model.as_ref().unwrap()));
+
+        
         },
         PossibleResult::VERIFIED=>{
             logs.push(format!("### FFSOL: THE CONSTRAINT SYSTEM AND THE FORMULA ARE EQUIVALENT\n"));
@@ -146,17 +216,80 @@ pub fn study_correctness(problem: &CorrectnessVerification, config: &FfsolConfig
 
 }
 
-pub fn study_equivalence(problem: &EquivalenceVerification, config: &FfsolConfig)-> (PossibleResult, Vec<String>){
+pub fn study_equivalence(
+    problem: &EquivalenceVerification, 
+    cancel_flag: Option<&AtomicBool>, 
+    config: & mut FfsolConfig,
+    signals_names_1: &HashMap<usize, String>,
+    signals_names_2: &HashMap<usize, String>
+)-> (PossibleResult, Vec<String>){
     let mut logs = Vec::new();
 
-    let smt2_problem: LinkedList<String> = equivalence_problem_to_smt2(problem,false);
+    if let Some(flag) = cancel_flag {
+        if flag.load(Ordering::Relaxed) {
+            logs.push("### CANCELLED BEFORE STARTING FFSOL\n".to_string());
+            return (PossibleResult::UNKNOWN, logs);
+        }
+    }   
+
+    let smt2_problem: LinkedList<String> = equivalence_problem_to_smt2(problem,false, signals_names_1, signals_names_2);
     let file_name = crate::equivalence_smt2_name(&problem.original_file, &problem.template_name, "ffsol");
 
-    let result_solver = handling_ffsol_call(&smt2_problem, config, None, file_name);
+    let (result_solver, counterexample) = handling_ffsol_call(&smt2_problem, config, cancel_flag, file_name);
 
     match result_solver{
         PossibleResult::FAILED=>{
             logs.push(format!("### FFSOL: THE CONSTRAINT SYSTEMS ARE NOT EQUIVALENT. FOUND COUNTEREXAMPLE USING SMT:\n"));
+        
+            logs.push(format!("\nThe value of the inputs in the counterexample are:\n"));
+
+            for index in 0..problem.inputs_1.len(){
+
+                let in_1: usize = problem.inputs_1[index];
+                let inp_name = if signals_names_1.contains_key(&in_1){
+                    signals_names_1[&in_1].clone().replace(&['#', '[', ']'][..], "_")
+                } else{
+                    format!("s_{}",in_1)
+                };
+                let comp_name_1 = format!("circuit1.{}",inp_name);
+
+
+                let in_2 = problem.inputs_2[index];
+                let inp_name_2 = if signals_names_2.contains_key(&in_2){
+                    signals_names_2[&in_2].clone().replace(&['#', '[', ']'][..], "_")
+                } else{
+                    format!("s_{}",in_2)
+                };
+                let comp_name_2 = format!("circuit2.{}",inp_name_2);
+
+                if let Some(value) = counterexample.get(&comp_name_1){
+                    logs.push(format!(" * {} = {}  -> {}\n", comp_name_1, comp_name_2, value));
+                }
+            } 
+
+            logs.push(format!("The two different values of the outputs in the counterexample proving no equivalence are:\n"));
+            for index in 0..problem.outputs_1.len(){
+                let out_1: usize = problem.outputs_1[index];
+                let out_name = if signals_names_1.contains_key(&out_1){
+                    format!("circuit1.{}", signals_names_1[&out_1].clone().replace(&['#', '[', ']'][..], "_"))
+                } else{
+                    format!("circuit1.s_{}",out_1)
+                };
+                
+                let out_2 = problem.outputs_2[index];
+                let out_name_2 = if signals_names_2.contains_key(&out_2){
+                    format!("circuit2.{}", signals_names_2[&out_2].clone().replace(&['#', '[', ']'][..], "_"))
+                } else{
+                    format!("circuit2.s_{}",out_2)
+                };
+
+                if let Some(value) = counterexample.get(&out_name){
+                    if let Some(value_2) = counterexample.get(&out_name_2){
+                        logs.push(format!(" * {} -> {} | {} -> {}\n", out_name,value,  out_name_2, value_2));
+                    }
+                }
+            }
+            logs.push(format!("The complete counterexample can be found in the file: {}\n", config.json_model.as_ref().unwrap()));
         },
         PossibleResult::VERIFIED=>{
             logs.push(format!("### FFSOL: THE CONSTRAINT SYSTEMS ARE EQUIVALENT\n"));
@@ -176,24 +309,63 @@ pub fn study_equivalence(problem: &EquivalenceVerification, config: &FfsolConfig
 
 
 
-pub fn study_safety(problem: &SafetyVerification, config: &FfsolConfig)-> (PossibleResult, Vec<String>){
+pub fn study_safety(problem: &SafetyVerification, cancel_flag: Option<&AtomicBool>, config: & mut FfsolConfig, signals_names: &HashMap<usize, String>)-> (PossibleResult, Vec<String>){
 
     let mut logs = Vec::new();
 
-    let smt2_problem: LinkedList<String> = safety_problem_to_smt2(problem);
+    if cancel_flag.is_some(){
+        if cancel_flag.as_ref().unwrap().load(Ordering::Relaxed) {
+            logs.push("### CANCELLED BEFORE STARTING FFSOL\n".to_string());
+            return (PossibleResult::UNKNOWN, logs);
+        }
+    }
+
+    let smt2_problem: LinkedList<String> = safety_problem_to_smt2(problem, signals_names);
     let file_name = crate::determinism_smt2_name(&problem.original_file, &problem.template_name, problem.added_nodes.len(), "ffsol");
 
-    let result_solver = handling_ffsol_call(&smt2_problem, config, None, file_name);
+    let (result_solver, counterexample) = handling_ffsol_call(&smt2_problem, config, cancel_flag, file_name);
 
     match result_solver{
         PossibleResult::FAILED=>{
-            logs.push(format!("### FFSOL: THE TEMPLATE DOES NOT ENSURE SAFETY. FOUND COUNTEREXAMPLE USING SMT:\n"));
+            logs.push(format!("### FFSOL: THE TEMPLATE DOES NOT ENSURE DETERMINISM. FOUND COUNTEREXAMPLE USING SMT:\n"));
+            
+            logs.push(format!("\nThe value of the inputs in the counterexample are:\n"));
+            for ind in problem.inputs.iter(){
+                let inp_name = if signals_names.contains_key(ind){
+                    signals_names[ind].clone().replace(&['#', '[', ']'][..], "_")
+                } else{
+                    format!("s_{}",ind)
+                };
+                let comp_name = format!("witness_1.{}", inp_name);
+                if let Some(value) = counterexample.get(&comp_name){
+                    logs.push(format!(" * {} -> {}\n", inp_name, value));
+                }
+            } 
+            logs.push(format!("The two different values of the outputs in the counterexample proving no determinism are:\n"));
+            for ind in problem.outputs.iter(){
+                let out_name = if signals_names.contains_key(ind){
+                    signals_names[ind].clone().replace(&['#', '[', ']'][..], "_")
+                } else{
+                    format!("s_{}",ind)
+                };
+                let comp_name_1 = format!("witness_1.{}", out_name);
+                let comp_name_2 = format!("witness_2.{}", out_name);
+
+                if let Some(value) = counterexample.get(&comp_name_1){
+                    if let Some(value_2) = counterexample.get(&comp_name_2){
+                        logs.push(format!(" * {} -> {} | {}\n", out_name, value, value_2));
+                    }
+                }
+            }   
+            logs.push(format!("The complete counterexample can be found in the file: {}\n", config.json_model.as_ref().unwrap()));
+  
+        
         },
         PossibleResult::VERIFIED=>{
-            logs.push(format!("### FFSOL: WEAK SAFETY ENSURED BY THE TEMPLATE\n"));
+            logs.push(format!("### FFSOL:  DETERMINISM ENSURED BY THE TEMPLATE\n"));
         },
         PossibleResult::UNKNOWN=>{
-            logs.push("### FFSOL: UNKNOWN: VERIFICATION OF WEAK SAFETY USING THE SPECIFICATION TIMEOUT\n".to_string());
+            logs.push("### FFSOL: UNKNOWN: VERIFICATION OF DETERMINISM USING THE SPECIFICATION TIMEOUT\n".to_string());
         },
         _=>{
             unreachable!()
@@ -203,95 +375,14 @@ pub fn study_safety(problem: &SafetyVerification, config: &FfsolConfig)-> (Possi
 
     (result_solver, logs)
 }
-
-pub fn study_safety_with_cancel(problem: &SafetyVerification, cancel_flag: &AtomicBool, config: &FfsolConfig)-> (PossibleResult, Vec<String>){
-    let mut logs = Vec::new();
-
-    if cancel_flag.load(Ordering::Relaxed) {
-        logs.push("### CANCELLED BEFORE STARTING FFSOL\n".to_string());
-        return (PossibleResult::UNKNOWN, logs);
-    }
-
-    let smt2_problem: LinkedList<String> = safety_problem_to_smt2(problem);
-    let file_name = crate::determinism_smt2_name(&problem.original_file, &problem.template_name, problem.added_nodes.len(), "ffsol");
-    let result_solver = handling_ffsol_call(
-        &smt2_problem,
-        config,
-        Some(cancel_flag),
-        file_name,
-    );
-
-    match result_solver{
-        PossibleResult::FAILED=>{
-            logs.push(format!("### FFSOL: THE TEMPLATE DOES NOT ENSURE SAFETY. FOUND COUNTEREXAMPLE USING SMT:\n"));
-        },
-        PossibleResult::VERIFIED=>{
-            logs.push(format!("### FFSOL: WEAK SAFETY ENSURED BY THE TEMPLATE\n"));
-        },
-        PossibleResult::UNKNOWN=>{
-            logs.push("### FFSOL: UNKNOWN: VERIFICATION OF WEAK SAFETY USING THE SPECIFICATION TIMEOUT\n".to_string());
-        },
-        _=>{
-            unreachable!()
-        }
-
-    }
-
-    (result_solver, logs)
-}
-
-pub fn study_equivalence_with_cancel(problem: &EquivalenceVerification, cancel_flag: &AtomicBool, config: &FfsolConfig) -> (PossibleResult, Vec<String>) {
-    let mut logs = Vec::new();
-
-    if cancel_flag.load(Ordering::Relaxed) {
-        logs.push("### CANCELLED BEFORE STARTING FFSOL\n".to_string());
-        return (PossibleResult::UNKNOWN, logs);
-    }
-
-    let smt2_problem: LinkedList<String> = equivalence_problem_to_smt2(problem, false);
-    let file_name = crate::equivalence_smt2_name(&problem.original_file, &problem.template_name, "ffsol");
-    let result_solver = handling_ffsol_call(&smt2_problem, config, Some(cancel_flag), file_name);
-
-    match result_solver {
-        PossibleResult::FAILED   => logs.push("### FFSOL: THE CONSTRAINT SYSTEMS ARE NOT EQUIVALENT. FOUND COUNTEREXAMPLE USING SMT:\n".to_string()),
-        PossibleResult::VERIFIED => logs.push("### FFSOL: THE CONSTRAINT SYSTEMS ARE EQUIVALENT\n".to_string()),
-        PossibleResult::UNKNOWN  => logs.push("### FFSOL: UNKNOWN: VERIFICATION OF EQUIVALENCE TIMEOUT\n".to_string()),
-        _ => unreachable!(),
-    }
-
-    (result_solver, logs)
-}
-
-pub fn study_correctness_with_cancel(problem: &CorrectnessVerification, cancel_flag: &AtomicBool, config: &FfsolConfig) -> (PossibleResult, Vec<String>) {
-    let mut logs = Vec::new();
-
-    if cancel_flag.load(Ordering::Relaxed) {
-        logs.push("### CANCELLED BEFORE STARTING FFSOL\n".to_string());
-        return (PossibleResult::UNKNOWN, logs);
-    }
-
-    let smt2_problem: LinkedList<String> = correctness_problem_to_smt2(problem);
-    let file_name = crate::correctness_smt2_name(&problem.original_file, &problem.template_name, "ffsol");
-    let result_solver = handling_ffsol_call(&smt2_problem, config, Some(cancel_flag), file_name);
-
-    match result_solver {
-        PossibleResult::FAILED   => logs.push("### FFSOL: THE CONSTRAINT SYSTEMS AND THE FORMULA ARE NOT EQUIVALENT. FOUND COUNTEREXAMPLE USING SMT:\n".to_string()),
-        PossibleResult::VERIFIED => logs.push("### FFSOL: THE CONSTRAINT SYSTEM AND THE FORMULA ARE EQUIVALENT\n".to_string()),
-        PossibleResult::UNKNOWN  => logs.push("### FFSOL: UNKNOWN: VERIFICATION OF CORRECTNESS TIMEOUT\n".to_string()),
-        _ => unreachable!(),
-    }
-
-    (result_solver, logs)
-}
-
 
 
 pub fn handling_ffsol_call(
     smt2_problem: &LinkedList<String>,
-    config: &FfsolConfig,
+    config: &mut FfsolConfig,
     cancel_flag: Option<&AtomicBool>,
     new_file_name: String,
-) -> PossibleResult {
+) -> (PossibleResult, HashMap<String, String>) {
 
 
     // Ensure the SMT2 text is fully written and flushed to disk before continuing.
@@ -305,7 +396,9 @@ pub fn handling_ffsol_call(
         file.flush().expect("Failed to flush SMT2 file");
         // `file` dropped here
     }
-    
+
+    config.json_model = Some(format!("{}.json", new_file_name));
+
 
     let command_args = config.build_args(&new_file_name);
     let mut child = unsafe { Command::new("ffsol")
@@ -389,18 +482,27 @@ pub fn handling_ffsol_call(
             Err(e) => eprintln!("Error al eliminar el archivo: {}", e),
         }
     }
+
+    let mut counterexample = HashMap::new(); 
     
 
-    if let Some(ultima_linea) = stdout.lines().rev().find(|l| !l.trim().is_empty()) {
+    let result = if let Some(ultima_linea) = stdout.lines().rev().find(|l| !l.trim().is_empty()) {
         if ultima_linea == "unsat" { 
             PossibleResult::VERIFIED
        	} else if ultima_linea == "sat" {
+            // in this case we want to return the counterexample, not to just say FAILED
+
+            
+            let file = File::open(&config.json_model.as_ref().unwrap()).expect("Failed to read counterexample");
+            let reader = BufReader::new(file);
+            counterexample = serde_json::from_reader(reader).expect("Failed to read counterexample");
             PossibleResult::FAILED
 	    } else{
             PossibleResult::UNKNOWN
         }
     } else{
         PossibleResult::UNKNOWN
-    }
+    };
+    (result, counterexample)
 }
 

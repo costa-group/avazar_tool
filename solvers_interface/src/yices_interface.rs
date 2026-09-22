@@ -16,13 +16,14 @@ use nix::sys::signal::killpg;
 use std::fs;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
+use std::collections::HashMap;
 use crate::smt2_utils::{safety_problem_to_smt2, equivalence_problem_to_smt2, correctness_problem_to_smt2};
 
 
-pub fn study_correctness(problem: &CorrectnessVerification) -> (PossibleResult, Vec<String>) {
+pub fn study_correctness(problem: &CorrectnessVerification, signals_names: &HashMap<usize, String>) -> (PossibleResult, Vec<String>) {
     let mut logs = Vec::new();
 
-    let smt2_problem: LinkedList<String> = correctness_problem_to_smt2(problem);
+    let smt2_problem: LinkedList<String> = correctness_problem_to_smt2(problem, signals_names);
     let file_name = crate::correctness_smt2_name(&problem.original_file, &problem.template_name, "yices");
 
     let result_solver = handling_yices_call(&smt2_problem, problem.verification_timeout, problem.verbose, None, file_name);
@@ -46,10 +47,14 @@ pub fn study_correctness(problem: &CorrectnessVerification) -> (PossibleResult, 
 }
 
 
-pub fn study_equivalence(problem: &EquivalenceVerification) -> (PossibleResult, Vec<String>) {
+pub fn study_equivalence(
+    problem: &EquivalenceVerification,
+    signals_names_1: &HashMap<usize, String>,
+    signals_names_2: &HashMap<usize, String>
+) -> (PossibleResult, Vec<String>) {
     let mut logs = Vec::new();
 
-    let smt2_problem: LinkedList<String> = equivalence_problem_to_smt2(problem, false);
+    let smt2_problem: LinkedList<String> = equivalence_problem_to_smt2(problem, false, signals_names_1, signals_names_2);
     let file_name = crate::equivalence_smt2_name(&problem.original_file, &problem.template_name, "yices");
 
     let result_solver = handling_yices_call(&smt2_problem, problem.verification_timeout, problem.verbose, None, file_name);
@@ -73,10 +78,10 @@ pub fn study_equivalence(problem: &EquivalenceVerification) -> (PossibleResult, 
 }
 
 
-pub fn study_safety(problem: &SafetyVerification) -> (PossibleResult, Vec<String>) {
+pub fn study_safety(problem: &SafetyVerification, signals_names: &HashMap<usize, String>) -> (PossibleResult, Vec<String>) {
     let mut logs = Vec::new();
 
-    let smt2_problem: LinkedList<String> = safety_problem_to_smt2(problem);
+    let smt2_problem: LinkedList<String> = safety_problem_to_smt2(problem, signals_names);
     let file_name = crate::determinism_smt2_name(&problem.original_file, &problem.template_name, problem.added_nodes.len(), "yices");
 
     let result_solver = handling_yices_call(&smt2_problem, problem.verification_timeout, problem.verbose, None, file_name);
@@ -99,7 +104,7 @@ pub fn study_safety(problem: &SafetyVerification) -> (PossibleResult, Vec<String
     (result_solver, logs)
 }
 
-pub fn study_safety_with_cancel(problem: &SafetyVerification, cancel_flag: &AtomicBool) -> (PossibleResult, Vec<String>) {
+pub fn study_safety_with_cancel(problem: &SafetyVerification, cancel_flag: &AtomicBool, signals_names: &HashMap<usize, String>) -> (PossibleResult, Vec<String>) {
     let mut logs = Vec::new();
 
     if cancel_flag.load(Ordering::Relaxed) {
@@ -107,7 +112,7 @@ pub fn study_safety_with_cancel(problem: &SafetyVerification, cancel_flag: &Atom
         return (PossibleResult::UNKNOWN, logs);
     }
 
-    let smt2_problem: LinkedList<String> = safety_problem_to_smt2(problem);
+    let smt2_problem: LinkedList<String> = safety_problem_to_smt2(problem, signals_names);
     let file_name = crate::determinism_smt2_name(&problem.original_file, &problem.template_name, problem.added_nodes.len(), "yices");
     let result_solver = handling_yices_call(&smt2_problem, problem.verification_timeout, problem.verbose, Some(cancel_flag), file_name);
 
@@ -129,7 +134,7 @@ pub fn study_safety_with_cancel(problem: &SafetyVerification, cancel_flag: &Atom
     (result_solver, logs)
 }
 
-pub fn study_equivalence_with_cancel(problem: &EquivalenceVerification, cancel_flag: &AtomicBool) -> (PossibleResult, Vec<String>) {
+pub fn study_equivalence_with_cancel(problem: &EquivalenceVerification, cancel_flag: &AtomicBool, signals_names_1: &HashMap<usize, String>, signals_names_2: &HashMap<usize, String>) -> (PossibleResult, Vec<String>) {
     let mut logs = Vec::new();
 
     if cancel_flag.load(Ordering::Relaxed) {
@@ -137,7 +142,7 @@ pub fn study_equivalence_with_cancel(problem: &EquivalenceVerification, cancel_f
         return (PossibleResult::UNKNOWN, logs);
     }
 
-    let smt2_problem: LinkedList<String> = equivalence_problem_to_smt2(problem, false);
+    let smt2_problem: LinkedList<String> = equivalence_problem_to_smt2(problem, false, signals_names_1, signals_names_2);
     let file_name = crate::equivalence_smt2_name(&problem.original_file, &problem.template_name, "yices");
     let result_solver = handling_yices_call(&smt2_problem, problem.verification_timeout, problem.verbose, Some(cancel_flag), file_name);
 
@@ -151,7 +156,7 @@ pub fn study_equivalence_with_cancel(problem: &EquivalenceVerification, cancel_f
     (result_solver, logs)
 }
 
-pub fn study_correctness_with_cancel(problem: &CorrectnessVerification, cancel_flag: &AtomicBool) -> (PossibleResult, Vec<String>) {
+pub fn study_correctness_with_cancel(problem: &CorrectnessVerification, cancel_flag: &AtomicBool, signals_names: &HashMap<usize, String>) -> (PossibleResult, Vec<String>) {
     let mut logs = Vec::new();
 
     if cancel_flag.load(Ordering::Relaxed) {
@@ -159,7 +164,7 @@ pub fn study_correctness_with_cancel(problem: &CorrectnessVerification, cancel_f
         return (PossibleResult::UNKNOWN, logs);
     }
 
-    let smt2_problem: LinkedList<String> = correctness_problem_to_smt2(problem);
+    let smt2_problem: LinkedList<String> = correctness_problem_to_smt2(problem, signals_names);
     let file_name = crate::correctness_smt2_name(&problem.original_file, &problem.template_name, "yices");
     let result_solver = handling_yices_call(&smt2_problem, problem.verification_timeout, problem.verbose, Some(cancel_flag), file_name);
 

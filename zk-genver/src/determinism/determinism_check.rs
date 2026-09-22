@@ -1,6 +1,7 @@
 
 use num_bigint_dig::BigInt;
 use std::collections::{HashMap, HashSet, BTreeMap};
+use std::hash::Hash;
 use circom_algebra::algebra::Constraint;
 use utils::read_original_structure::read_original_structure;
 use utils::structure::*;
@@ -12,6 +13,7 @@ use clustering::decompose_circuit::decompose_node;
 use utils::small_utilities::{GraphBackend, EquivalenceMode, ClusteringPreprocessing};
 use crate::processing_utils::*;
 use crate::report;
+use utils::read_correspondence::read_signal_correspondence;
 use solvers_interface::PossibleResult::VERIFIED;
 
 
@@ -42,8 +44,9 @@ pub fn prove_safety(user_input: Input) -> Result<(), ()> {
     let (constraints,
         signals,
         n_outputs,
-        n_inputs)
-        = process_constraints(&user_input.input_r1cs);
+        n_inputs,
+        field
+    ) = process_constraints(&user_input.input_r1cs);
     
     // Read the structure
     let mut structure  = if user_input.input_structure.is_some(){
@@ -76,8 +79,6 @@ pub fn prove_safety(user_input: Input) -> Result<(), ()> {
         None
     };
 
-    let field = user_input.prime.clone();
-
     let equivalence_mode = match user_input.equivalence_mode{
         0 => EquivalenceMode::None,
         1 => EquivalenceMode::Local,
@@ -85,6 +86,14 @@ pub fn prove_safety(user_input: Input) -> Result<(), ()> {
         _ => unreachable!()
     };
     
+
+    let (pos_to_signal_name, signal_name_to_pos) = if user_input.input_correspondence.is_some(){
+        let input_correspondence_str = &format!("{}", user_input.input_correspondence.as_ref().unwrap().display());
+        read_signal_correspondence(input_correspondence_str).unwrap()
+    } else{
+        (HashMap::new(), HashMap::new())
+    };
+
 
     let clustering_size = user_input.clustering_size;
     let target_size = user_input.target_size;
@@ -106,6 +115,7 @@ pub fn prove_safety(user_input: Input) -> Result<(), ()> {
         unverified_nodes_to_nodes: None
     };
 
+
     for node in structure.nodes.iter().rev(){
         process_node(&node,
             &structure,
@@ -113,6 +123,7 @@ pub fn prove_safety(user_input: Input) -> Result<(), ()> {
             &local_equivalence_classes,
             &structural_equivalence_classes,
             &nodeid2pos,
+            &pos_to_signal_name,
             &field,
             timeout,
             user_input.solver_option,
@@ -140,6 +151,7 @@ pub fn prove_safety(user_input: Input) -> Result<(), ()> {
                 node_id,
                 &mut structure,
                 &constraints,
+                &pos_to_signal_name,
                 &mut nodeid2pos,
                 &mut max_node_id,
                 &field,
@@ -194,6 +206,7 @@ fn process_node(
     structural_equivalence_classes: &HashMap<usize, usize>,
     //studied_eq_classes: &mut HashMap<usize, PossibleResult>,
     nodeid2pos: &HashMap<usize, usize>,
+    signals_names: & HashMap<usize, String>,
     field: &BigInt,
     timeout: u64,
     solver: PossibleSolver,
@@ -246,6 +259,7 @@ fn process_node(
         &structure.nodes,
         &nodeid2pos,
         &constraints,
+        signals_names,
         solver,
         apply_deduction_assigned,
         include_niaz3_in_all,
@@ -320,6 +334,7 @@ fn decompose_and_study(
     node_id: usize,
     structure: &mut StructureInfo,
     constraints: &Vec<Constraint<usize>>,
+    signals_names: & HashMap<usize, String>,
     nodeid2pos: &mut HashMap<usize, usize>,
     max_node_id: &mut usize,
     field: &BigInt,
@@ -418,6 +433,7 @@ fn decompose_and_study(
             &local_equivalence_classes,
             &structural_equivalence_classes,
             &new_nodeid2pos,
+            signals_names,
             &field,
             timeout,
             solver,

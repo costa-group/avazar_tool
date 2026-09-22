@@ -18,6 +18,8 @@ pub type EquivalenceImplication = (Vec<(usize, usize)>, Vec<(usize, usize)>);
         nodeid2pos: &HashMap<usize, usize>,
         constraint_list_1: &Vec<Constraint>,
         constraint_list_2: &Vec<Constraint>,
+        signals_names_1: &HashMap<usize, String>,
+        signals_names_2: &HashMap<usize, String>,
         solver: PossibleSolver,
         apply_deduction_assigned: bool,
         include_niaz3_in_all: bool,
@@ -92,7 +94,7 @@ pub type EquivalenceImplication = (Vec<(usize, usize)>, Vec<(usize, usize)>);
 
         let inicio = Instant::now();
 
-        let (mut result_safety, mut logs_round) = prove_equivalence(&verification, solver);
+        let (mut result_safety, mut logs_round) = prove_equivalence(&verification, solver, signals_names_1, signals_names_2);
 
         let mut used_extra_rounds = false;
         let mut finished_verification = match result_safety{
@@ -129,7 +131,7 @@ pub type EquivalenceImplication = (Vec<(usize, usize)>, Vec<(usize, usize)>);
  
 
             logs.push(format!("### Trying to verify adding constraints of the children\n"));
-            (result_safety, logs_round) = prove_equivalence(&verification, solver);
+            (result_safety, logs_round) = prove_equivalence(&verification, solver, signals_names_1, signals_names_2);
             finished_verification = match result_safety{
                 PossibleResult::UNKNOWN =>{
                     unknown_rounds += 1;
@@ -306,19 +308,24 @@ pub type EquivalenceImplication = (Vec<(usize, usize)>, Vec<(usize, usize)>);
     fn prove_equivalence(
         problem: &EquivalenceVerification,
         solver: PossibleSolver,
+        signals_names_1: &HashMap<usize, String>,
+        signals_names_2: &HashMap<usize, String>
     )-> (PossibleResult, Vec<String>) {
         match solver{
             PossibleSolver::FFSOL=>{
                 ffsol_interface::study_equivalence(
                     problem,
-                    &ffsol_interface::FfsolConfig::default(problem.verification_timeout, problem.verbose),
+                    None,
+                    &mut ffsol_interface::FfsolConfig::default(problem.verification_timeout, problem.verbose),
+                    signals_names_1,
+                    signals_names_2
                 )
             },
             PossibleSolver::CVC5=>{
-                cvc5_interface::study_equivalence(problem)
+                cvc5_interface::study_equivalence(problem, signals_names_1, signals_names_2 )
             },
             PossibleSolver::YICES=>{
-                yices_interface::study_equivalence(problem)
+                yices_interface::study_equivalence(problem, signals_names_1, signals_names_2)
             },
             PossibleSolver::NIAZ3=>{
                 nia_z3_interface::study_equivalence(problem)
@@ -327,7 +334,7 @@ pub type EquivalenceImplication = (Vec<(usize, usize)>, Vec<(usize, usize)>);
                 z3_interface::study_equivalence(problem)
             },
             PossibleSolver::ALL=>{
-                parallel_interface::study_equivalence(problem)
+                parallel_interface::study_equivalence(problem, signals_names_1, signals_names_2)
             },
             _ => unreachable!()
         }

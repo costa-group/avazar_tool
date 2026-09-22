@@ -3,7 +3,10 @@ use std::collections::{HashMap, LinkedList};
 use crate::{BigInt, SafetyVerification,EquivalenceVerification,CorrectnessVerification};
 use circom_algebra::algebra::Constraint;
 
-pub fn correctness_problem_to_smt2(problem: &CorrectnessVerification)->LinkedList<String>{
+pub fn correctness_problem_to_smt2(
+    problem: &CorrectnessVerification,     
+    signals_names: &HashMap<usize, String>,
+)->LinkedList<String>{
     let mut smt2_problem = LinkedList::new();
     let mut header = declare_header(&problem.field);
     smt2_problem.append(&mut header);
@@ -11,13 +14,17 @@ pub fn correctness_problem_to_smt2(problem: &CorrectnessVerification)->LinkedLis
     let mut signal_to_name = HashMap::new();
  
     for s in &problem.signals_1 {
-        let name = format!("s_{}",s);
+        let name = if signals_names.contains_key(s){
+            format!("cons.{}", signals_names[s].clone().replace(&['#', '[', ']'][..], "_"))
+        } else{
+            format!("cons.s_{}",s)
+        };
         smt2_problem.push_back(declare_signal(&name)); 
         signal_to_name.insert(*s,name.clone());
     }
 
     for s in &problem.signals_2 {
-        smt2_problem.push_back(declare_signal(s)); 
+        smt2_problem.push_back(declare_signal(&s)); 
     }
 
     for constraint in &problem.constraints_1 {
@@ -75,7 +82,7 @@ pub fn correctness_problem_to_smt2(problem: &CorrectnessVerification)->LinkedLis
 }
 
 
-pub fn equivalence_problem_to_smt2(problem: &EquivalenceVerification,use_old_syntax:bool)->LinkedList<String>{
+pub fn equivalence_problem_to_smt2(problem: &EquivalenceVerification, use_old_syntax:bool, signals_names_1: &HashMap<usize, String>, signals_names_2: &HashMap<usize, String>)->LinkedList<String>{
     let mut smt2_problem = LinkedList::new();
     let mut header = declare_header(&problem.field);
     smt2_problem.append(&mut header);
@@ -84,13 +91,21 @@ pub fn equivalence_problem_to_smt2(problem: &EquivalenceVerification,use_old_syn
     let mut signal_to_name_aux = HashMap::new();
  
     for s in &problem.signals_1 {
-        let name = format!("s_{}",s);
+        let name = if signals_names_1.contains_key(s){
+                format!("circuit1.{}", signals_names_1[s].replace(&['#', '[', ']'][..], "_"))
+            } else{
+                format!("circuit1.s_{}",s)
+            };
         smt2_problem.push_back(declare_signal(&name)); 
         signal_to_name.insert(*s,name.clone());
     }
 
     for s in &problem.signals_2 {
-        let name = format!("saux_{}",s);
+        let name = if signals_names_2.contains_key(s){
+                format!("circuit2.{}", signals_names_2[s].replace(&['#', '[', ']'][..], "_"))
+            } else{
+                format!("circuit2.s_{}",s)
+            };
         smt2_problem.push_back(declare_signal(&name)); 
         signal_to_name_aux.insert(*s,name.clone());
     }
@@ -155,7 +170,7 @@ pub fn equivalence_problem_to_smt2(problem: &EquivalenceVerification,use_old_syn
 }
 
 
-pub fn safety_problem_to_smt2(problem: &SafetyVerification)->LinkedList<String>{
+pub fn safety_problem_to_smt2(problem: &SafetyVerification, signals_names: &HashMap<usize, String>)->LinkedList<String>{
     let mut smt2_problem = LinkedList::new();
     let mut header = declare_header(&problem.field);
     smt2_problem.append(&mut header);
@@ -165,14 +180,22 @@ pub fn safety_problem_to_smt2(problem: &SafetyVerification)->LinkedList<String>{
     for s in &problem.signals {
         // if already declared do not insert 
         if !signal_to_name.contains_key(s){
-            let name = format!("s_{}",s);
+            let name = if signals_names.contains_key(s){
+                format!("witness_1.{}", signals_names[s].replace(&['#', '[', ']'][..], "_"))
+            } else{
+                format!("witness_1.s_{}",s)
+            };
             smt2_problem.push_back(declare_signal(&name)); 
             signal_to_name.insert(*s,name.clone());
             
             let name_aux = if problem.inputs.contains(&s){
                 name
             }else{
-                let aux = format!("s_{}_aux",s);
+                let aux = if signals_names.contains_key(s){
+                    format!("witness_2.{}", signals_names[s].replace(&['#', '[', ']'][..], "_"))
+                } else{
+                    format!("witness_2.s_{}",s)
+                };
                 smt2_problem.push_back(declare_signal(&aux)); 
                 aux  
             };

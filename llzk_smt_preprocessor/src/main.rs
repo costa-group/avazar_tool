@@ -29,6 +29,7 @@ use llzk_smt_preprocessor::{analyze, analyze_specification, to_json_flat, to_jso
 use utils::read_correspondence::read_signal_correspondence;
 use utils::read_specification::read_smt_specification;
 use utils::structure::read_structure;
+use std::collections::BTreeMap;
 
 #[derive(Clone, Debug, clap::ValueEnum)]
 enum Mode {
@@ -126,6 +127,7 @@ fn main() {
             let structure =
                 read_structure(structure_path).expect("No se pudo leer el JSON de estructura");
 
+            let name_to_signal: BTreeMap<_, _> = name_to_signal.into_iter().collect();
             let resolved = resolve_full(macro_defs, &structure, &name_to_signal)
                 .unwrap_or_else(|e| {
                     eprintln!("Error al resolver: {}", e);

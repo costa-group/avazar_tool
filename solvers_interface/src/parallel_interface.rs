@@ -1,5 +1,7 @@
 use crate::{CorrectnessVerification, EquivalenceVerification, PossibleResult, PossibleSolver, SafetyVerification};
 use crate::{civer_interface, ffsol_interface, cvc5_interface, nia_z3_interface, yices_interface, z3_interface};
+use std::collections::HashMap;
+use std::hash::Hash;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::mpsc::RecvTimeoutError;
@@ -113,7 +115,7 @@ fn run_parallel(label: &str, timeout_ms: u64, tasks: Vec<(&'static str, Task)>) 
     }
 }
 
-pub fn study_safety(problem: &SafetyVerification) -> (PossibleResult, Vec<String>) {
+pub fn study_safety(problem: &SafetyVerification, signals_names: & HashMap<usize, String>) -> (PossibleResult, Vec<String>) {
     let mut candidates = vec![
         ("ffsol",          PossibleSolver::FFSOL),
         ("ffsol-nolinear", PossibleSolver::FFSOL),
@@ -130,11 +132,12 @@ pub fn study_safety(problem: &SafetyVerification) -> (PossibleResult, Vec<String
     let timeout = problem.verification_timeout;
     let tasks = filter_available(&candidates).into_iter().map(|name| {
         let p = problem.clone();
+        let s = signals_names.clone();
         let task: Task = match name {
-            "ffsol"          => Box::new(move |c: Arc<AtomicBool>| ffsol_interface::study_safety_with_cancel(&p, &c, &ffsol_interface::FfsolConfig::default(p.verification_timeout, p.verbose))),
-            "ffsol-nolinear" => Box::new(move |c: Arc<AtomicBool>| ffsol_interface::study_safety_with_cancel(&p, &c, &ffsol_interface::FfsolConfig::linear_diactivated(p.verification_timeout, p.verbose))),
-            "cvc5"           => Box::new(move |c: Arc<AtomicBool>| cvc5_interface::study_safety_with_cancel(&p, &c)),
-            "yices"          => Box::new(move |c: Arc<AtomicBool>| yices_interface::study_safety_with_cancel(&p, &c)),
+            "ffsol"          => Box::new(move |c: Arc<AtomicBool>| ffsol_interface::study_safety(&p, Some(&c), &mut ffsol_interface::FfsolConfig::default(p.verification_timeout, p.verbose), &s)),
+            "ffsol-nolinear" => Box::new(move |c: Arc<AtomicBool>| ffsol_interface::study_safety(&p, Some(&c), &mut ffsol_interface::FfsolConfig::linear_diactivated(p.verification_timeout, p.verbose), &s)),
+            "cvc5"           => Box::new(move |c: Arc<AtomicBool>| cvc5_interface::study_safety_with_cancel(&p, &c, &s)),
+            "yices"          => Box::new(move |c: Arc<AtomicBool>| yices_interface::study_safety_with_cancel(&p, &c, &s)),
             "nia-z3"         => Box::new(move |c: Arc<AtomicBool>| nia_z3_interface::study_safety_with_cancel(&p, &c)),
             "z3"             => Box::new(move |c: Arc<AtomicBool>| z3_interface::study_safety_with_cancel(&p, &c)),
             "civer"          => Box::new(move |c: Arc<AtomicBool>| civer_interface::study_safety_with_cancel(&p, &c)),
@@ -147,7 +150,7 @@ pub fn study_safety(problem: &SafetyVerification) -> (PossibleResult, Vec<String
 
 // Equivalence and correctness solver interfaces have no cancel-aware variants, so tasks
 // ignore the token with |_|. Remaining threads run to their own per-solver timeout.
-pub fn study_equivalence(problem: &EquivalenceVerification) -> (PossibleResult, Vec<String>) {
+pub fn study_equivalence(problem: &EquivalenceVerification, signals_names_1: & HashMap<usize, String>, signals_names_2: & HashMap<usize, String>) -> (PossibleResult, Vec<String>) {
     let candidates = &[
         ("ffsol",          PossibleSolver::FFSOL),
         ("ffsol-nolinear", PossibleSolver::FFSOL),
@@ -159,11 +162,14 @@ pub fn study_equivalence(problem: &EquivalenceVerification) -> (PossibleResult, 
     let timeout = problem.verification_timeout;
     let tasks = filter_available(candidates).into_iter().map(|name| {
         let p = problem.clone();
+        let s1 = signals_names_1.clone();
+        let s2 = signals_names_2.clone();
+
         let task: Task = match name {
-            "ffsol"          => Box::new(move |c: Arc<AtomicBool>| ffsol_interface::study_equivalence_with_cancel(&p, &c, &ffsol_interface::FfsolConfig::default(p.verification_timeout, p.verbose))),
-            "ffsol-nolinear" => Box::new(move |c: Arc<AtomicBool>| ffsol_interface::study_equivalence_with_cancel(&p, &c, &ffsol_interface::FfsolConfig::linear_diactivated(p.verification_timeout, p.verbose))),
-            "cvc5"           => Box::new(move |c: Arc<AtomicBool>| cvc5_interface::study_equivalence_with_cancel(&p, &c)),
-            "yices"          => Box::new(move |c: Arc<AtomicBool>| yices_interface::study_equivalence_with_cancel(&p, &c)),
+            "ffsol"          => Box::new(move |c: Arc<AtomicBool>| ffsol_interface::study_equivalence(&p, Some(&c), &mut ffsol_interface::FfsolConfig::default(p.verification_timeout, p.verbose), &s1, &s2)),
+            "ffsol-nolinear" => Box::new(move |c: Arc<AtomicBool>| ffsol_interface::study_equivalence(&p, Some(&c), &mut ffsol_interface::FfsolConfig::linear_diactivated(p.verification_timeout, p.verbose), &s1, &s2)),
+            "cvc5"           => Box::new(move |c: Arc<AtomicBool>| cvc5_interface::study_equivalence_with_cancel(&p, &c, &s1, &s2)),
+            "yices"          => Box::new(move |c: Arc<AtomicBool>| yices_interface::study_equivalence_with_cancel(&p, &c, &s1, &s2)),
             "nia-z3"         => Box::new(move |c: Arc<AtomicBool>| nia_z3_interface::study_equivalence_with_cancel(&p, &c)),
             "z3"             => Box::new(move |c: Arc<AtomicBool>| z3_interface::study_equivalence_with_cancel(&p, &c)),
             _                => Box::new(move |_| (PossibleResult::UNKNOWN, vec!["UNKNOWN SOLVER IN ALL MODE\n".to_string()])),
@@ -174,7 +180,7 @@ pub fn study_equivalence(problem: &EquivalenceVerification) -> (PossibleResult, 
 }
 
 // z3_interface has no study_correctness, so z3 is absent from this candidate list.
-pub fn study_correctness(problem: &CorrectnessVerification) -> (PossibleResult, Vec<String>) {
+pub fn study_correctness(problem: &CorrectnessVerification, signals_names: &HashMap<usize, String>) -> (PossibleResult, Vec<String>) {
     let candidates = &[
         ("ffsol",          PossibleSolver::FFSOL),
         ("ffsol-nolinear", PossibleSolver::FFSOL),
@@ -185,11 +191,13 @@ pub fn study_correctness(problem: &CorrectnessVerification) -> (PossibleResult, 
     let timeout = problem.verification_timeout;
     let tasks = filter_available(candidates).into_iter().map(|name| {
         let p = problem.clone();
+        let s = signals_names.clone();
+
         let task: Task = match name {
-            "ffsol"          => Box::new(move |c: Arc<AtomicBool>| ffsol_interface::study_correctness_with_cancel(&p, &c, &ffsol_interface::FfsolConfig::default(p.verification_timeout, p.verbose))),
-            "ffsol-nolinear" => Box::new(move |c: Arc<AtomicBool>| ffsol_interface::study_correctness_with_cancel(&p, &c, &ffsol_interface::FfsolConfig::linear_diactivated(p.verification_timeout, p.verbose))),
-            "cvc5"           => Box::new(move |c: Arc<AtomicBool>| cvc5_interface::study_correctness_with_cancel(&p, &c)),
-            "yices"          => Box::new(move |c: Arc<AtomicBool>| yices_interface::study_correctness_with_cancel(&p, &c)),
+            "ffsol"          => Box::new(move |c: Arc<AtomicBool>| ffsol_interface::study_correctness(&p, Some(&c), &mut ffsol_interface::FfsolConfig::default(p.verification_timeout, p.verbose), &s)),
+            "ffsol-nolinear" => Box::new(move |c: Arc<AtomicBool>| ffsol_interface::study_correctness(&p, Some(&c), &mut ffsol_interface::FfsolConfig::linear_diactivated(p.verification_timeout, p.verbose), &s)),
+            "cvc5"           => Box::new(move |c: Arc<AtomicBool>| cvc5_interface::study_correctness_with_cancel(&p, &c, &s)),
+            "yices"          => Box::new(move |c: Arc<AtomicBool>| yices_interface::study_correctness_with_cancel(&p, &c, &s)),
             "nia-z3"         => Box::new(move |c: Arc<AtomicBool>| nia_z3_interface::study_correctness_with_cancel(&p, &c)),
             _                => Box::new(move |_| (PossibleResult::UNKNOWN, vec!["UNKNOWN SOLVER IN ALL MODE\n".to_string()])),
         };

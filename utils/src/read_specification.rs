@@ -9,6 +9,7 @@ use indexmap::IndexMap;
 
 
 
+
 /// A single variable / parameter entry: `{ "name": "v_0", "type": "ff" }`.
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct VarInfo {
@@ -51,7 +52,7 @@ pub struct MainSection {
 /// Top-level structure of the concrete specification JSON.
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct SpecificationInfo {
-    pub prime: u64,
+    pub prime: String,
     pub macros: IndexMap<String, MacroDef>,
     pub main: MainSection,
 }

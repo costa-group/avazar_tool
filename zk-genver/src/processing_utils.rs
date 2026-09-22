@@ -7,14 +7,16 @@ use utils::structure::*;
 use utils::equivalence_structure::*;
 use std::path::PathBuf;
 use indexmap::IndexMap;
+use num_bigint_dig::BigInt;
 
 
-
+// Returns the constraints, the signals, the number of public outputs, the number of inputs (public + private) and the field
 pub fn process_constraints(input: &PathBuf) -> (
     Vec<Constraint<usize>>,
     Vec<usize>,
     usize,
-    usize
+    usize,
+    BigInt
  ) {
     let input: &String = &format!("{}", input.display());
     let result = read_r1cs(input).unwrap();
@@ -23,26 +25,30 @@ pub fn process_constraints(input: &PathBuf) -> (
     for (a, b, c) in constraint_list{
         formatted_list.push(Constraint::new(a,b,c));
     }
+    let field = result.header_data.field;
     (
         formatted_list,
         result.signals,
         result.header_data.public_outputs,
         result.header_data.public_inputs + result.header_data.private_inputs,
+        field
     )
 }
 
-
+// Returns the macros, the main section and the field
 pub fn process_smt_formula(input: &PathBuf) ->(
     IndexMap<String, MacroDef>,
-    MainSection
+    MainSection,
+    BigInt
 ){
     let input: &String = &format!("{}", input.display());
     let result = read_smt_specification(input).unwrap();
     (
         result.macros,
         result.main,
+        result.prime.parse().unwrap()
     )
-}
+}   
 
 pub fn process_structure(structure: &StructureInfo) -> (HashMap<usize, usize>, HashMap<usize, usize>, HashMap<usize, usize>, usize){
     
