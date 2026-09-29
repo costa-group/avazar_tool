@@ -191,7 +191,7 @@ pub fn study_correctness(
 
 
                 if let Some(value) = counterexample.get(&out_name){
-                    if let Some(value_2) = counterexample.get(&out_name_2){
+                    if let Some(value_2) = counterexample.get(out_2){
                         logs.push(format!(" * {} -> {} | {} -> {}\n", out_name,value,  out_name_2, value_2));
                     }
                 }
