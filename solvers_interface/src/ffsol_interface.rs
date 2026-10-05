@@ -55,7 +55,7 @@ impl FfsolConfig {
             prime: None,
             apply_la_incremental: false,
             apply_nra: true,
-            apply_nia: false,
+            apply_nia: true,
             light_check_determinism: true,
             apply_la: true,
             la_with_overflowing_constraints: false,
