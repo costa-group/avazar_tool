@@ -112,6 +112,8 @@ impl FfsolConfig {
 
         push_bool_arg(&mut args, "-apply_la_incremental", self.apply_la_incremental);
         push_bool_arg(&mut args, "-apply_nra", self.apply_nra);
+        push_bool_arg(&mut args, "-apply_nia", self.apply_nia);
+
         push_binary_arg(&mut args, "-light_check_determinism", self.light_check_determinism);
         push_binary_arg(&mut args, "-apply_la", self.apply_la);
         push_binary_arg(&mut args, "-la_with_overflowing_constraints", self.la_with_overflowing_constraints);
@@ -120,7 +122,6 @@ impl FfsolConfig {
         push_binary_arg(&mut args, "-simple_deductions", self.simple_deductions);
         push_binary_arg(&mut args, "-complete_deductions", self.complete_deductions);
         push_binary_arg(&mut args, "-complete_non_overflowing_deductions", self.complete_non_overflowing_deductions);
-        push_binary_arg(&mut args, "-apply_nia", self.apply_nia);
 
         args.push("-file".to_string());
         args.push(file_path.to_string());
