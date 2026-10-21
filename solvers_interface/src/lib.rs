@@ -8,6 +8,7 @@ pub mod z3_interface;
 pub mod parallel_interface;
 mod smt2_utils;
 use indexmap::IndexMap;
+use std::collections::HashMap;
 
 use std::collections::{HashSet, LinkedList};
 use std::path::Path;
@@ -105,6 +106,7 @@ pub struct SafetyVerification {
     pub verbose: bool
 }
 
+
 impl SafetyVerification{
 
     pub fn new(
@@ -145,6 +147,57 @@ impl SafetyVerification{
     }
 
 }
+
+pub struct WitnessVerification {
+    pub template_name: String,
+    pub original_file: String,
+    pub signals: LinkedList<usize>,
+    pub inputs: Vec<usize>,
+    pub outputs: Vec<usize>,
+    pub constraints: Vec<Constraint<usize>>,
+    pub field: BigInt,
+    pub verification_timeout: u64,
+    pub witness: HashMap<usize, BigInt>,
+    pub verbose: bool
+}
+
+
+impl WitnessVerification{
+
+    pub fn new(
+        template_name: &String,
+        original_file: &String,
+        signals: LinkedList<usize>,
+        inputs: Vec<usize>,
+        outputs: Vec<usize>,
+        constraints: Vec<Constraint<usize>>,
+        field: &BigInt,
+        verification_timeout: u64,
+        witness: HashMap<usize, BigInt>,
+        verbose: bool
+    ) -> WitnessVerification {
+        let mut fixed_constraints = Vec::new();
+        for mut c in constraints{
+            Constraint::fix_constraint(&mut c, field);
+            fixed_constraints.push(c);
+        }
+
+        WitnessVerification {
+            template_name: template_name.clone(),
+            original_file: original_file.clone(),
+            signals,
+            inputs,
+            outputs,
+            constraints: fixed_constraints,
+            field: field.clone(),
+            verification_timeout,
+            witness,
+            verbose
+        }
+    }
+
+}
+
 
 const MAX_SAFE_FILENAME_BYTES: usize = 240;
 
@@ -234,6 +287,15 @@ pub fn correctness_smt2_name(original_file: &str, template_name: &str, solver: &
             format!("semantic_equivalence_{}_{}_{}_{}.smt2", o, t, solver, random)
         })
     }
+}
+
+pub fn witness_smt2_name(original_file: &str, template_name: &str, solver: &str) -> String {
+    let original = sanitize_name(original_file, false);
+    let template = sanitize_name(template_name, false);
+    let file_name = format!("witness_{}_{}_{}.smt2", original, template, solver);
+    ensure_safe_length(file_name, original_file, template_name, |o, t| {
+        format!("witness_{}_{}_{}.smt2", o, t, solver)
+    })
 }
 
 

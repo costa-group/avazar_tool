@@ -26,6 +26,7 @@ pub struct Input {
     pub extra_rounds: usize,
     pub check_equivalence: Option<PathBuf>,
     pub check_correctness: Option<PathBuf>,
+    pub check_determinism_input: Option<PathBuf>,
     pub report_output: Option<PathBuf>,
 }
 
@@ -53,6 +54,7 @@ impl Input {
         let extra_rounds = input_processing::get_extra_rounds(&matches)?;
         let check_equivalence = input_processing::get_check_equivalence(&matches)?;
         let check_correctness = input_processing::get_check_correctness(&matches)?;
+        let check_determinism_input = input_processing::get_check_determinism_input(&matches)?;
         let limit_size = input_processing::get_limit_size(&matches)?;
         let report_output = input_processing::get_report_output(&matches);
 
@@ -77,6 +79,7 @@ impl Input {
             limit_size,
             check_equivalence,
             check_correctness,
+            check_determinism_input,
             report_output,
         })
     }
@@ -159,6 +162,19 @@ mod input_processing {
                 Result::Ok(Some(route))
             } else {
                 Result::Err(eprintln!("{}", Colour::Red.paint("invalid file to check semantic equivalence")))
+            }
+        } else{
+            Ok(None)
+        }
+    }
+
+    pub fn get_check_determinism_input(matches: &ArgMatches) -> Result<Option<PathBuf>, ()> {
+        if matches.is_present("check_determinism_input"){
+            let route = Path::new(matches.value_of("check_determinism_input").unwrap()).to_path_buf();
+            if route.is_file() {
+                Result::Ok(Some(route))
+            } else {
+                Result::Err(eprintln!("{}", Colour::Red.paint("invalid file to check determinism input")))
             }
         } else{
             Ok(None)
@@ -376,6 +392,14 @@ mod input_processing {
                     .hidden(false)
                     .takes_value(true)
                     .help("Argument to activate the semantic equivalence check mode. It checks if the input is semantically equivalent to the given SMT2 formula")
+                    .display_order(130)
+            )
+            .arg(
+                Arg::with_name("check_determinism_input")
+                    .long("check_determinism_input")
+                    .hidden(false)
+                    .takes_value(true)
+                    .help("Argument to activate the determinism check mode for the input file")
                     .display_order(130)
             )
             .arg(

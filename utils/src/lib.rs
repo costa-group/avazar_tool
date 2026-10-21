@@ -8,3 +8,4 @@ pub mod union_find;
 pub mod assignment;
 pub mod read_specification;
 pub mod read_correspondence;
+pub mod read_witness;

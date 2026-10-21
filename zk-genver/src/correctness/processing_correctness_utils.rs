@@ -147,8 +147,8 @@ pub fn get_input_signals_macro(number_inputs: usize, studied_macro: &MacroDef) -
     let mut input_var_index = 0;
     while inputs.len() < number_inputs{
         let arg_name = format!("%arg{}", input_var_index);
-        //println!("Studied macro vars info: {:?}", studied_macro.vars_info);
-        //println!("Looking for signal: {}", arg_name);
+        println!("Studied macro vars info: {:?}", studied_macro.vars_info);
+        println!("Looking for signal: {}", arg_name);
         let signal_info_macro = studied_macro.vars_info.get(&arg_name).unwrap();
         if signal_info_macro.is_array(){
             if let Some(array) = signal_info_macro.as_array() {

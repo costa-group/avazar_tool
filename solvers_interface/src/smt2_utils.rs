@@ -1,7 +1,54 @@
 
 use std::collections::{HashMap, LinkedList};
-use crate::{BigInt, SafetyVerification,EquivalenceVerification,CorrectnessVerification};
+use crate::{BigInt, WitnessVerification, SafetyVerification,EquivalenceVerification,CorrectnessVerification};
 use circom_algebra::algebra::Constraint;
+
+pub fn witness_problem_to_smt2(
+    problem: &WitnessVerification,   
+    signals_names: &HashMap<usize, String>  
+)->LinkedList<String>{
+    let mut smt2_problem = LinkedList::new();
+    let mut header = declare_header(&problem.field);
+    smt2_problem.append(&mut header);
+
+    let mut signal_to_name = HashMap::new();
+ 
+    for s in &problem.signals {
+        let name = if signals_names.contains_key(s){
+            format!("cons.{}", signals_names[s].clone().replace(&['#', '[', ']'][..], "_"))
+        } else{
+            format!("cons.s_{}",s)
+        };
+        smt2_problem.push_back(declare_signal(&name)); 
+        signal_to_name.insert(*s,name.clone());
+    }
+
+    for constraint in &problem.constraints {
+
+        smt2_problem.push_back(
+            format!("(assert {})",
+                constraint.constraint_to_smt2(&signal_to_name)
+            )
+        );
+        
+    }
+
+
+    smt2_problem.push_back(
+        format!("(assert {})",
+            declare_value_signals(&problem.inputs, &signal_to_name, &problem.witness)
+        )
+    );
+
+    smt2_problem.push_back(
+        format!("(assert (not {}))",
+            declare_value_signals(&problem.outputs, &signal_to_name, &problem.witness)
+        )
+    );
+    smt2_problem.push_back(format!("(check-sat)"));
+    smt2_problem
+    
+}
 
 pub fn correctness_problem_to_smt2(
     problem: &CorrectnessVerification,     
@@ -449,6 +496,24 @@ pub fn declare_all_signals_equal_2(signals: &Vec<usize>, signal_to_names: &HashM
         let mut aux = "(and ".to_string();
         for i in 0..signals.len(){
             aux = format!("{} (= {} {}) ", aux, signal_to_names[&signals[i]], signals_aux[i]);
+        }
+        aux = format!("{})",aux);
+        aux
+    }
+}
+
+
+pub fn declare_value_signals(signals: &Vec<usize>, signal_to_names: &HashMap<usize,String>, values: &HashMap<usize, BigInt>) -> String{
+    if signals.len() == 0{
+        "true".to_string()
+    } else if signals.len() == 1{
+        let s = signals[0];
+        let s_aux = &values[&s];
+        format!("(= {} {})", signal_to_names[&s], s_aux)
+    } else{
+        let mut aux = "(and ".to_string();
+        for i in 0..signals.len(){
+            aux = format!("{} (= {} {}) ", aux, signal_to_names[&signals[i]], values[&signals[i]]);
         }
         aux = format!("{})",aux);
         aux

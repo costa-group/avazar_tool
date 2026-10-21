@@ -1,11 +1,11 @@
 use crate::CorrectnessVerification;
-use crate::{PossibleResult,SafetyVerification,EquivalenceVerification};
+use crate::{PossibleResult,SafetyVerification,EquivalenceVerification, WitnessVerification};
 use std::process::Command;
 use std::process::Stdio;
 use std::time::Duration;
 use std::collections::LinkedList;
 use std::io::Read;
-use crate::smt2_utils::{safety_problem_to_smt2,equivalence_problem_to_smt2,correctness_problem_to_smt2};
+use crate::smt2_utils::{safety_problem_to_smt2,equivalence_problem_to_smt2,correctness_problem_to_smt2, witness_problem_to_smt2};
 use wait_timeout::ChildExt;
 use std::fs::File;
 use std::io::Write;
@@ -375,6 +375,93 @@ pub fn study_safety(problem: &SafetyVerification, cancel_flag: Option<&AtomicBoo
     }
 
     (result_solver, logs)
+}
+
+
+pub fn study_witness(
+    problem: &WitnessVerification, 
+    cancel_flag: Option<&AtomicBool>, 
+    config: & mut FfsolConfig,
+
+)-> (PossibleResult, Vec<String>){
+    let mut logs = Vec::new();
+
+    if let Some(flag) = cancel_flag {
+        if flag.load(Ordering::Relaxed) {
+            logs.push("### CANCELLED BEFORE STARTING FFSOL\n".to_string());
+            return (PossibleResult::UNKNOWN, logs);
+        }
+    }
+
+    let smt2_problem: LinkedList<String> = witness_problem_to_smt2(problem, &HashMap::new());
+    let file_name = crate::witness_smt2_name(&problem.original_file, &problem.template_name, "ffsol");
+
+    let (result_solver, counterexample)  = handling_ffsol_call(&smt2_problem, config, cancel_flag, file_name);
+
+    match result_solver{
+        PossibleResult::FAILED=>{
+            logs.push(format!("### FFSOL: THE CONSTRAINT SYSTEMS IS NOT DETERMINISTIC FOR THE GIVEN INPUT. FOUND COUNTEREXAMPLE USING SMT:\n"));
+            
+           /*  logs.push(format!("\nThe value of the inputs in the counterexample are:\n"));
+
+            for index in 0..problem.inputs_1.len(){
+
+                let in_1: usize = problem.inputs_1[index];
+                let inp_name = if signals_names.contains_key(&in_1){
+                    signals_names[&in_1].clone().replace(&['#', '[', ']'][..], "_")
+                } else{
+                    format!("s_{}",in_1)
+                };
+                let comp_name_1 = format!("cons.{}",inp_name);
+
+
+                let in_2 = &problem.inputs_2[index];
+
+                let comp_name_2 = format!("wit.{}", in_2);
+
+                if let Some(value) = counterexample.get(&comp_name_1){
+                    logs.push(format!(" * {} = {}  -> {}\n", comp_name_1, comp_name_2, value));
+                }
+            }
+
+
+            logs.push(format!("\nThe two different values of the outputs in the counterexample proving no equivalence are:\n"));
+            for index in 0..problem.outputs_1.len(){
+                let out_1: usize = problem.outputs_1[index];
+                let out_name = if signals_names.contains_key(&out_1){
+                    format!("cons.{}", signals_names[&out_1].clone().replace(&['#', '[', ']'][..], "_"))
+                } else{
+                    format!("cons.s_{}",out_1)
+                };
+                
+                let out_2 = &problem.outputs_2[index];
+                let out_name_2 = format!("wit.{}", out_2);
+
+
+                if let Some(value) = counterexample.get(&out_name){
+                    if let Some(value_2) = counterexample.get(out_2){
+                        logs.push(format!(" * {} -> {} | {} -> {}\n", out_name,value,  out_name_2, value_2));
+                    }
+                }
+            }
+            logs.push(format!("The complete counterexample can be found in the file: {}\n", config.json_model.as_ref().unwrap()));
+ */
+        
+        },
+        PossibleResult::VERIFIED=>{
+            logs.push(format!("### FFSOL: THE CONSTRAINT SYSTEM IS DETERMINISTIC FOR THE GIVEN INPUT\n"));
+        },
+        PossibleResult::UNKNOWN=>{
+            logs.push("### FFSOL: UNKNOWN: VERIFICATION OF DETERMINISM OF THE INPUT TIMEOUT\n".to_string());
+        },
+        _=>{
+            unreachable!()
+        }
+
+    }
+
+    (result_solver, logs)
+
 }
 
 
