@@ -65,7 +65,11 @@ pub type CorrectnessImplication = (Vec<(usize, String)>, Vec<(usize, String)>);
 
 
         let inputs_1 = node_info.input_signals.clone();
-        let inputs_2 = get_input_signals_macro( inputs_1.len(), macro_spec);
+        //let inputs_2 = get_input_signals_macro( inputs_1.len(), macro_spec);
+        let mut inputs_2 = Vec::new();
+        for inp in &inputs_1 {
+            inputs_2.push(get_equivalent_signal_in_macro(*inp, macro_spec, signal_to_name));
+        }
 
         //println!("Printing input signals node: {:?}", inputs_2);
 
