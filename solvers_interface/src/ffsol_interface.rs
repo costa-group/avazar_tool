@@ -6,6 +6,11 @@ use std::time::Duration;
 use std::collections::LinkedList;
 use std::io::Read;
 use crate::smt2_utils::{safety_problem_to_smt2,equivalence_problem_to_smt2,correctness_problem_to_smt2};
+use crate::smt2_utils::equivalence_problem_valid_system_to_smt2;
+use crate::smt2_utils::equivalence_problem_system_until_out_to_smt2;
+use crate::smt2_utils::equivalence_problem_system_outputs;
+
+use clap::Shell::PowerShell;
 use wait_timeout::ChildExt;
 use std::fs::File;
 use std::io::Write;
@@ -304,7 +309,164 @@ pub fn study_equivalence(
 
     }
 
-    (result_solver, logs)
+
+    // Check if the first system has solutions -> should be sat
+
+    let smt2_problem: LinkedList<String> = equivalence_problem_valid_system_to_smt2(problem,false, signals_names_1, signals_names_2, true);
+    let file_name = crate::problem_smt2_name("satis_1_", &problem.original_file, &problem.template_name, "ffsol");
+
+    let (result_solver_sat1, counterexample) = handling_ffsol_call(&smt2_problem, config, cancel_flag, file_name);
+
+    match result_solver_sat1 {
+        PossibleResult::FAILED => {
+            logs.push("### FFSOL: VERIFIED: THE FIRST SYSTEM IS SATISFIABLE\n".to_string());
+        }
+        PossibleResult::UNKNOWN => {
+            logs.push("### FFSOL: TIMEOUR: THE SATISFIABILITY OF THE FIRST SYSTEM TIMESOUT\n".to_string());
+
+        }
+        PossibleResult::VERIFIED => {
+            logs.push("### FFSOL: FAILED: THE FIRST SYSTEM IS NOT SATISFIABLE\n".to_string());
+
+        }
+        _ => unreachable!()
+    }
+
+    // Check if the second system has solutions -> should be sat
+
+    let smt2_problem: LinkedList<String> = equivalence_problem_valid_system_to_smt2(problem,false, signals_names_1, signals_names_2, false);
+    let file_name = crate::problem_smt2_name("satis_2_", &problem.original_file, &problem.template_name, "ffsol");
+
+    let (result_solver_sat2, counterexample) = handling_ffsol_call(&smt2_problem, config, cancel_flag, file_name);
+
+    match result_solver_sat2 {
+        PossibleResult::FAILED => {
+            logs.push("### FFSOL: VERIFIED: THE SECOND SYSTEM IS SATISFIABLE\n".to_string());
+        }
+        PossibleResult::UNKNOWN => {
+            logs.push("### FFSOL: TIMEOUR: THE SATISFIABILITY OF THE SECOND SYSTEM TIMESOUT\n".to_string());
+
+        }
+        PossibleResult::VERIFIED => {
+            logs.push("### FFSOL: FAILED: THE SECOND SYSTEM IS NOT SATISFIABLE\n".to_string());
+
+        }
+        _ => unreachable!()
+    }
+
+    // Check if the first + second without ouputs has solutions -> should be sat
+
+    let smt2_problem: LinkedList<String> = equivalence_problem_system_until_out_to_smt2(problem,false, signals_names_1, signals_names_2, true);
+    let file_name = crate::problem_smt2_name("satis_1_and_2p_", &problem.original_file, &problem.template_name, "ffsol");
+
+    let (result_solver_sat_12, counterexample) = handling_ffsol_call(&smt2_problem, config, cancel_flag, file_name);
+
+    match result_solver_sat_12 {
+        PossibleResult::FAILED => {
+            logs.push("### FFSOL: VERIFIED: THE FIRST + SECOND UNTIL OUTS SYSTEM IS SATISFIABLE\n".to_string());
+        }
+        PossibleResult::UNKNOWN => {
+            logs.push("### FFSOL: TIMEOUR: THE SATISFIABILITY OF THE FIRST + SECOND UNTIL OUTS SYSTEM TIMESOUT\n".to_string());
+
+        }
+        PossibleResult::VERIFIED => {
+            logs.push("### FFSOL: FAILED: THE FIRST + SECOND UNTIL OUTS SYSTEM IS NOT SATISFIABLE\n".to_string());
+
+        }
+        _ => unreachable!()
+    }
+
+    // Check if the second + first without ouputs has solutions -> should be sat
+
+    let smt2_problem: LinkedList<String> = equivalence_problem_system_until_out_to_smt2(problem,false, signals_names_1, signals_names_2, false);
+    let file_name = crate::problem_smt2_name("satis_2_and_1p_", &problem.original_file, &problem.template_name, "ffsol");
+
+    let (result_solver_sat_21, counterexample) = handling_ffsol_call(&smt2_problem, config, cancel_flag, file_name);
+
+    match result_solver_sat_21 {
+        PossibleResult::FAILED => {
+            logs.push("### FFSOL: VERIFIED: THE FIRST + SECOND UNTIL OUTS SYSTEM IS SATISFIABLE\n".to_string());
+        }
+        PossibleResult::UNKNOWN => {
+            logs.push("### FFSOL: TIMEOUR: THE SATISFIABILITY OF THE FIRST + SECOND UNTIL OUTS SYSTEM TIMESOUT\n".to_string());
+
+        }
+        PossibleResult::VERIFIED => {
+            logs.push("### FFSOL: FAILED: THE FIRST + SECOND UNTIL OUTS SYSTEM IS NOT SATISFIABLE\n".to_string());
+
+        }
+        _ => unreachable!()
+    }
+
+    // Check if the first + second no ouputs has solutions -> should be unsat 
+
+    let smt2_problem: LinkedList<String> = equivalence_problem_system_outputs(problem,false, signals_names_1, signals_names_2, true);
+    let file_name = crate::problem_smt2_name("output_error_2_", &problem.original_file, &problem.template_name, "ffsol");
+
+    let (result_solver_unsat_output_1, counterexample) = handling_ffsol_call(&smt2_problem, config, cancel_flag, file_name);
+
+    match result_solver_unsat_output_1 {
+        PossibleResult::VERIFIED => {
+            logs.push("### FFSOL: VERIFIED: ASSUMING THE INTERMEDIATES THE SECOND SYSTEM ADMITS THE OUTPUTS\n".to_string());
+        }
+        PossibleResult::UNKNOWN => {
+            logs.push("### FFSOL: TIMEOUR: THE STUDY OF THE SATISFIABILITY OF THE OUTPUTS OF THE SECOND SYSTEM TIMESOUT\n".to_string());
+
+        }
+        PossibleResult::FAILED => {
+            logs.push("### FFSOL: FAILED: ASSUMING THE INTERMEDIATES THE SECOND SYSTEM DOES NOT ADMIT THE OUTPUTS\n".to_string());
+
+        }
+        _ => unreachable!()
+    }
+
+    // Check if the second + first no ouputs has solutions -> should be unsat 
+
+    let smt2_problem: LinkedList<String> = equivalence_problem_system_outputs(problem,false, signals_names_1, signals_names_2, false);
+    let file_name = crate::problem_smt2_name("output_error_1_", &problem.original_file, &problem.template_name, "ffsol");
+
+    let (result_solver_unsat_output_2, counterexample) = handling_ffsol_call(&smt2_problem, config, cancel_flag, file_name);
+
+    match result_solver_unsat_output_2 {
+        PossibleResult::VERIFIED => {
+            logs.push("### FFSOL: VERIFIED: ASSUMING THE INTERMEDIATES THE SECOND SYSTEM ADMITS THE OUTPUTS\n".to_string());
+        }
+        PossibleResult::UNKNOWN => {
+            logs.push("### FFSOL: TIMEOUT: THE STUDY OF THE SATISFIABILITY OF THE OUTPUTS OF THE SECOND SYSTEM TIMESOUT\n".to_string());
+
+        }
+        PossibleResult::FAILED => {
+            logs.push("### FFSOL: FAILED: ASSUMING THE INTERMEDIATES THE SECOND SYSTEM DOES NOT ADMIT THE OUTPUTS\n".to_string());
+
+        }
+        _ => unreachable!()
+    }
+
+    let final_result = if result_solver == PossibleResult::VERIFIED && 
+        result_solver_sat1 == PossibleResult::FAILED &&
+        result_solver_sat2 == PossibleResult::FAILED &&
+        result_solver_sat_12 == PossibleResult::FAILED &&
+        result_solver_sat_21 == PossibleResult::FAILED &&
+        result_solver_unsat_output_1 == PossibleResult::VERIFIED &&
+        result_solver_unsat_output_2 == PossibleResult::VERIFIED
+    {
+        PossibleResult::VERIFIED
+    } else if result_solver == PossibleResult::FAILED || 
+        result_solver_sat1 == PossibleResult::VERIFIED ||
+        result_solver_sat2 == PossibleResult::VERIFIED ||
+        result_solver_sat_12 == PossibleResult::VERIFIED ||
+        result_solver_sat_21 == PossibleResult::VERIFIED ||
+        result_solver_unsat_output_1 == PossibleResult::FAILED ||
+        result_solver_unsat_output_2 == PossibleResult::FAILED
+    {
+        PossibleResult::FAILED
+
+    } else{
+        PossibleResult::UNKNOWN
+    };
+
+
+    (final_result, logs)
 
 }
 

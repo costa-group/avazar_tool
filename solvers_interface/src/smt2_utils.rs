@@ -170,6 +170,277 @@ pub fn equivalence_problem_to_smt2(problem: &EquivalenceVerification, use_old_sy
 }
 
 
+pub fn equivalence_problem_valid_system_to_smt2(problem: &EquivalenceVerification, use_old_syntax:bool, signals_names_1: &HashMap<usize, String>, signals_names_2: &HashMap<usize, String>, consider_first: bool)->LinkedList<String>{
+    let mut smt2_problem = LinkedList::new();
+    let mut header = declare_header(&problem.field);
+    smt2_problem.append(&mut header);
+
+    let mut signal_to_name = HashMap::new();
+
+    let (signals, names, constraints) = if consider_first {
+        (&problem.signals_1, signals_names_1, &problem.constraints_1)
+    } else{
+        (&problem.signals_2, signals_names_2, &problem.constraints_2)
+
+    };
+ 
+    for s in signals {
+        let name = if names.contains_key(s){
+                format!("circuit1.{}", names[s].replace(&['#', '[', ']'][..], "_"))
+            } else{
+                format!("circuit1.s_{}",s)
+            };
+        smt2_problem.push_back(declare_signal(&name)); 
+        signal_to_name.insert(*s,name.clone());
+    }
+
+    for constraint in constraints {
+        if use_old_syntax{
+            smt2_problem.push_back(
+               format!("(assert {})",
+                  constraint.constraint_to_smt2_old(&signal_to_name)
+                )
+            );
+        }else{
+            smt2_problem.push_back(
+               format!("(assert {})",
+                  constraint.constraint_to_smt2(&signal_to_name)
+                )
+            );
+        }
+        
+    }
+
+    smt2_problem.push_back(format!("(check-sat)"));
+    smt2_problem
+    
+}
+
+
+pub fn equivalence_problem_system_until_out_to_smt2(problem: &EquivalenceVerification, use_old_syntax:bool, signals_names_1: &HashMap<usize, String>, signals_names_2: &HashMap<usize, String>, consider_first: bool)->LinkedList<String>{
+    let mut smt2_problem = LinkedList::new();
+    let mut header = declare_header(&problem.field);
+    smt2_problem.append(&mut header);
+
+    let mut signal_to_name = HashMap::new();
+    let mut signal_to_name_aux = HashMap::new();
+
+    let (signals_1, names_1, constraints_1) = if consider_first {
+        (&problem.signals_1, signals_names_1, &problem.constraints_1)
+    } else{
+        (&problem.signals_2, signals_names_2, &problem.constraints_2)
+    };
+
+    let (signals_2, names_2, constraints_2, outputs_2) = if consider_first {
+        (&problem.signals_2, signals_names_2, &problem.constraints_2, &problem.outputs_2)
+    } else{
+        (&problem.signals_1, signals_names_1, &problem.constraints_1, &problem.outputs_1)
+    };
+ 
+    for s in signals_1 {
+        let name = if names_1.contains_key(s){
+                format!("circuit1.{}", names_1[s].replace(&['#', '[', ']'][..], "_"))
+            } else{
+                format!("circuit1.s_{}",s)
+            };
+        smt2_problem.push_back(declare_signal(&name)); 
+        signal_to_name.insert(*s,name.clone());
+    }
+
+    for s in signals_2 {
+        let name = if names_2.contains_key(s){
+                format!("circuit2.{}", names_2[s].replace(&['#', '[', ']'][..], "_"))
+            } else{
+                format!("circuit2.s_{}",s)
+            };
+        smt2_problem.push_back(declare_signal(&name)); 
+        signal_to_name_aux.insert(*s,name.clone());
+    }
+
+    for constraint in constraints_1 {
+        if use_old_syntax{
+            smt2_problem.push_back(
+               format!("(assert {})",
+                  constraint.constraint_to_smt2_old(&signal_to_name)
+                )
+            );
+        }else{
+            smt2_problem.push_back(
+               format!("(assert {})",
+                  constraint.constraint_to_smt2(&signal_to_name)
+                )
+            );
+        }
+        
+    }
+
+    for constraint in constraints_2 {
+        let signals = constraint.take_signals();
+        if !outputs_2.iter().any(|x| signals.contains(x)) { 
+
+            if use_old_syntax{
+                // only add it if it does not contain outputs
+                smt2_problem.push_back(
+                format!("(assert {})",
+                    constraint.constraint_to_smt2_old(&signal_to_name_aux)
+                    )
+                );        
+            }else{
+                smt2_problem.push_back(
+                format!("(assert {})",
+                    constraint.constraint_to_smt2(&signal_to_name_aux)
+                    )
+                );
+            }
+        }   
+    }
+
+
+    for imp in &problem.implications_equivalence{
+        let new_imp = equivalence_implication_to_smt2(imp,&signal_to_name,&signal_to_name_aux);
+        smt2_problem.push_back(
+            format!("(assert {})",
+                new_imp
+            )
+        );
+    }
+
+    smt2_problem.push_back(
+        format!("(assert {})",
+            declare_all_signals_equal(&problem.inputs_1, &signal_to_name, &problem.inputs_2,&signal_to_name_aux)
+        )
+    );
+
+    smt2_problem.push_back(format!("(check-sat)"));
+    smt2_problem
+    
+}
+
+
+pub fn equivalence_problem_system_outputs(problem: &EquivalenceVerification, use_old_syntax:bool, signals_names_1: &HashMap<usize, String>, signals_names_2: &HashMap<usize, String>, consider_first: bool)->LinkedList<String>{
+    let mut smt2_problem = LinkedList::new();
+    let mut header = declare_header(&problem.field);
+    smt2_problem.append(&mut header);
+
+    let mut signal_to_name = HashMap::new();
+    let mut signal_to_name_aux = HashMap::new();
+
+
+    let (signals_1, names_1, constraints_1) = if consider_first {
+        (&problem.signals_1, signals_names_1, &problem.constraints_1)
+    } else{
+        (&problem.signals_2, signals_names_2, &problem.constraints_2)
+    };
+
+    let (signals_2, names_2, constraints_2, outputs_2) = if consider_first {
+        (&problem.signals_2, signals_names_2, &problem.constraints_2, &problem.outputs_2)
+    } else{
+        (&problem.signals_1, signals_names_1, &problem.constraints_1, &problem.outputs_1)
+    };
+ 
+    for s in signals_1 {
+        let name = if names_1.contains_key(s){
+                format!("circuit1.{}", names_1[s].replace(&['#', '[', ']'][..], "_"))
+            } else{
+                format!("circuit1.s_{}",s)
+            };
+        smt2_problem.push_back(declare_signal(&name)); 
+        signal_to_name.insert(*s,name.clone());
+    }
+
+    for s in signals_2 {
+        let name = if names_2.contains_key(s){
+                format!("circuit2.{}", names_2[s].replace(&['#', '[', ']'][..], "_"))
+            } else{
+                format!("circuit2.s_{}",s)
+            };
+        smt2_problem.push_back(declare_signal(&name)); 
+        signal_to_name_aux.insert(*s,name.clone());
+    }
+
+    for constraint in constraints_1 {
+        if use_old_syntax{
+            smt2_problem.push_back(
+               format!("(assert {})",
+                  constraint.constraint_to_smt2_old(&signal_to_name)
+                )
+            );
+        }else{
+            smt2_problem.push_back(
+               format!("(assert {})",
+                  constraint.constraint_to_smt2(&signal_to_name)
+                )
+            );
+        }
+        
+    }
+
+    for constraint in constraints_2 {
+        let signals = constraint.take_signals();
+        if !outputs_2.iter().any(|x| signals.contains(x)) { 
+
+            if use_old_syntax{
+                // only add it if it does not contain outputs
+                smt2_problem.push_back(
+                format!("(assert {})",
+                    constraint.constraint_to_smt2_old(&signal_to_name_aux)
+                    )
+                );        
+            }else{
+                smt2_problem.push_back(
+                format!("(assert {})",
+                    constraint.constraint_to_smt2(&signal_to_name_aux)
+                    )
+                );
+            }
+        } else{
+
+            if use_old_syntax{
+                // only add it if it does not contain outputs
+                smt2_problem.push_back(
+                format!("(assert (not {}))",
+                    constraint.constraint_to_smt2_old(&signal_to_name_aux)
+                    )
+                );        
+            }else{
+                smt2_problem.push_back(
+                format!("(assert (not {}))",
+                    constraint.constraint_to_smt2(&signal_to_name_aux)
+                    )
+                );
+            }
+        } 
+    }
+
+
+    for imp in &problem.implications_equivalence{
+        let new_imp = equivalence_implication_to_smt2(imp,&signal_to_name,&signal_to_name_aux);
+        smt2_problem.push_back(
+            format!("(assert {})",
+                new_imp
+            )
+        );
+    }
+
+    smt2_problem.push_back(
+        format!("(assert {})",
+            declare_all_signals_equal(&problem.inputs_1, &signal_to_name, &problem.inputs_2,&signal_to_name_aux)
+        )
+    );
+
+    smt2_problem.push_back(
+        format!("(assert {})",
+            declare_all_signals_equal(&problem.outputs_1, &signal_to_name, &problem.outputs_2,&signal_to_name_aux)
+        )
+    );
+
+    smt2_problem.push_back(format!("(check-sat)"));
+    smt2_problem
+    
+}
+
+
+
 pub fn safety_problem_to_smt2(problem: &SafetyVerification, signals_names: &HashMap<usize, String>)->LinkedList<String>{
     let mut smt2_problem = LinkedList::new();
     let mut header = declare_header(&problem.field);

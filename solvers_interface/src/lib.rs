@@ -219,6 +219,23 @@ pub fn equivalence_smt2_name(original_file: &str, template_name: &str, solver: &
     }
 }
 
+pub fn problem_smt2_name(problem_type: &str, original_file: &str, template_name: &str, solver: &str) -> String {
+    let random: u32 = rand::Rng::gen(&mut rand::thread_rng());
+    let original = sanitize_name(original_file, false);
+    if template_name.is_empty() {
+        let file_name = format!("{}_{}_{}_{}.smt2", problem_type, original, solver, random);
+        ensure_safe_length(file_name, original_file, template_name, |o, _t| {
+            format!("{}_{}_{}_{}.smt2", problem_type, o, solver, random)
+        })
+    } else {
+        let template = sanitize_name(template_name, false);
+        let file_name = format!("{}_{}_{}_{}_{}.smt2", problem_type, original, template, solver, random);
+        ensure_safe_length(file_name, original_file, template_name, |o, t| {
+            format!("{}_{}_{}_{}_{}.smt2", problem_type, o, t, solver, random)
+        })
+    }
+}
+
 pub fn correctness_smt2_name(original_file: &str, template_name: &str, solver: &str) -> String {
     let random: u32 = rand::Rng::gen(&mut rand::thread_rng());
     let original = sanitize_name(original_file, false);
