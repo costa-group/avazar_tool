@@ -225,16 +225,16 @@ pub fn equivalence_problem_system_until_out_to_smt2(problem: &EquivalenceVerific
     let mut signal_to_name = HashMap::new();
     let mut signal_to_name_aux = HashMap::new();
 
-    let (signals_1, names_1, constraints_1) = if consider_first {
-        (&problem.signals_1, signals_names_1, &problem.constraints_1)
+    let (signals_1, names_1, constraints_1, inputs_1) = if consider_first {
+        (&problem.signals_1, signals_names_1, &problem.constraints_1, &problem.inputs_1)
     } else{
-        (&problem.signals_2, signals_names_2, &problem.constraints_2)
+        (&problem.signals_2, signals_names_2, &problem.constraints_2, &problem.inputs_2)
     };
 
-    let (signals_2, names_2, constraints_2, outputs_2) = if consider_first {
-        (&problem.signals_2, signals_names_2, &problem.constraints_2, &problem.outputs_2)
+    let (signals_2, names_2, constraints_2, outputs_2, inputs_2) = if consider_first {
+        (&problem.signals_2, signals_names_2, &problem.constraints_2, &problem.outputs_2, &problem.inputs_2)
     } else{
-        (&problem.signals_1, signals_names_1, &problem.constraints_1, &problem.outputs_1)
+        (&problem.signals_1, signals_names_1, &problem.constraints_1, &problem.outputs_1, &problem.inputs_1)
     };
  
     for s in signals_1 {
@@ -297,8 +297,11 @@ pub fn equivalence_problem_system_until_out_to_smt2(problem: &EquivalenceVerific
 
 
     for imp in &problem.implications_equivalence{
-        let new_imp = equivalence_implication_to_smt2(imp,&signal_to_name,&signal_to_name_aux);
-        smt2_problem.push_back(
+        let new_imp = if consider_first{
+            equivalence_implication_to_smt2(imp,&signal_to_name,&signal_to_name_aux)
+        } else{
+            equivalence_implication_to_smt2(imp,&signal_to_name_aux, &signal_to_name)
+        };        smt2_problem.push_back(
             format!("(assert {})",
                 new_imp
             )
@@ -307,7 +310,7 @@ pub fn equivalence_problem_system_until_out_to_smt2(problem: &EquivalenceVerific
 
     smt2_problem.push_back(
         format!("(assert {})",
-            declare_all_signals_equal(&problem.inputs_1, &signal_to_name, &problem.inputs_2,&signal_to_name_aux)
+            declare_all_signals_equal(&inputs_1, &signal_to_name, &inputs_2, &signal_to_name_aux)
         )
     );
 
@@ -326,16 +329,16 @@ pub fn equivalence_problem_system_outputs(problem: &EquivalenceVerification, use
     let mut signal_to_name_aux = HashMap::new();
 
 
-    let (signals_1, names_1, constraints_1) = if consider_first {
-        (&problem.signals_1, signals_names_1, &problem.constraints_1)
+    let (signals_1, names_1, constraints_1, outputs_1, inputs_1) = if consider_first {
+        (&problem.signals_1, signals_names_1, &problem.constraints_1, &problem.outputs_1, &problem.inputs_1)
     } else{
-        (&problem.signals_2, signals_names_2, &problem.constraints_2)
+        (&problem.signals_2, signals_names_2, &problem.constraints_2, &problem.outputs_2, &problem.inputs_2)
     };
 
-    let (signals_2, names_2, constraints_2, outputs_2) = if consider_first {
-        (&problem.signals_2, signals_names_2, &problem.constraints_2, &problem.outputs_2)
+    let (signals_2, names_2, constraints_2, outputs_2, inputs_2) = if consider_first {
+        (&problem.signals_2, signals_names_2, &problem.constraints_2, &problem.outputs_2, &problem.inputs_2)
     } else{
-        (&problem.signals_1, signals_names_1, &problem.constraints_1, &problem.outputs_1)
+        (&problem.signals_1, signals_names_1, &problem.constraints_1, &problem.outputs_1, &problem.inputs_1)
     };
  
     for s in signals_1 {
@@ -414,7 +417,11 @@ pub fn equivalence_problem_system_outputs(problem: &EquivalenceVerification, use
 
 
     for imp in &problem.implications_equivalence{
-        let new_imp = equivalence_implication_to_smt2(imp,&signal_to_name,&signal_to_name_aux);
+        let new_imp = if consider_first{
+            equivalence_implication_to_smt2(imp,&signal_to_name,&signal_to_name_aux)
+        } else{
+            equivalence_implication_to_smt2(imp,&signal_to_name_aux, &signal_to_name)
+        };
         smt2_problem.push_back(
             format!("(assert {})",
                 new_imp
@@ -424,13 +431,13 @@ pub fn equivalence_problem_system_outputs(problem: &EquivalenceVerification, use
 
     smt2_problem.push_back(
         format!("(assert {})",
-            declare_all_signals_equal(&problem.inputs_1, &signal_to_name, &problem.inputs_2,&signal_to_name_aux)
+            declare_all_signals_equal(&inputs_1, &signal_to_name, &inputs_2,&signal_to_name_aux)
         )
     );
 
     smt2_problem.push_back(
         format!("(assert {})",
-            declare_all_signals_equal(&problem.outputs_1, &signal_to_name, &problem.outputs_2,&signal_to_name_aux)
+            declare_all_signals_equal(&outputs_1, &signal_to_name, &outputs_2,&signal_to_name_aux)
         )
     );
 
