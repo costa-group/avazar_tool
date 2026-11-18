@@ -378,6 +378,8 @@ pub fn equivalence_problem_system_outputs(problem: &EquivalenceVerification, use
         
     }
 
+    let mut outs_list = Vec::new();
+
     for constraint in constraints_2 {
         let signals = constraint.take_signals();
         if !outputs_2.iter().any(|x| signals.contains(x)) { 
@@ -400,19 +402,32 @@ pub fn equivalence_problem_system_outputs(problem: &EquivalenceVerification, use
 
             if use_old_syntax{
                 // only add it if it does not contain outputs
-                smt2_problem.push_back(
-                format!("(assert (not {}))",
+                outs_list.push(
                     constraint.constraint_to_smt2_old(&signal_to_name_aux)
-                    )
                 );        
             }else{
-                smt2_problem.push_back(
-                format!("(assert (not {}))",
+                outs_list.push(
                     constraint.constraint_to_smt2(&signal_to_name_aux)
-                    )
                 );
             }
         } 
+    }
+
+    if outs_list.len() == 1{
+        smt2_problem.push_back(
+            format!("(assert (not {}))", outs_list[0])
+        );
+    } else if outs_list.len() > 1{
+        let mut build_and = "(and ".to_string();
+        for cond in outs_list{
+            build_and = format!("{} {}", build_and, cond);
+
+        }
+        build_and = format!("{} )", build_and);
+        smt2_problem.push_back(
+            format!("(assert (not {}))", build_and)
+        );
+
     }
 
 
