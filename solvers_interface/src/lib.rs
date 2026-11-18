@@ -158,6 +158,7 @@ pub struct WitnessVerification {
     pub field: BigInt,
     pub verification_timeout: u64,
     pub witness: HashMap<usize, BigInt>,
+    pub different: HashMap<usize, BigInt>,
     pub verbose: bool
 }
 
@@ -174,6 +175,7 @@ impl WitnessVerification{
         field: &BigInt,
         verification_timeout: u64,
         witness: HashMap<usize, BigInt>,
+        different: HashMap<usize, BigInt>,
         verbose: bool
     ) -> WitnessVerification {
         let mut fixed_constraints = Vec::new();
@@ -192,6 +194,7 @@ impl WitnessVerification{
             field: field.clone(),
             verification_timeout,
             witness,
+            different,
             verbose
         }
     }

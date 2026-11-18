@@ -33,18 +33,38 @@ pub fn witness_problem_to_smt2(
         
     }
 
+    let mut signal_to_value_to_keep = HashMap::new();
+    let mut output_to_value_to_change = HashMap::new();
+
+    for (s, value) in &problem.witness{
+        if problem.outputs.contains(s){
+            output_to_value_to_change.insert(*s, value.clone());
+        } else{
+            signal_to_value_to_keep.insert(*s, value.clone());
+        }
+    }
+
 
     smt2_problem.push_back(
         format!("(assert {})",
-            declare_value_signals(&problem.inputs, &signal_to_name, &problem.witness)
+            declare_value_signals(&signal_to_name, &signal_to_value_to_keep)
         )
     );
 
     smt2_problem.push_back(
         format!("(assert (not {}))",
-            declare_value_signals(&problem.outputs, &signal_to_name, &problem.witness)
+            declare_value_signals(&signal_to_name, &output_to_value_to_change)
         )
     );
+
+    for (s, value) in &problem.different{
+        smt2_problem.push_back(
+            format!("(assert (not (= {} {})))", signal_to_name[s], value)
+        );
+    }
+    
+
+
     smt2_problem.push_back(format!("(check-sat)"));
     smt2_problem
     
@@ -503,19 +523,23 @@ pub fn declare_all_signals_equal_2(signals: &Vec<usize>, signal_to_names: &HashM
 }
 
 
-pub fn declare_value_signals(signals: &Vec<usize>, signal_to_names: &HashMap<usize,String>, values: &HashMap<usize, BigInt>) -> String{
-    if signals.len() == 0{
+pub fn declare_value_signals(signal_to_names: &HashMap<usize,String>, signals_to_values: &HashMap<usize, BigInt>) -> String{
+    if signals_to_values.len() == 0{
         "true".to_string()
-    } else if signals.len() == 1{
-        let s = signals[0];
-        let s_aux = &values[&s];
-        format!("(= {} {})", signal_to_names[&s], s_aux)
+    } else if signals_to_values.len() == 1{
+        let mut v = "".to_string();   
+        for (s, value) in signals_to_values{
+            v = format!("(= {} {})", signal_to_names[s], value);
+        }
+        v
     } else{
         let mut aux = "(and ".to_string();
-        for i in 0..signals.len(){
-            aux = format!("{} (= {} {}) ", aux, signal_to_names[&signals[i]], values[&signals[i]]);
+        for (s, value) in signals_to_values{
+            aux = format!("{} (= {} {}) ", aux, signal_to_names[s], value);
         }
         aux = format!("{})",aux);
         aux
     }
 }
+
+

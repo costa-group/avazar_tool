@@ -4,23 +4,38 @@ use std::path::Path;
 use std::error::Error;
  use std::collections::HashMap;
 use circom_algebra::num_bigint::{BigInt, Sign};
+use serde::{Serialize,Deserialize};
 
 
 
-pub fn read_witness<P: AsRef<Path>>(path: P) -> Result<HashMap<usize, BigInt>, Box<dyn Error>> {
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct WitnessInfo {
+    pub witness: HashMap<usize, String>,
+    pub different: HashMap<usize, String>,
+}
+
+
+pub fn read_witness<P: AsRef<Path>>(path: P) 
+    -> Result<(HashMap<usize, BigInt>, HashMap<usize, BigInt>), Box<dyn Error>> {
     // Open the file in read-only mode with buffer.
     let file = File::open(path)?;
     let reader = BufReader::new(file);
 
-    // Read the JSON contents of the file as an instance of `StructureInfo`.
-    let signal_to_value_str: HashMap<usize, String> = serde_json::from_reader(reader)?;
+    // Read the JSON contents of the file as an instance of `WitnessInfo`.
+    let struct_witness_info: WitnessInfo = serde_json::from_reader(reader)?;
 
-    let mut signal_to_value = HashMap::new();
-    for (name, value_str) in &signal_to_value_str{
+    let mut witness_info = HashMap::new();
+    for (name, value_str) in &struct_witness_info.witness{
         let value: BigInt = value_str.parse().unwrap();
-        signal_to_value.insert(*name, value);
+        witness_info.insert(*name, value);
     }
 
-    Ok(signal_to_value)
+    let mut different_info = HashMap::new();
+    for (name, value_str) in &struct_witness_info.different{
+        let value: BigInt = value_str.parse().unwrap();
+        different_info.insert(*name, value);
+    }
+
+    Ok((witness_info, different_info))
 
 }

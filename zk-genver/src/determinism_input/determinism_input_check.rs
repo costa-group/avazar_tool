@@ -32,7 +32,7 @@ pub fn prove_input_determinism(user_input: Input) -> Result<(), ()> {
 
     let timeout: u64 = user_input.timeout;
 
-    let witness = read_witness(&user_input.check_determinism_input.unwrap()).unwrap();
+    let (witness, different) = read_witness(&user_input.check_determinism_input.unwrap()).unwrap();
 
 
     let problem = WitnessVerification {
@@ -44,6 +44,7 @@ pub fn prove_input_determinism(user_input: Input) -> Result<(), ()> {
         inputs: (n_outputs + 1..n_outputs + n_inputs + 1).collect(),
         field,
         witness,
+        different,
         verification_timeout: timeout,
         verbose: user_input.flag_verbose
     };
