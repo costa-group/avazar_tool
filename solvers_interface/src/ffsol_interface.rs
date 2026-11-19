@@ -298,7 +298,7 @@ pub fn study_equivalence(
             logs.push(format!("The complete counterexample can be found in the file: {}\n", config.json_model.as_ref().unwrap()));
         },
         PossibleResult::VERIFIED=>{
-            logs.push(format!("### FFSOL: THE CONSTRAINT SYSTEMS ARE EQUIVALENT\n"));
+            logs.push(format!("### FFSOL: MAIN QUERY VERIFIED: THE OUTPUTS COINCIDE IN EVERY COMMON SOLUTION (EXTRA CHECKS FOLLOW)\n"));
         },
         PossibleResult::UNKNOWN=>{
             logs.push("### FFSOL: UNKNOWN: VERIFICATION OF EQUIVALENCE TIMEOUT\n".to_string());
@@ -322,7 +322,7 @@ pub fn study_equivalence(
             logs.push("### FFSOL: VERIFIED: THE FIRST SYSTEM IS SATISFIABLE\n".to_string());
         }
         PossibleResult::UNKNOWN => {
-            logs.push("### FFSOL: TIMEOUR: THE SATISFIABILITY OF THE FIRST SYSTEM TIMESOUT\n".to_string());
+            logs.push("### FFSOL: TIMEOUT: THE SATISFIABILITY CHECK OF THE FIRST SYSTEM TIMES OUT\n".to_string());
 
         }
         PossibleResult::VERIFIED => {
@@ -344,7 +344,7 @@ pub fn study_equivalence(
             logs.push("### FFSOL: VERIFIED: THE SECOND SYSTEM IS SATISFIABLE\n".to_string());
         }
         PossibleResult::UNKNOWN => {
-            logs.push("### FFSOL: TIMEOUR: THE SATISFIABILITY OF THE SECOND SYSTEM TIMESOUT\n".to_string());
+            logs.push("### FFSOL: TIMEOUT: THE SATISFIABILITY CHECK OF THE SECOND SYSTEM TIMES OUT\n".to_string());
 
         }
         PossibleResult::VERIFIED => {
@@ -366,7 +366,7 @@ pub fn study_equivalence(
             logs.push("### FFSOL: VERIFIED: THE FIRST + SECOND UNTIL OUTS SYSTEM IS SATISFIABLE\n".to_string());
         }
         PossibleResult::UNKNOWN => {
-            logs.push("### FFSOL: TIMEOUR: THE SATISFIABILITY OF THE FIRST + SECOND UNTIL OUTS SYSTEM TIMESOUT\n".to_string());
+            logs.push("### FFSOL: TIMEOUT: THE SATISFIABILITY CHECK OF THE FIRST + SECOND UNTIL OUTS SYSTEM TIMES OUT\n".to_string());
 
         }
         PossibleResult::VERIFIED => {
@@ -385,14 +385,14 @@ pub fn study_equivalence(
 
     match result_solver_sat_21 {
         PossibleResult::FAILED => {
-            logs.push("### FFSOL: VERIFIED: THE FIRST + SECOND UNTIL OUTS SYSTEM IS SATISFIABLE\n".to_string());
+            logs.push("### FFSOL: VERIFIED: THE SECOND + FIRST UNTIL OUTS SYSTEM IS SATISFIABLE\n".to_string());
         }
         PossibleResult::UNKNOWN => {
-            logs.push("### FFSOL: TIMEOUR: THE SATISFIABILITY OF THE FIRST + SECOND UNTIL OUTS SYSTEM TIMESOUT\n".to_string());
+            logs.push("### FFSOL: TIMEOUT: THE SATISFIABILITY CHECK OF THE SECOND + FIRST UNTIL OUTS SYSTEM TIMES OUT\n".to_string());
 
         }
         PossibleResult::VERIFIED => {
-            logs.push("### FFSOL: FAILED: THE FIRST + SECOND UNTIL OUTS SYSTEM IS NOT SATISFIABLE\n".to_string());
+            logs.push("### FFSOL: FAILED: THE SECOND + FIRST UNTIL OUTS SYSTEM IS NOT SATISFIABLE\n".to_string());
 
         }
         _ => unreachable!()
@@ -405,17 +405,19 @@ pub fn study_equivalence(
 
     let (result_solver_unsat_output_1, counterexample) = handling_ffsol_call(&smt2_problem, config, cancel_flag, file_name);
 
+    let json_output_1 = config.json_model.clone().unwrap_or_default();
+
     match result_solver_unsat_output_1 {
         PossibleResult::VERIFIED => {
-            logs.push("### FFSOL: VERIFIED: ASSUMING THE INTERMEDIATES THE SECOND SYSTEM ADMITS THE OUTPUTS\n".to_string());
+            logs.push("### FFSOL: VERIFIED: ASSUMING THE INTERMEDIATES, THE SECOND SYSTEM ADMITS THE OUTPUTS OF THE FIRST\n".to_string());
         }
         PossibleResult::UNKNOWN => {
-            logs.push("### FFSOL: TIMEOUR: THE STUDY OF THE SATISFIABILITY OF THE OUTPUTS OF THE SECOND SYSTEM TIMESOUT\n".to_string());
+            logs.push("### FFSOL: TIMEOUT: THE CHECK THAT THE SECOND SYSTEM ADMITS THE OUTPUTS OF THE FIRST TIMES OUT\n".to_string());
 
         }
         PossibleResult::FAILED => {
-            logs.push("### FFSOL: FAILED: ASSUMING THE INTERMEDIATES THE SECOND SYSTEM DOES NOT ADMIT THE OUTPUTS\n".to_string());
-
+            logs.push("### FFSOL: FAILED: ASSUMING THE INTERMEDIATES, THE SECOND SYSTEM DOES NOT ADMIT THE OUTPUTS OF THE FIRST\n".to_string());
+            log_extra_check_model(&mut logs, &counterexample, &json_output_1);
         }
         _ => unreachable!()
     }
@@ -427,17 +429,19 @@ pub fn study_equivalence(
 
     let (result_solver_unsat_output_2, counterexample) = handling_ffsol_call(&smt2_problem, config, cancel_flag, file_name);
 
+    let json_output_2 = config.json_model.clone().unwrap_or_default();
+
     match result_solver_unsat_output_2 {
         PossibleResult::VERIFIED => {
-            logs.push("### FFSOL: VERIFIED: ASSUMING THE INTERMEDIATES THE SECOND SYSTEM ADMITS THE OUTPUTS\n".to_string());
+            logs.push("### FFSOL: VERIFIED: ASSUMING THE INTERMEDIATES, THE FIRST SYSTEM ADMITS THE OUTPUTS OF THE SECOND\n".to_string());
         }
         PossibleResult::UNKNOWN => {
-            logs.push("### FFSOL: TIMEOUT: THE STUDY OF THE SATISFIABILITY OF THE OUTPUTS OF THE SECOND SYSTEM TIMESOUT\n".to_string());
+            logs.push("### FFSOL: TIMEOUT: THE CHECK THAT THE FIRST SYSTEM ADMITS THE OUTPUTS OF THE SECOND TIMES OUT\n".to_string());
 
         }
         PossibleResult::FAILED => {
-            logs.push("### FFSOL: FAILED: ASSUMING THE INTERMEDIATES THE SECOND SYSTEM DOES NOT ADMIT THE OUTPUTS\n".to_string());
-
+            logs.push("### FFSOL: FAILED: ASSUMING THE INTERMEDIATES, THE FIRST SYSTEM DOES NOT ADMIT THE OUTPUTS OF THE SECOND\n".to_string());
+            log_extra_check_model(&mut logs, &counterexample, &json_output_2);
         }
         _ => unreachable!()
     }
@@ -471,6 +475,28 @@ pub fn study_equivalence(
 }
 
 
+
+/// Logs the model found by ffsol for one of the extra equivalence checks.
+/// Signals named circuit1.* belong to the first system and circuit2.* to the second one.
+fn log_extra_check_model(logs: &mut Vec<String>, model: &HashMap<String, String>, json_path: &str) {
+    const MAX_PRINTED: usize = 40;
+    if model.is_empty() {
+        return;
+    }
+    let mut names: Vec<&String> = model.keys().collect();
+    names.sort();
+    if names.len() <= MAX_PRINTED {
+        logs.push("\nAssignment found by the solver (circuit1 = first system, circuit2 = second system):\n".to_string());
+        for name in names {
+            logs.push(format!(" * {} -> {}\n", name, model[name]));
+        }
+    } else {
+        logs.push(format!("\nThe assignment found by the solver has {} signals (circuit1 = first system, circuit2 = second system).\n", names.len()));
+    }
+    if !json_path.is_empty() {
+        logs.push(format!("The complete assignment can be found in the file: {}\n", json_path));
+    }
+}
 
 pub fn study_safety(problem: &SafetyVerification, cancel_flag: Option<&AtomicBool>, config: & mut FfsolConfig, signals_names: &HashMap<usize, String>)-> (PossibleResult, Vec<String>){
 

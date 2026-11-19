@@ -297,7 +297,7 @@ pub type EquivalenceImplication = (Vec<(usize, usize)>, Vec<(usize, usize)>);
         logs.push(format!("     NUMBER OF ROUNDS: {}\n\n ", n_rounds));
         logs.push(format!("******** VERIFICATION RESULTS ********\n"));
 
-        logs.push(format!("-----> WEAK SAFETY: "));
+        logs.push(format!("-----> EQUIVALENCE: "));
         logs.push(result.result_to_str());
 
         logs.push(format!("\n\n"));

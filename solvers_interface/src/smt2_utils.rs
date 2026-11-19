@@ -175,6 +175,8 @@ pub fn equivalence_problem_valid_system_to_smt2(problem: &EquivalenceVerificatio
     let mut header = declare_header(&problem.field);
     smt2_problem.append(&mut header);
 
+    // circuitN always names the signals of the N-th system, also when consider_first is false
+    let prefix = if consider_first {"circuit1"} else {"circuit2"};
     let mut signal_to_name = HashMap::new();
 
     let (signals, names, constraints) = if consider_first {
@@ -186,9 +188,9 @@ pub fn equivalence_problem_valid_system_to_smt2(problem: &EquivalenceVerificatio
  
     for s in signals {
         let name = if names.contains_key(s){
-                format!("circuit1.{}", names[s].replace(&['#', '[', ']'][..], "_"))
+                format!("{}.{}", prefix, names[s].replace(&['#', '[', ']'][..], "_"))
             } else{
-                format!("circuit1.s_{}",s)
+                format!("{}.s_{}",prefix, s)
             };
         smt2_problem.push_back(declare_signal(&name)); 
         signal_to_name.insert(*s,name.clone());
@@ -222,6 +224,8 @@ pub fn equivalence_problem_system_until_out_to_smt2(problem: &EquivalenceVerific
     let mut header = declare_header(&problem.field);
     smt2_problem.append(&mut header);
 
+    // circuitN always names the signals of the N-th system, also when consider_first is false
+    let (prefix_1, prefix_2) = if consider_first {("circuit1", "circuit2")} else {("circuit2", "circuit1")};
     let mut signal_to_name = HashMap::new();
     let mut signal_to_name_aux = HashMap::new();
 
@@ -239,9 +243,9 @@ pub fn equivalence_problem_system_until_out_to_smt2(problem: &EquivalenceVerific
  
     for s in signals_1 {
         let name = if names_1.contains_key(s){
-                format!("circuit1.{}", names_1[s].replace(&['#', '[', ']'][..], "_"))
+                format!("{}.{}", prefix_1, names_1[s].replace(&['#', '[', ']'][..], "_"))
             } else{
-                format!("circuit1.s_{}",s)
+                format!("{}.s_{}",prefix_1, s)
             };
         smt2_problem.push_back(declare_signal(&name)); 
         signal_to_name.insert(*s,name.clone());
@@ -249,9 +253,9 @@ pub fn equivalence_problem_system_until_out_to_smt2(problem: &EquivalenceVerific
 
     for s in signals_2 {
         let name = if names_2.contains_key(s){
-                format!("circuit2.{}", names_2[s].replace(&['#', '[', ']'][..], "_"))
+                format!("{}.{}", prefix_2, names_2[s].replace(&['#', '[', ']'][..], "_"))
             } else{
-                format!("circuit2.s_{}",s)
+                format!("{}.s_{}",prefix_2, s)
             };
         smt2_problem.push_back(declare_signal(&name)); 
         signal_to_name_aux.insert(*s,name.clone());
@@ -325,6 +329,8 @@ pub fn equivalence_problem_system_outputs(problem: &EquivalenceVerification, use
     let mut header = declare_header(&problem.field);
     smt2_problem.append(&mut header);
 
+    // circuitN always names the signals of the N-th system, also when consider_first is false
+    let (prefix_1, prefix_2) = if consider_first {("circuit1", "circuit2")} else {("circuit2", "circuit1")};
     let mut signal_to_name = HashMap::new();
     let mut signal_to_name_aux = HashMap::new();
 
@@ -343,9 +349,9 @@ pub fn equivalence_problem_system_outputs(problem: &EquivalenceVerification, use
  
     for s in signals_1 {
         let name = if names_1.contains_key(s){
-                format!("circuit1.{}", names_1[s].replace(&['#', '[', ']'][..], "_"))
+                format!("{}.{}", prefix_1, names_1[s].replace(&['#', '[', ']'][..], "_"))
             } else{
-                format!("circuit1.s_{}",s)
+                format!("{}.s_{}",prefix_1, s)
             };
         smt2_problem.push_back(declare_signal(&name)); 
         signal_to_name.insert(*s,name.clone());
@@ -353,9 +359,9 @@ pub fn equivalence_problem_system_outputs(problem: &EquivalenceVerification, use
 
     for s in signals_2 {
         let name = if names_2.contains_key(s){
-                format!("circuit2.{}", names_2[s].replace(&['#', '[', ']'][..], "_"))
+                format!("{}.{}", prefix_2, names_2[s].replace(&['#', '[', ']'][..], "_"))
             } else{
-                format!("circuit2.s_{}",s)
+                format!("{}.s_{}",prefix_2, s)
             };
         smt2_problem.push_back(declare_signal(&name)); 
         signal_to_name_aux.insert(*s,name.clone());

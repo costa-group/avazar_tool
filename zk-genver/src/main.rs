@@ -39,7 +39,7 @@ fn main() {
         eprintln!("{}", Colour::Red.paint("previous errors were found"));
         std::process::exit(1);
     } else {
-        println!("{}", Colour::Green.paint("Everything went okay"));
+        println!("{}", Colour::Green.paint("Execution finished without internal errors (the verification verdict is reported above)"));
         //std::process::exit(0);
     }
 }
